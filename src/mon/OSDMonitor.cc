@@ -977,11 +977,11 @@ bool OSDMonitor::prepare_boot(MOSDBoot *m)
       // mark previous guy down
       pending_inc.new_state[from] = CEPH_OSD_UP;
     }
-    paxos->wait_for_commit(new C_RetryMessage(this, m));
+    wait_for_finished_proposal(new C_RetryMessage(this, m));
   } else if (pending_inc.new_up_client.count(from)) { //FIXME: should this be using new_up_client?
     // already prepared, just wait
     dout(7) << "prepare_boot already prepared, waiting on " << m->get_orig_source_addr() << dendl;
-    paxos->wait_for_commit(new C_RetryMessage(this, m));
+    wait_for_finished_proposal(new C_RetryMessage(this, m));
   } else {
     // mark new guy up.
     pending_inc.new_up_client[from] = m->get_orig_source_addr();
@@ -1055,7 +1055,7 @@ bool OSDMonitor::prepare_boot(MOSDBoot *m)
     pending_inc.new_xinfo[from] = xi;
 
     // wait
-    paxos->wait_for_commit(new C_Booted(this, m));
+    wait_for_finished_proposal(new C_Booted(this, m));
   }
   return true;
 }
@@ -1123,7 +1123,7 @@ bool OSDMonitor::prepare_alive(MOSDAlive *m)
   dout(7) << "prepare_alive want up_thru " << m->want << " have " << m->version
 	  << " from " << m->get_orig_source_inst() << dendl;
   pending_inc.new_up_thru[from] = m->version;  // set to the latest map the OSD has
-  paxos->wait_for_commit(new C_ReplyMap(this, m, m->version));
+  wait_for_finished_proposal(new C_ReplyMap(this, m, m->version));
   return true;
 }
 
@@ -1189,7 +1189,7 @@ bool OSDMonitor::prepare_pgtemp(MOSDPGTemp *m)
   for (map<pg_t,vector<int> >::iterator p = m->pg_temp.begin(); p != m->pg_temp.end(); p++)
     pending_inc.new_pg_temp[p->first] = p->second;
   pending_inc.new_up_thru[from] = m->map_epoch;   // set up_thru too, so the osd doesn't have to ask again
-  paxos->wait_for_commit(new C_ReplyMap(this, m, m->map_epoch));
+  wait_for_finished_proposal(new C_ReplyMap(this, m, m->map_epoch));
   return true;
 }
 
@@ -2056,7 +2056,7 @@ bool OSDMonitor::prepare_set_flag(MMonCommand *m, int flag)
     pending_inc.new_flags = osdmap.get_flags();
   pending_inc.new_flags |= flag;
   ss << "set " << OSDMap::get_flag_string(flag);
-  paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, ss.str(), get_version()));
+  wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, ss.str(), get_version()));
   return true;
 }
 
@@ -2067,7 +2067,7 @@ bool OSDMonitor::prepare_unset_flag(MMonCommand *m, int flag)
     pending_inc.new_flags = osdmap.get_flags();
   pending_inc.new_flags &= ~flag;
   ss << "unset " << OSDMap::get_flag_string(flag);
-  paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, ss.str(), paxos->get_version()));
+  wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, ss.str(), get_version()));
   return true;
 }
 
@@ -2149,7 +2149,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 
       pending_inc.crush = data;
       string rs = "set crush map";
-      paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+      wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
       return true;
     }
     else if (m->cmd.size() >= 5 && m->cmd[1] == "crush" && m->cmd[2] == "set") {
@@ -2205,7 +2205,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 	  ss << "updated item id " << id << " name '" << name << "' weight " << weight
 	     << " at location " << loc << " to crush map";
 	  getline(ss, rs);
-	  paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+	  wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
 	  return true;
 	}
       } while (false);
@@ -2253,7 +2253,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 	  ss << "create-or-move updating item id " << id << " name '" << name << "' weight " << weight
 	     << " at location " << loc << " to crush map";
 	  getline(ss, rs);
-	  paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, paxos->get_version()));
+	  wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, paxos->get_version()));
 	  return true;
 	}
       } while (false);
@@ -2290,7 +2290,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 	    pending_inc.crush.clear();
 	    newcrush.encode(pending_inc.crush);
 	    getline(ss, rs);
-	    paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, paxos->get_version()));
+	    wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, paxos->get_version()));
 	    return true;
 	  }
 	} else {
@@ -2327,7 +2327,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 	  newcrush.encode(pending_inc.crush);
 	  ss << "removed item id " << id << " name '" << m->cmd[3] << "' from crush map";
 	  getline(ss, rs);
-	  paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+	  wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
 	  return true;
 	}
       } while (false);
@@ -2365,7 +2365,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 	  ss << "reweighted item id " << id << " name '" << m->cmd[3] << "' to " << w
 	     << " in crush map";
 	  getline(ss, rs);
-	  paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+	  wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
 	  return true;
 	}
       } while (false);
@@ -2399,7 +2399,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 	newcrush.encode(pending_inc.crush);
 	ss << "adjusted tunables profile to " << m->cmd[3];
 	getline(ss, rs);
-	paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, paxos->get_version()));
+	wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, paxos->get_version()));
 	return true;
       }
     }
@@ -2419,7 +2419,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
       pending_inc.new_max_osd = newmax;
       ss << "set new max_osd = " << pending_inc.new_max_osd;
       getline(ss, rs);
-      paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+      wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
       return true;
     }
     else if (m->cmd[1] == "pause") {
@@ -2494,7 +2494,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
       }
       if (any) {
 	getline(ss, rs);
-	paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+	wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
 	return true;
       }
     }
@@ -2517,7 +2517,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
       }
       if (any) {
 	getline(ss, rs);
-	paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+	wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
 	return true;
       }
     }
@@ -2540,7 +2540,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
       }
       if (any) {
 	getline(ss, rs);
-	paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+	wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
 	return true;
       } 
     }
@@ -2560,7 +2560,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 	  pending_inc.new_weight[osd] = ww;
 	  ss << "reweighted osd." << osd << " to " << w << " (" << ios::hex << ww << ios::dec << ")";
 	  getline(ss, rs);
-	  paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+	  wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
 	  return true;
 	}
       }
@@ -2581,7 +2581,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 	pending_inc.new_lost[osd] = e;
 	ss << "marked osd lost in epoch " << e;
 	getline(ss, rs);
-	paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+	wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
 	return true;
       }
     }
@@ -2607,7 +2607,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 	i = pending_inc.identify_osd(uuid);
 	if (i >= 0) {
 	  // osd is about to exist
-	  paxos->wait_for_commit(new C_RetryMessage(this, m));
+	  wait_for_finished_proposal(new C_RetryMessage(this, m));
 	  return true;
 	}
       }
@@ -2635,7 +2635,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 	pending_inc.new_uuid[i] = uuid;
       ss << i;
       getline(ss, rs);
-      paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+      wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
       return true;
     }
     else if (m->cmd[1] == "rm" && m->cmd.size() >= 3) {
@@ -2660,7 +2660,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
       }
       if (any) {
 	getline(ss, rs);
-	paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+	wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
 	return true;
       }
     }
@@ -2679,7 +2679,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 	pending_inc.new_blacklist[addr] = expires;
 	ss << "blacklisting " << addr << " until " << expires << " (" << d << " sec)";
 	getline(ss, rs);
-	paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+	wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
 	return true;
       } else if (m->cmd[2] == "rm") {
 	if (osdmap.is_blacklisted(addr) || 
@@ -2690,7 +2690,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 	    pending_inc.new_blacklist.erase(addr);
 	  ss << "un-blacklisting " << addr;
 	  getline(ss, rs);
-	  paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+	  wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
 	  return true;
 	}
 	ss << addr << " isn't blacklisted";
@@ -2723,7 +2723,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 	    pp->set_snap_epoch(pending_inc.epoch);
 	    ss << "created pool " << m->cmd[3] << " snap " << snapname;
 	    getline(ss, rs);
-	    paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+	    wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
 	    return true;
 	  }
 	}
@@ -2753,7 +2753,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 	    pp->set_snap_epoch(pending_inc.epoch);
 	    ss << "removed pool " << m->cmd[3] << " snap " << snapname;
 	    getline(ss, rs);
-	    paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+	    wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
 	    return true;
 	  }
 	}
@@ -2815,7 +2815,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 	  ss << "pool '" << m->cmd[3] << "' created";
 	}
 	getline(ss, rs);
-	paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+	wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
 	return true;
       } else if (m->cmd[2] == "delete" && m->cmd.size() >= 4) {
 	//hey, let's delete a pool!
@@ -2828,7 +2828,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 	  if (ret == 0)
 	    ss << "pool '" << m->cmd[3] << "' deleted";
 	  getline(ss, rs);
-	  paxos->wait_for_commit(new Monitor::C_Command(mon, m, ret, rs, get_version()));
+	  wait_for_finished_proposal(new Monitor::C_Command(mon, m, ret, rs, get_version()));
 	  return true;
 	}
       } else if (m->cmd[2] == "rename" && m->cmd.size() == 5) {
@@ -2848,7 +2848,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 	       << cpp_strerror(ret);
 	  }
 	  getline(ss, rs);
-	  paxos->wait_for_commit(new Monitor::C_Command(mon, m, ret, rs, paxos->get_version()));
+	  wait_for_finished_proposal(new Monitor::C_Command(mon, m, ret, rs, paxos->get_version()));
 	  return true;
 	}
       } else if (m->cmd[2] == "set") {
@@ -2876,7 +2876,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 	      pending_inc.new_pools[pool].last_change = pending_inc.epoch;
 	      ss << "set pool " << pool << " size to " << n;
 	      getline(ss, rs);
-	      paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+	      wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
 	      return true;
 	    } else if (m->cmd[4] == "min_size") {
 	      if (pending_inc.new_pools.count(pool) == 0)
@@ -2885,7 +2885,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 	      pending_inc.new_pools[pool].last_change = pending_inc.epoch;
 	      ss << "set pool " << pool << " min_size to " << n;
 	      getline(ss, rs);
-	      paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+	      wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
 	      return true;
 	    } else if (m->cmd[4] == "crash_replay_interval") {
 	      if (pending_inc.new_pools.count(pool) == 0)
@@ -2893,7 +2893,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 	      pending_inc.new_pools[pool].crash_replay_interval = n;
 	      ss << "set pool " << pool << " to crash_replay_interval to " << n;
 	      getline(ss, rs);
-	      paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+	      wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
 	      return true;
 	    } else if (m->cmd[4] == "pg_num") {
 	      if (m->cmd.size() < 6 ||
@@ -2913,7 +2913,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 		pending_inc.new_pools[pool].last_change = pending_inc.epoch;
 		ss << "set pool " << pool << " pg_num to " << n;
 		getline(ss, rs);
-		paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+		wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
 		return true;
 	      }
 	    } else if (m->cmd[4] == "pgp_num") {
@@ -2929,7 +2929,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 		pending_inc.new_pools[pool].last_change = pending_inc.epoch;
 		ss << "set pool " << pool << " pgp_num to " << n;
 		getline(ss, rs);
-		paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+		wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
 		return true;
 	      }
 	    } else if (m->cmd[4] == "crush_ruleset") {
@@ -2940,7 +2940,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
 		pending_inc.new_pools[pool].last_change = pending_inc.epoch;
 		ss << "set pool " << pool << " crush_ruleset to " << n;
 		getline(ss, rs);
-		paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+		wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
 		return true;
 	      } else {
 		ss << "crush ruleset " << n << " does not exist";
@@ -3020,7 +3020,7 @@ bool OSDMonitor::prepare_command(MMonCommand *m)
       } else {
 	ss << "SUCCESSFUL reweight-by-utilization: " << out_str;
 	getline(ss, rs);
-	paxos->wait_for_commit(new Monitor::C_Command(mon, m, 0, rs, get_version()));
+        wait_for_finished_proposal(new Monitor::C_Command(mon, m, 0, rs, get_version()));
 	return true;
       }
     }
@@ -3231,7 +3231,7 @@ bool OSDMonitor::prepare_pool_op(MPoolOp *m)
   }
 
  out:
-  paxos->wait_for_commit(new OSDMonitor::C_PoolOp(this, m, ret, pending_inc.epoch, &reply_data));
+  wait_for_finished_proposal(new OSDMonitor::C_PoolOp(this, m, ret, pending_inc.epoch, &reply_data));
   propose_pending();
   return false;
 }
@@ -3239,7 +3239,7 @@ bool OSDMonitor::prepare_pool_op(MPoolOp *m)
 bool OSDMonitor::prepare_pool_op_create(MPoolOp *m)
 {
   int err = prepare_new_pool(m);
-  paxos->wait_for_commit(new OSDMonitor::C_PoolOp(this, m, err, pending_inc.epoch));
+  wait_for_finished_proposal(new OSDMonitor::C_PoolOp(this, m, err, pending_inc.epoch));
   return true;
 }
 
@@ -3287,7 +3287,7 @@ int OSDMonitor::_prepare_rename_pool(uint64_t pool, string newname)
 bool OSDMonitor::prepare_pool_op_delete(MPoolOp *m)
 {
   int ret = _prepare_remove_pool(m->pool);
-  paxos->wait_for_commit(new OSDMonitor::C_PoolOp(this, m, ret, pending_inc.epoch));
+  wait_for_finished_proposal(new OSDMonitor::C_PoolOp(this, m, ret, pending_inc.epoch));
   return true;
 }
 
@@ -3305,7 +3305,7 @@ bool OSDMonitor::prepare_pool_op_auid(MPoolOp *m)
       if (pending_inc.new_pools.count(m->pool) == 0)
 	pending_inc.new_pools[m->pool] = *(osdmap.get_pg_pool(m->pool));
       pending_inc.new_pools[m->pool].auid = m->auid;
-      paxos->wait_for_commit(new OSDMonitor::C_PoolOp(this, m, 0, pending_inc.epoch));
+      wait_for_finished_proposal(new OSDMonitor::C_PoolOp(this, m, 0, pending_inc.epoch));
       return true;
     }
   }
