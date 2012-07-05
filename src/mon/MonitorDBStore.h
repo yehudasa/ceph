@@ -244,6 +244,16 @@ class MonitorDBStore
     return combine_strings(prefix, os.str());
   }
 
+  void clear(set<string>& prefixes) {
+    set<string>::iterator iter;
+    KeyValueDB::Transaction dbt = db->get_transaction();
+
+    for (iter = prefixes.begin(); iter != prefixes.end(); ++iter) {
+      dbt->rmkeys_by_prefix((*iter));
+    }
+    db->submit_transaction_sync(dbt);
+  }
+
   MonitorDBStore(const string& path) : db(0) {
 
     string::const_reverse_iterator rit;
