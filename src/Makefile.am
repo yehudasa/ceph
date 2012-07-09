@@ -1492,6 +1492,7 @@ noinst_HEADERS = \
         messages/MMonProbe.h\
         messages/MMonSubscribe.h\
         messages/MMonSubscribeAck.h\
+        messages/MMonSync.h \
         messages/MOSDAlive.h\
         messages/MOSDBoot.h\
         messages/MOSDFailure.h\
