@@ -868,7 +868,7 @@ int FileJournal::prepare_single_write(bufferlist& bl, off64_t& queue_pos, uint64
 
   int alignment = next_write.alignment; // we want to start ebl with this alignment
   unsigned pre_pad = 0;
-  if (alignment >= 0)
+  if (alignment >= 0 && base_size > g_conf->journal_min_write_realign)
     pre_pad = ((unsigned int)alignment - (unsigned int)head_size) & ~CEPH_PAGE_MASK;
   off64_t size = ROUND_UP_TO(base_size + pre_pad, header.alignment);
   unsigned post_pad = size - base_size - pre_pad;

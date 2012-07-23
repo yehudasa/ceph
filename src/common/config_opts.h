@@ -389,6 +389,7 @@ OPTION(journal_max_write_entries, OPT_INT, 100)
 OPTION(journal_queue_max_ops, OPT_INT, 500)
 OPTION(journal_queue_max_bytes, OPT_INT, 100 << 20)
 OPTION(journal_min_write_interval, OPT_FLOAT, 0)   // min time to wait between starting writes
+OPTION(journal_min_write_realign, OPT_INT, 32768)  // min event size before we pad to preserve alignment
 OPTION(journal_align_min_size, OPT_INT, 64 << 10)  // align data payloads >= this.
 OPTION(journal_replay_from, OPT_INT, 0)
 OPTION(journal_zero_on_create, OPT_BOOL, false)
