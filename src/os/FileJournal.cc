@@ -1098,9 +1098,26 @@ void FileJournal::flush()
 void FileJournal::write_thread_entry()
 {
   dout(10) << "write_thread_entry start" << dendl;
+  utime_t last_write_start;
   while (1) {
     {
       Mutex::Locker locker(queue_lock);
+
+      // wait a bit?
+      while (!write_stop && g_conf->journal_min_write_interval > 0) {
+	utime_t now = ceph_clock_now(g_ceph_context);
+	utime_t elapsed = now - last_write_start;
+	if (elapsed >= g_conf->journal_min_write_interval)
+	  break;
+
+	utime_t until = last_write_start;
+	until += g_conf->journal_min_write_interval;
+	utime_t wait = now - until;
+	dout(10) << "write_thread_entry elapsed " << elapsed << " < " << g_conf->journal_min_write_interval
+		 << " journal_min_write_interval, waiting for " << wait << " until " << until << dendl;
+	queue_cond.WaitUntil(queue_lock, until);
+      }
+
       if (writeq.empty()) {
 	if (write_stop)
 	  break;
@@ -1137,6 +1154,8 @@ void FileJournal::write_thread_entry()
       }
     }
 #endif
+
+    last_write_start = ceph_clock_now(g_ceph_context);
 
     Mutex::Locker locker(write_lock);
     uint64_t orig_ops = 0;
