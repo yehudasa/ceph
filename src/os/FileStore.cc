@@ -2187,7 +2187,6 @@ void FileStore::queue_op(OpSequencer *osr, Op *o)
   // mark apply start _now_, because we need to drain the entire apply
   // queue during commit in order to put the store in a consistent
   // state.
-  _op_apply_start(o->op);
   op_tp.lock();
 
   osr->queue(o);
@@ -2257,6 +2256,7 @@ void FileStore::_do_op(OpSequencer *osr)
 {
   osr->apply_lock.Lock();
   Op *o = osr->peek_queue();
+  op_apply_start(o->op);
 
   dout(5) << "_do_op " << o << " seq " << o->op << " " << *osr << "/" << osr->parent << " start" << dendl;
   int r = do_transactions(o->tls, o->op);
@@ -3792,7 +3792,6 @@ void FileStore::trigger_commit(uint64_t seq)
   _trigger_commit(seq);
   journal_lock.Unlock();
 }
-
 void FileStore::sync()
 {
   Mutex l("FileStore::sync");

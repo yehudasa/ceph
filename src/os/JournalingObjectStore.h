@@ -36,7 +36,6 @@ protected:
   Mutex com_lock;
 
   list<uint64_t> ops_submitting;
-  list<Cond*> ops_apply_blocked;
 
   bool replaying, force_commit;
 
@@ -44,9 +43,6 @@ protected:
   void journal_start();
   void journal_stop();
   int journal_replay(uint64_t fs_op_seq);
-
-  virtual void trigger_commit(uint64_t op_seq) = 0;
-  void _trigger_commit(uint64_t op_seq);
 
   // --
   uint64_t op_submit_start();

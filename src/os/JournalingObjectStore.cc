@@ -123,25 +123,9 @@ uint64_t JournalingObjectStore::op_apply_start(uint64_t op)
 uint64_t JournalingObjectStore::_op_apply_start(uint64_t op) 
 {
   assert(journal_lock.is_locked());
-
-  // if we ops are blocked, or there are already people (left) in
-  // line, get in line.
-  if (blocked || !ops_apply_blocked.empty()) {
-    Cond cond;
-    ops_apply_blocked.push_back(&cond);
-    dout(10) << "op_apply_start " << op << " blocked (getting in back of line)" << dendl;
-    // sleep until we are not blocked AND we are at the front of line
-    while (blocked || ops_apply_blocked.front() != &cond)
-      cond.Wait(journal_lock);
-    dout(10) << "op_apply_start " << op << " woke (at front of line)" << dendl;
-    ops_apply_blocked.pop_front();
-    if (!ops_apply_blocked.empty()) {
-      dout(10) << "op_apply_start " << op << "  ...and kicking next in line" << dendl;
-      ops_apply_blocked.front()->Signal();
-    }
-  }
-  dout(10) << "op_apply_start " << op << " open_ops " << open_ops << " -> " << (open_ops+1) << dendl;
-  assert(!blocked);
+  dout(10) << "op_apply_start" << op << " open_ops " << open_ops << " -> " << (open_ops+1) << dendl;
+  while (blocked)
+    cond.Wait(journal_lock);
   open_ops++;
   return op;
 }
@@ -226,8 +210,7 @@ bool JournalingObjectStore::commit_start()
   if (applied_seq == committed_seq && !force_commit) {
     dout(10) << "commit_start nothing to do" << dendl;
     blocked = false;
-    if (!ops_apply_blocked.empty())
-      ops_apply_blocked.front()->Signal();
+    cond.Signal();
     assert(commit_waiters.empty());
     goto out;
   }
@@ -256,8 +239,7 @@ void JournalingObjectStore::commit_started()
   // allow new ops. (underlying fs should now be committing all prior ops)
   dout(10) << "commit_started committing " << committing_seq << ", unblocking" << dendl;
   blocked = false;
-  if (!ops_apply_blocked.empty())
-    ops_apply_blocked.front()->Signal();
+  cond.Signal();
 }
 
 void JournalingObjectStore::commit_finish()
