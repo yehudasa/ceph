@@ -61,7 +61,10 @@ WorkloadGenerator::WorkloadGenerator(vector<const char*> args)
 
   m_nr_runs.set(0);
 
+  set_num_objs_per_coll(def_num_obj_per_coll);
+  set_max_in_flight(def_max_in_flight);
   init_args(args);
+
   dout(0) << "data            = " << g_conf->osd_data << dendl;
   dout(0) << "journal         = " << g_conf->osd_journal << dendl;
   dout(0) << "journal size    = " << g_conf->osd_journal_size << dendl;
@@ -73,9 +76,6 @@ WorkloadGenerator::WorkloadGenerator(vector<const char*> args)
   ceph_assert(err == 0);
   err = m_store->mount();
   ceph_assert(err == 0);
-
-  set_max_in_flight(m_max_in_flight);
-  set_num_objs_per_coll(def_num_obj_per_coll);
 
   init(m_num_colls, 0);
 
