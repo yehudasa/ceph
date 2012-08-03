@@ -141,6 +141,8 @@ using namespace std;
 
 #include "messages/MWatchNotify.h"
 
+#include "messages/MBlob.h"
+
 #include "common/config.h"
 
 #define DEBUGLVL  10    // debug level of output
@@ -594,6 +596,9 @@ Message *decode_message(CephContext *cct, ceph_msg_header& header, ceph_msg_foot
     m = new MLock();
     break;
 
+  case M_BLOB:
+    m = new MBlob();
+    break;
 
     // -- simple messages without payload --
 

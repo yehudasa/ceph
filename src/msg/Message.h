@@ -99,6 +99,8 @@
 #define MSG_MDS_SLAVE_REQUEST      101
 #define MSG_MDS_TABLE_REQUEST      102
 
+#define M_BLOB                     103
+
 #define MSG_MDS_RESOLVE            0x200
 #define MSG_MDS_RESOLVEACK         0x201
 #define MSG_MDS_CACHEREJOIN        0x202

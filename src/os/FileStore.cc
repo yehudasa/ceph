@@ -3189,8 +3189,10 @@ int FileStore::_write(coll_t cid, const hobject_t& oid,
       true
 #endif
       ) {
-    if (m_filestore_sync_flush)
+    if (m_filestore_sync_flush) {
       ::sync_file_range(fd, offset, len, SYNC_FILE_RANGE_WRITE);
+      ::posix_fadvise(fd, offset, len, POSIX_FADV_DONTNEED);
+    }
     TEMP_FAILURE_RETRY(::close(fd));
   }
 
@@ -3520,6 +3522,7 @@ void FileStore::flusher_entry()
 	if (!stop && ep == sync_epoch) {
 	  dout(10) << "flusher_entry flushing+closing " << fd << " ep " << ep << dendl;
 	  ::sync_file_range(fd, off, len, SYNC_FILE_RANGE_WRITE);
+	  ::posix_fadvise(fd, off, len, POSIX_FADV_DONTNEED);
 	} else 
 	  dout(10) << "flusher_entry JUST closing " << fd << " (stop=" << stop << ", ep=" << ep
 		   << ", sync_epoch=" << sync_epoch << ")" << dendl;
