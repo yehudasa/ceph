@@ -825,7 +825,8 @@ test_keyvaluedb_iterators_SOURCES = test/ObjectMap/test_keyvaluedb_iterators.cc 
                                     os/LevelDBStore.cc
 test_keyvaluedb_iterators_LDFLAGS = ${AM_LDFLAGS}
 test_keyvaluedb_iterators_LDADD =  ${UNITTEST_STATIC_LDADD} $(LIBOS_LDA) $(LIBGLOBAL_LDA)
-test_keyvaluedb_iterators_CXXFLAGS = ${AM_CXXFLAGS} ${UNITTEST_CXXFLAGS} $(LEVELDB_INCLUDE)
+test_keyvaluedb_iterators_CXXFLAGS = ${AM_CXXFLAGS} ${UNITTEST_CXXFLAGS} \
+        -I$(top_srcdir)/src/leveldb/include
 bin_DEBUGPROGRAMS += test_keyvaluedb_iterators
 
 
