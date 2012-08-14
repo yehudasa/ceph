@@ -149,6 +149,11 @@ void Bencher::run_bench()
   time_t end = time(0) + max_duration;
   uint64_t ops = 0;
 
+  bufferlist bl;
+  uint64_t length = (*length_gen)();
+  for (uint64_t i = 0; i < length; ++i) {
+    bl.append(rand());
+  }
   while ((!max_duration || time(0) < end) && (!max_ops || ops < max_ops)) {
     start_op();
     uint64_t seq = stat_collector->next_seq();
@@ -156,12 +161,7 @@ void Bencher::run_bench()
       case WRITE: {
 	std::tr1::shared_ptr<OnDelete> on_delete(
 	  new OnDelete(new Cleanup(this)));
-	bufferlist bl;
-	uint64_t length = (*length_gen)();
 	stat_collector->start_write(seq, length);
-	for (uint64_t i = 0; i < length; ++i) {
-	  bl.append(rand());
-	}
 	backend->write(
 	  (*object_gen)(),
 	  (*offset_gen)(),
