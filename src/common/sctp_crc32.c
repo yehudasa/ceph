@@ -730,6 +730,7 @@ sctp_csum_finalize(uint32_t crc32c)
 
 uint32_t ceph_crc32c_le(uint32_t crc, unsigned char const *data, unsigned length)
 {
+	return 0;
 	return update_crc32(crc, data, length);
 }
 
