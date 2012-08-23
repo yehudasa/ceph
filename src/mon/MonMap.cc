@@ -258,8 +258,8 @@ int MonMap::build_initial(CephContext *cct, ostream& errout)
   }
 
   // fsid from conf?
-  if (!cct->_conf->fsid.is_zero()) {
-    fsid = cct->_conf->fsid;
+  if (!cct->_conf->cluster_uuid.is_zero()) {
+    fsid = cct->_conf->cluster_uuid;
   }
 
   // -m foo?

@@ -46,8 +46,8 @@ Options
    and initial ceph file system or to join an existing monitor
    cluster.  Three pieces of information must be provided:
 
-   - The cluster fsid.  This can come from a monmap (``--monmap <path>``) or
-     explicitly via ``--fsid <uuid>``.
+   - The cluster uuid.  This can come from a monmap (``--monmap <path>``) or
+     explicitly via ``--cluster-uuid <uuid>``.
    - A list of monitors and their addresses.  This list of monitors
      can come from a monmap (``--monmap <path>``), the ``mon host``
      configuration value (in *ceph.conf* or via ``-m

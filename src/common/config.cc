@@ -404,6 +404,9 @@ int md_config_t::parse_argv(std::vector<const char*>& args)
     else if (ceph_argparse_witharg(args, i, &val, "--client_mountpoint", "-r", (char*)NULL)) {
       set_val_or_die("client_mountpoint", val.c_str());
     }
+    else if (ceph_argparse_witharg(args, i, &val, "--fsid", (char*)NULL)) {
+      set_val_or_die("cluster_uuid", val.c_str());
+    }
     else {
       parse_option(args, i, NULL);
     }

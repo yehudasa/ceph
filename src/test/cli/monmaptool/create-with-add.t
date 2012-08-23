@@ -1,6 +1,6 @@
   $ monmaptool --create --add foo 2.3.4.5:6789 mymonmap
   monmaptool: monmap file mymonmap
-  monmaptool: generated fsid [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12} (re)
+  monmaptool: generated cluster uuid [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12} (re)
   monmaptool: writing epoch 0 to mymonmap (1 monitors)
 
   $ monmaptool --print mymonmap

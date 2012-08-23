@@ -30,7 +30,7 @@ using namespace std;
 
 void usage()
 {
-  cout << " usage: [--print] [--create [--clobber][--fsid uuid]] [--generate] [--set-initial-members] [--add name 1.2.3.4:567] [--rm name] <mapfilename>" << std::endl;
+  cout << " usage: [--print] [--create [--clobber][--cluster-uuid uuid]] [--generate] [--set-initial-members] [--add name 1.2.3.4:567] [--rm name] <mapfilename>" << std::endl;
   exit(1);
 }
 
@@ -131,9 +131,9 @@ int main(int argc, const char **argv)
     monmap.created = ceph_clock_now(g_ceph_context);
     monmap.last_changed = monmap.created;
     srand(getpid() + time(0));
-    if (g_conf->fsid.is_zero()) {
+    if (g_conf->cluster_uuid.is_zero()) {
       monmap.generate_fsid();
-      cout << me << ": generated fsid " << monmap.fsid << std::endl;
+      cout << me << ": generated cluster uuid " << monmap.fsid << std::endl;
     }
     modified = true;
   }
@@ -159,9 +159,9 @@ int main(int argc, const char **argv)
     modified = true;
   }
 
-  if (!g_conf->fsid.is_zero()) {
-    monmap.fsid = g_conf->fsid;
-    cout << me << ": set fsid to " << monmap.fsid << std::endl;
+  if (!g_conf->cluster_uuid.is_zero()) {
+    monmap.fsid = g_conf->cluster_uuid;
+    cout << me << ": set cluster uuid to " << monmap.fsid << std::endl;
     modified = true;
   }
 

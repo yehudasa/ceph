@@ -182,13 +182,13 @@ int main(int argc, const char **argv)
       }
     }
 
-    if (!g_conf->fsid.is_zero()) {
-      monmap.fsid = g_conf->fsid;
-      cout << argv[0] << ": set fsid to " << g_conf->fsid << std::endl;
+    if (!g_conf->cluster_uuid.is_zero()) {
+      monmap.fsid = g_conf->cluster_uuid;
+      cout << argv[0] << ": set cluster uuid to " << g_conf->cluster_uuid << std::endl;
     }
     
     if (monmap.fsid.is_zero()) {
-      cerr << argv[0] << ": generated monmap has no fsid; use '--fsid <uuid>'" << std::endl;
+      cerr << argv[0] << ": generated monmap has no cluster uuid; use '--cluster-uuid <uuid>'" << std::endl;
       exit(10);
     }
 

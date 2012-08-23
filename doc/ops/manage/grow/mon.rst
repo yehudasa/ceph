@@ -11,8 +11,8 @@ Adding a monitor
    --mkfs`` command.  You need to provide the new monitor with three
    pieces of information:
 
-   - the cluster fsid.  This can come from a monmap (``--monmap
-     </path/to/monmap>``) for explicitly via ``--fsid <fsid>``.
+   - the cluster uuid.  This can come from a monmap (``--monmap
+     </path/to/monmap>``) for explicitly via ``--cluster-uuid <uuid>``.
    - one or more existing monitors to join.  This can come via ``-m
      <host1,host2,...>``, a monmap (``--monmap </some/path>``), or
      ``[mon.foo]`` sections with ``mon addr`` fields in *ceph.conf*.
@@ -23,7 +23,7 @@ Adding a monitor
    pieces of information will work.  The simplest way to do this is
    usually::
 
-     $ ceph mon getmap -o /tmp/monmap           # provides fsid and existing monitor addrs
+     $ ceph mon getmap -o /tmp/monmap           # provides uuid and existing monitor addrs
      $ ceph auth get mon. -o /tmp/monkey        # mon. auth key
      $ ceph-mon -i newname --mkfs --monmap /tmp/monmap --keyring /tmp/monkey
 

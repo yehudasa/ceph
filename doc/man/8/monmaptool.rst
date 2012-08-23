@@ -68,9 +68,9 @@ Options
 
     will remove the monitor with the specified ip:port from the map.
 
-.. option:: --fsid uuid
+.. option:: --cluster-uuid uuid
 
-    will set the fsid to the given uuid.  If not specified with --create, a random fsid will be generated.
+    will set the cluster uuid to the given uuid.  If not specified with --create, a random uuid will be generated.
 
 
 Example
