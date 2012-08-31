@@ -294,10 +294,6 @@ private:
    */
   map<int,version_t> peer_last_committed;
   /**
-   * @todo Check out what 'slurping' is.
-   */
-  int slurping;
-  /**
    * @}
    */
 
@@ -976,7 +972,6 @@ public:
 		   last_committed(0),
 		   accepted_pn(0),
 		   accepted_pn_from(0),
-		   slurping(0),
 		   collect_timeout_event(0),
 		   lease_renew_event(0),
 		   lease_ack_timeout_event(0),
@@ -1160,18 +1155,6 @@ public:
     return true;
   }
  
-  /**
-   * @defgroup Paxos_h_slurping_funcs Slurping-related functions
-   * @todo Discover what slurping is
-   * @{
-   */
-  void start_slurping();
-  void end_slurping();
-  bool is_slurping() { return slurping == 1; }
-  /**
-   * @}
-   */
-
   // read
   /**
    * @defgroup Paxos_h_read_funcs Read-related functions
