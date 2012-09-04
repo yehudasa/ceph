@@ -212,6 +212,8 @@ void Monitor::do_admin_command(string command, ostream& ss)
     _quorum_status(ss);
   else if (command == "sync_status")
     _sync_status(ss);
+  else if (command == "sync_force")
+    _sync_force(ss);
   else if (command.find("add_bootstrap_peer_hint") == 0)
     _add_bootstrap_peer_hint(command, ss);
   else
@@ -302,9 +304,19 @@ int Monitor::init()
   {
     // We have a potentially inconsistent store state in hands. Get rid of it
     // and start fresh.
+    bool clear_store = false;
     if (store->get("mon_sync", "in_sync") > 0) {
       dout(1) << __func__ << " clean up potentially inconsistent store state"
 	      << dendl;
+      clear_store = true;
+    }
+
+    if (store->get("mon_sync", "force_sync") > 0) {
+      dout(1) << __func__ << " force sync by clearing store state" << dendl;
+      clear_store = true;
+    }
+
+    if (clear_store) {
       set<string> sync_prefixes = get_sync_targets_names();
       sync_prefixes.insert("mon_sync");
       store->clear(sync_prefixes);
@@ -1821,6 +1833,15 @@ void Monitor::_sync_status(ostream& ss)
   jf.flush(ss);
 }
 
+void Monitor::_sync_force(ostream& ss)
+{
+  MonitorDBStore::Transaction tx;
+  tx.put("mon_sync", "force_sync", 1);
+  store->apply_transaction(tx);
+
+  ss << "forcing store sync the next time the monitor starts";
+}
+
 void Monitor::_quorum_status(ostream& ss)
 {
   JSONFormatter jf(true);
@@ -2029,16 +2050,27 @@ void Monitor::handle_command(MMonCommand *m)
       rs = ss.str();
       r = 0;
     }
-    if (m->cmd[0] == "sync_status") {
+    if (m->cmd[0] == "sync") {
       if (!access_r) {
 	r = -EACCES;
 	rs = "access denied";
 	goto out;
       }
-      stringstream ss;
-      _sync_status(ss);
-      rs = ss.str();
-      r = 0;
+      if (m->cmd[1] == "status") {
+	stringstream ss;
+	_sync_status(ss);
+	rs = ss.str();
+	r = 0;
+      } else if (m->cmd[1] == "force") {
+	stringstream ss;
+	_sync_force(ss);
+	rs = ss.str();
+	r = 0;
+      } else {
+	rs = "unknown command";
+	r = -EINVAL;
+	goto out;
+      }
     }
     if (m->cmd[0] == "quorum_status") {
       if (!access_r) {
