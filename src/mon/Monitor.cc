@@ -769,6 +769,7 @@ void Monitor::sync_finish(entity_inst_t &entity, bool abort)
   if (trim_timeouts.size() > 0)
     return;
 
+  dout(10) << __func__ << " no longer a sync leader" << dendl;
   sync_role &= ~SYNC_ROLE_LEADER;
 
   if (is_leader() && paxos->is_trim_disabled()) {
