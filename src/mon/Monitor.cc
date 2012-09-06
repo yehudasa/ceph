@@ -2589,6 +2589,15 @@ bool Monitor::_ms_dispatch(Message *m)
 	  break;
 	}
 
+	if (state == STATE_SYNCHRONIZING) {
+	  // we are synchronizing. These messages would do us no
+	  // good, thus just drop them and ignore them.
+	  dout(10) << __func__ << " ignore paxos msg from "
+		   << m->get_source_inst() << dendl;
+	  m->put();
+	  break;
+	}
+
 	MMonPaxos *pm = (MMonPaxos*)m;
 
 	// sanitize
