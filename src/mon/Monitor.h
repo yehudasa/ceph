@@ -1253,6 +1253,8 @@ public:
 	  Messenger *m, MonMap *map);
   ~Monitor();
 
+  static int check_features(MonitorDBStore *store);
+
   int init();
   void init_paxos();
   void shutdown();
