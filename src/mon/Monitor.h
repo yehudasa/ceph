@@ -1248,6 +1248,9 @@ public:
   int write_default_keyring(bufferlist& bl);
   void extract_save_mon_key(KeyRing& keyring);
 
+  // features
+  static CompatSet get_supported_features();
+  static CompatSet get_legacy_features();
   void read_features();
   void write_features(MonitorDBStore::Transaction &tx);
   void write_features();
@@ -1299,6 +1302,7 @@ private:
 };
 
 #define CEPH_MON_FEATURE_INCOMPAT_BASE CompatSet::Feature (1, "initial feature set (~v.18)")
+#define CEPH_MON_FEATURE_INCOMPAT_GV CompatSet::Feature (2, "global version sequencing (v0.52)")
 
 long parse_pos_long(const char *s, ostream *pss = NULL);
 
