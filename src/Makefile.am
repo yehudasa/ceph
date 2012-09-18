@@ -223,6 +223,10 @@ msbench_SOURCES = test/messenger_bench/ms_bench.cc test/bench/detailed_stat_coll
 msbench_LDADD = -lboost_program_options $(LIBGLOBAL_LDA)
 bin_DEBUGPROGRAMS += msbench
 
+journalbench_SOURCES = test/journal_bench/journal_bench.cc test/bench/detailed_stat_collector.cc
+journalbench_LDADD = librados.la -lboost_program_options $(LIBOS_LDA) $(LIBGLOBAL_LDA)
+bin_DEBUGPROGRAMS += journalbench
+
 smalliobench_SOURCES = test/bench/small_io_bench.cc test/bench/rados_backend.cc test/bench/detailed_stat_collector.cc test/bench/bencher.cc
 smalliobench_LDADD = librados.la -lboost_program_options $(LIBGLOBAL_LDA)
 bin_DEBUGPROGRAMS += smalliobench
