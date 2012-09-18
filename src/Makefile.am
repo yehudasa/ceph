@@ -76,6 +76,16 @@ ceph_mon_CXXFLAGS = ${AM_CXXFLAGS} \
 	-I$(top_srcdir)/src/leveldb/include
 bin_PROGRAMS += ceph-mon
 
+mon_store_converter_SOURCES = \
+  mon_store_converter.cc \
+	mon/MonitorStore.cc
+mon_store_converter_LDFLAGS = ${AM_LDFLAGS}
+mon_store_converter_LDADD =  $(LIBOS_LDA) $(LIBGLOBAL_LDA)
+mon_store_converter_CXXFLAGS = ${AM_CXXFLAGS} \
+	-I$(top_srcdir)/src/leveldb/include
+bin_PROGRAMS += mon_store_converter
+
+
 # osd
 ceph_osd_SOURCES = ceph_osd.cc objclass/class_debug.cc \
 	       objclass/class_api.cc
@@ -830,8 +840,6 @@ test_store_tool_LDADD =  $(LIBOS_LDA) $(LIBGLOBAL_LDA)
 test_store_tool_CXXFLAGS = ${AM_CXXFLAGS} ${UNITTEST_CXXFLAGS} \
 	-I$(top_srcdir)/src/leveldb/include
 bin_DEBUGPROGRAMS += test_store_tool
-
-
 
 # shell scripts
 editpaths = sed \
