@@ -1324,6 +1324,7 @@ libmds_a_SOURCES = \
 	mds/Server.cc \
 	mds/Mutation.cc \
 	mds/MDCache.cc \
+	mds/mdstypes.cc \
 	mds/Locker.cc \
 	mds/Migrator.cc \
 	mds/MDBalancer.cc \
