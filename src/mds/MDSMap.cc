@@ -290,31 +290,31 @@ void MDSMap::mds_info_t::decode(bufferlist::iterator& bl)
 
 
 
-void MDSMap::encode_client_old(bufferlist& bl) const
+void MDSMap::encode(bufferlist& bl, uint64_t features) const
 {
-  __u16 v = 2;
-  ::encode(v, bl);
-  ::encode(epoch, bl);
-  ::encode(flags, bl);
-  ::encode(last_failure, bl);
-  ::encode(root, bl);
-  ::encode(session_timeout, bl);
-  ::encode(session_autoclose, bl);
-  ::encode(max_file_size, bl);
-  ::encode(max_mds, bl);
-  ::encode(mds_info, bl);
-  __u32 n = data_pg_pools.size();
-  ::encode(n, bl);
-  for (vector<int64_t>::const_iterator p = data_pg_pools.begin(); p != data_pg_pools.end(); ++p) {
-    n = *p;
+  if ((features & CEPH_FEATURE_PGID64) == 0) {
+    __u16 v = 2;
+    ::encode(v, bl);
+    ::encode(epoch, bl);
+    ::encode(flags, bl);
+    ::encode(last_failure, bl);
+    ::encode(root, bl);
+    ::encode(session_timeout, bl);
+    ::encode(session_autoclose, bl);
+    ::encode(max_file_size, bl);
+    ::encode(max_mds, bl);
+    ::encode(mds_info, bl);
+    __u32 n = data_pg_pools.size();
     ::encode(n, bl);
+    for (vector<int64_t>::const_iterator p = data_pg_pools.begin(); p != data_pg_pools.end(); ++p) {
+      n = *p;
+      ::encode(n, bl);
+    }
+    int32_t m = cas_pg_pool;
+    ::encode(m, bl);
+    return;
   }
-  int32_t m = cas_pg_pool;
-  ::encode(m, bl);
-}
 
-void MDSMap::encode(bufferlist& bl) const
-{
   __u16 v = 3;
   ::encode(v, bl);
   ::encode(epoch, bl);
