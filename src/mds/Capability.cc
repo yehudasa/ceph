@@ -45,6 +45,28 @@ void Capability::Export::decode(bufferlist::iterator &p)
   ::decode(last_issue_stamp, p);
 }
 
+void Capability::Export::dump(Formatter *f) const
+{
+  f->dump_unsigned("wanted", wanted);
+  f->dump_unsigned("issued", issued);
+  f->dump_unsigned("pending", pending);
+  f->dump_unsigned("client_follows", client_follows);
+  f->dump_unsigned("migrate_seq", mseq);
+  f->dump_stream("last_issue_stamp") << last_issue_stamp;
+}
+
+void Capability::Export::generate_test_instances(list<Capability::Export*>& ls)
+{
+  ls.push_back(new Export);
+  ls.push_back(new Export);
+  ls.back()->wanted = 1;
+  ls.back()->issued = 2;
+  ls.back()->pending = 3;
+  ls.back()->client_follows = 4;
+  ls.back()->mseq = 5;
+  ls.back()->last_issue_stamp = utime_t(6, 7);
+}
+
 
 /*
  * Capability::revoke_info
@@ -66,6 +88,22 @@ void Capability::revoke_info::decode(bufferlist::iterator& bl)
   ::decode(before, bl);
   ::decode(seq, bl);
   ::decode(last_issue, bl);
+}
+
+void Capability::revoke_info::dump(Formatter *f) const
+{
+  f->dump_unsigned("before", before);
+  f->dump_unsigned("seq", seq);
+  f->dump_unsigned("last_issue", last_issue);
+}
+
+void Capability::revoke_info::generate_test_instances(list<Capability::revoke_info*>& ls)
+{
+  ls.push_back(new revoke_info);
+  ls.push_back(new revoke_info);
+  ls.back()->before = 1;
+  ls.back()->seq = 2;
+  ls.back()->last_issue = 3;
 }
 
 
@@ -97,4 +135,38 @@ void Capability::decode(bufferlist::iterator &bl)
   ::decode(_revokes, bl);
   
   _calc_issued();
+}
+
+void Capability::dump(Formatter *f) const
+{
+  f->dump_unsigned("last_sent", last_sent);
+  f->dump_unsigned("last_issue_stamp", last_issue_stamp);
+  f->dump_unsigned("wanted", _wanted);
+  f->dump_unsigned("pending", _pending);
+
+  f->open_array_section("revokes");
+  for (list<revoke_info>::const_iterator p = _revokes.begin(); p != _revokes.end(); ++p) {
+    f->open_object_section("revoke");
+    p->dump(f);
+    f->close_section();
+  }
+  f->close_section();
+}
+
+void Capability::generate_test_instances(list<Capability*>& ls)
+{
+  ls.push_back(new Capability);
+  ls.push_back(new Capability);
+  ls.back()->last_sent = 11;
+  ls.back()->last_issue_stamp = utime_t(12, 13);
+  ls.back()->_wanted = 14;
+  ls.back()->_pending = 15;
+  ls.back()->_revokes.push_back(revoke_info());
+  ls.back()->_revokes.back().before = 16;
+  ls.back()->_revokes.back().seq = 17;
+  ls.back()->_revokes.back().last_issue = 18;
+  ls.back()->_revokes.push_back(revoke_info());
+  ls.back()->_revokes.back().before = 19;
+  ls.back()->_revokes.back().seq = 20;
+  ls.back()->_revokes.back().last_issue = 21;
 }
