@@ -114,6 +114,10 @@ inline string ccap_string(int cap)
 struct file_layout_policy_t {
   ceph_file_layout layout;
 
+  file_layout_policy_t() {
+    memset(&layout, 0, sizeof(layout));
+  }
+
   void encode(bufferlist &bl) const;
   void decode(bufferlist::iterator& bl);
   void dump(Formatter *f) const;
