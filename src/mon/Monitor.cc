@@ -285,6 +285,33 @@ int Monitor::check_features(MonitorDBStore *store)
   return 0;
 }
 
+void Monitor::read_features()
+{
+  bufferlist bl;
+  store->get(MONITOR_NAME, COMPAT_SET_LOC, bl);
+  if (bl.length()) {
+    bufferlist::iterator p = bl.begin();
+    ::decode(features, p);
+  } else {
+    features = get_ceph_mon_feature_compat_set();
+  }
+  dout(10) << "features " << features << dendl;
+}
+
+void Monitor::write_features(MonitorDBStore::Transaction &tx)
+{
+  bufferlist bl;
+  features.encode(bl);
+  tx.put(MONITOR_NAME, COMPAT_SET_LOC, bl);
+}
+
+void Monitor::write_features()
+{
+  MonitorDBStore::Transaction tx;
+  write_features(tx);
+  store->apply_transaction(tx);
+}
+
 int Monitor::init()
 {
   lock.Lock();
@@ -337,17 +364,7 @@ int Monitor::init()
   }
 
   // open compatset
-  {
-    bufferlist bl;
-    store->get(MONITOR_NAME, COMPAT_SET_LOC, bl);
-    if (bl.length()) {
-      bufferlist::iterator p = bl.begin();
-      ::decode(features, p);
-    } else {
-      features = get_ceph_mon_feature_compat_set();
-    }
-    dout(10) << "features " << features << dendl;
-  }
+  read_features();
 
   // have we ever joined a quorum?
   has_ever_joined = (store->get(MONITOR_NAME, "joined") != 0);
@@ -3119,10 +3136,8 @@ int Monitor::mkfs(bufferlist& osdmapbl)
   magicbl.append("\n");
   t.put(MONITOR_NAME, "magic", magicbl);
 
-  bufferlist features;
-  CompatSet mon_features = get_ceph_mon_feature_compat_set();
-  mon_features.encode(features);
-  t.put(MONITOR_NAME, COMPAT_SET_LOC, features);
+  features = get_ceph_mon_feature_compat_set();
+  write_features(t);
 
   // save monmap, osdmap, keyring.
   bufferlist monmapbl;

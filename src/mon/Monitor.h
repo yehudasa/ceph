@@ -1248,6 +1248,10 @@ public:
   int write_default_keyring(bufferlist& bl);
   void extract_save_mon_key(KeyRing& keyring);
 
+  void read_features();
+  void write_features(MonitorDBStore::Transaction &tx);
+  void write_features();
+
  public:
   Monitor(CephContext *cct_, string nm, MonitorDBStore *s,
 	  Messenger *m, MonMap *map);
