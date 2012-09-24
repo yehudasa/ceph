@@ -251,6 +251,7 @@ CompatSet Monitor::get_supported_features()
   CompatSet::FeatureSet ceph_mon_feature_ro_compat;
   CompatSet::FeatureSet ceph_mon_feature_incompat;
   ceph_mon_feature_incompat.insert(CEPH_MON_FEATURE_INCOMPAT_BASE);
+  ceph_mon_feature_incompat.insert(CEPH_MON_FEATURE_INCOMPAT_GV);
   return CompatSet(ceph_mon_feature_compat, ceph_mon_feature_ro_compat,
 		   ceph_mon_feature_incompat);
 }
