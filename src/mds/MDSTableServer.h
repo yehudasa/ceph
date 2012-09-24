@@ -17,6 +17,10 @@
 
 #include "MDSTable.h"
 
+namespace ceph {
+  class Formatter;
+}
+
 class MMDSTableRequest;
 
 class MDSTableServer : public MDSTable {
@@ -30,8 +34,11 @@ public:
     uint64_t reqid;
     __s32 mds;
     version_t tid;
+
     void encode(bufferlist& bl) const;
     void decode(bufferlist::iterator& bl);
+    void dump(Formatter *f) const;
+    static void generate_test_instances(list<_pending*>& ls);
   };
   WRITE_CLASS_ENCODER(_pending)
   map<version_t,_pending> pending_for_mds;  // ** child should encode this! **

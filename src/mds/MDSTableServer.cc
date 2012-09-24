@@ -20,6 +20,8 @@
 #include "messages/MMDSTableRequest.h"
 #include "events/ETableServer.h"
 
+#include "common/Formatter.h"
+
 #define dout_subsys ceph_subsys_mds
 #undef dout_prefix
 #define dout_prefix *_dout << "mds." << mds->get_nodeid() << ".tableserver(" << get_mdstable_name(table) << ") "
@@ -30,22 +32,37 @@
 
 void MDSTableServer::_pending::encode(bufferlist& bl) const
 {
-  __u8 struct_v = 1;
-  ::encode(struct_v, bl);
+  ENCODE_START(2, 2, bl);
   ::encode(reqid, bl);
   ::encode(mds, bl);
   ::encode(tid, bl);
+  ENCODE_FINISH(bl);
 }
 
 void MDSTableServer::_pending::decode(bufferlist::iterator& bl)
 {
-  __u8 struct_v;
-  ::decode(struct_v, bl);
+  DECODE_START_LEGACY_COMPAT_LEN(2, 2, 2, bl);
   ::decode(reqid, bl);
   ::decode(mds, bl);
   ::decode(tid, bl);
+  DECODE_FINISH(bl);
 }
 
+void MDSTableServer::_pending::dump(Formatter *f) const
+{
+  f->dump_unsigned("reqid", reqid);
+  f->dump_unsigned("mds", mds);
+  f->dump_unsigned("tid", tid);
+}
+
+void MDSTableServer::_pending::generate_test_instances(list<MDSTableServer::_pending*>& ls)
+{
+  ls.push_back(new _pending);
+  ls.push_back(new _pending);
+  ls.back()->reqid = 234;
+  ls.back()->mds = 2;
+  ls.back()->tid = 35434;
+}
 
 
 /* This function DOES put the passed message before returning */
