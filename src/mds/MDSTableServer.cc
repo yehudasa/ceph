@@ -24,6 +24,30 @@
 #undef dout_prefix
 #define dout_prefix *_dout << "mds." << mds->get_nodeid() << ".tableserver(" << get_mdstable_name(table) << ") "
 
+/*
+ * MDSTableServer::_pending
+ */
+
+void MDSTableServer::_pending::encode(bufferlist& bl) const
+{
+  __u8 struct_v = 1;
+  ::encode(struct_v, bl);
+  ::encode(reqid, bl);
+  ::encode(mds, bl);
+  ::encode(tid, bl);
+}
+
+void MDSTableServer::_pending::decode(bufferlist::iterator& bl)
+{
+  __u8 struct_v;
+  ::decode(struct_v, bl);
+  ::decode(reqid, bl);
+  ::decode(mds, bl);
+  ::decode(tid, bl);
+}
+
+
+
 /* This function DOES put the passed message before returning */
 void MDSTableServer::handle_request(MMDSTableRequest *req)
 {

@@ -30,20 +30,8 @@ public:
     uint64_t reqid;
     __s32 mds;
     version_t tid;
-    void encode(bufferlist& bl) const {
-      __u8 struct_v = 1;
-      ::encode(struct_v, bl);
-      ::encode(reqid, bl);
-      ::encode(mds, bl);
-      ::encode(tid, bl);
-    }
-    void decode(bufferlist::iterator& bl) {
-      __u8 struct_v;
-      ::decode(struct_v, bl);
-      ::decode(reqid, bl);
-      ::decode(mds, bl);
-      ::decode(tid, bl);
-    }
+    void encode(bufferlist& bl) const;
+    void decode(bufferlist::iterator& bl);
   };
   WRITE_CLASS_ENCODER(_pending)
   map<version_t,_pending> pending_for_mds;  // ** child should encode this! **
