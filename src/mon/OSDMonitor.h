@@ -137,7 +137,7 @@ public:
 private:
   void update_from_paxos();
   void create_pending();  // prepare a new pending
-  void encode_pending(bufferlist &bl);
+  void encode_pending(MonitorDBStore::Transaction *t);
   void on_active();
 
   void update_msgr_features();
@@ -150,6 +150,9 @@ private:
   bool preprocess_query(PaxosServiceMessage *m);  // true if processed.
   bool prepare_update(PaxosServiceMessage *m);
   bool should_propose(double &delay);
+
+  void update_trim();
+  bool should_trim();
 
   bool can_mark_down(int o);
   bool can_mark_up(int o);
@@ -258,7 +261,9 @@ private:
   bool prepare_remove_snaps(class MRemoveSnaps *m);
 
  public:
-  OSDMonitor(Monitor *mn, Paxos *p);
+  OSDMonitor(Monitor *mn, Paxos *p, string service_name)
+  : PaxosService(mn, p, service_name),
+    thrash_map(0), thrash_last_up_osd(-1) { }
 
   void tick();  // check state, take actions
 

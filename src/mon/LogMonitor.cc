@@ -17,7 +17,7 @@
 
 #include "LogMonitor.h"
 #include "Monitor.h"
-#include "MonitorStore.h"
+#include "MonitorDBStore.h"
 
 #include "messages/MMonCommand.h"
 #include "messages/MLog.h"
@@ -32,7 +32,7 @@
 
 #define dout_subsys ceph_subsys_mon
 #undef dout_prefix
-#define dout_prefix _prefix(_dout, mon, paxos->get_version())
+#define dout_prefix _prefix(_dout, mon, get_version())
 static ostream& _prefix(std::ostream *_dout, Monitor *mon, version_t v) {
   return *_dout << "mon." << mon->name << "@" << mon->rank
 		<< "(" << mon->get_state_name()
@@ -68,7 +68,7 @@ ostream& operator<<(ostream& out, LogMonitor& pm)
 
 void LogMonitor::tick() 
 {
-  if (!paxos->is_active()) return;
+  if (!is_active()) return;
 
   update_from_paxos();
   dout(10) << *this << dendl;
@@ -93,26 +93,29 @@ void LogMonitor::create_initial()
 
 void LogMonitor::update_from_paxos()
 {
-  version_t paxosv = paxos->get_version();
-  if (paxosv == summary.version)
+  version_t version = get_version();
+  if (version == summary.version)
     return;
-  assert(paxosv >= summary.version);
+  assert(version >= summary.version);
 
   bufferlist blog;
 
-  if (summary.version != paxos->get_stashed_version()) {
-    bufferlist latest;
-    version_t v = paxos->get_stashed(latest);
-    dout(7) << "update_from_paxos loading summary e" << v << dendl;
-    bufferlist::iterator p = latest.begin();
-    ::decode(summary, p);
-  } 
+  version_t latest_full = get_version_latest_full();
+  if ((latest_full > 0) && (latest_full > summary.version)) {
+      bufferlist latest_bl;
+      get_version_full(latest_full, latest_bl);
+      assert(latest_bl.length() != 0);
+      dout(7) << __func__ << " loading summary e" << latest_full << dendl;
+      bufferlist::iterator p = latest_bl.begin();
+      ::decode(summary, p);
+      dout(7) << __func__ << " loaded summary e" << summary.version << dendl;
+  }
 
   // walk through incrementals
-  while (paxosv > summary.version) {
+  while (version > summary.version) {
     bufferlist bl;
-    bool success = paxos->read(summary.version+1, bl);
-    assert(success);
+    int err = get_version(summary.version+1, bl);
+    assert(err == 0);
 
     bufferlist::iterator p = bl.begin();
     __u8 v;
@@ -139,10 +142,6 @@ void LogMonitor::update_from_paxos()
     summary.version++;
   }
 
-  bufferlist bl;
-  ::encode(summary, bl);
-  paxos->stash_latest(paxosv, bl);
-
   if (blog.length()) {
     int fd = ::open(g_conf->mon_cluster_log_file.c_str(), O_WRONLY|O_APPEND|O_CREAT, 0600);
     if (fd < 0) {
@@ -154,11 +153,6 @@ void LogMonitor::update_from_paxos()
     }
   }
 
-  // trim
-  unsigned max = g_conf->mon_max_log_epochs;
-  if (mon->is_leader() && paxosv > max)
-    paxos->trim_to(paxosv - max);
-
   check_subs();
 }
 
@@ -166,18 +160,36 @@ void LogMonitor::create_pending()
 {
   pending_log.clear();
   pending_summary = summary;
-  dout(10) << "create_pending v " << (paxos->get_version() + 1) << dendl;
+  dout(10) << "create_pending v " << (get_version() + 1) << dendl;
 }
 
-void LogMonitor::encode_pending(bufferlist &bl)
+void LogMonitor::encode_pending(MonitorDBStore::Transaction *t)
 {
-  dout(10) << "encode_pending v " << (paxos->get_version() + 1) << dendl;
+  version_t version = get_version() + 1;
+  bufferlist bl;
+  dout(10) << __func__ << " v" << version << dendl;
   __u8 v = 1;
   ::encode(v, bl);
-  for (multimap<utime_t,LogEntry>::iterator p = pending_log.begin();
-       p != pending_log.end();
-       p++)
+  multimap<utime_t,LogEntry>::iterator p;
+  for (p = pending_log.begin(); p != pending_log.end(); p++)
     p->second.encode(bl);
+
+  bufferlist summary_bl;
+  ::encode(summary, summary_bl);
+
+  put_version(t, version, bl);
+  put_last_committed(t, version);
+
+  put_version_full(t, version, summary_bl);
+  put_version_latest_full(t, version);
+}
+
+void LogMonitor::update_trim()
+{
+  unsigned max = g_conf->mon_max_log_epochs;
+  version_t version = get_version();
+  if (mon->is_leader() && version > max)
+    set_trim_to(version - max);
 }
 
 bool LogMonitor::preprocess_query(PaxosServiceMessage *m)
@@ -298,7 +310,7 @@ bool LogMonitor::preprocess_command(MMonCommand *m)
   if (r != -1) {
     string rs;
     getline(ss, rs);
-    mon->reply_command(m, r, rs, rdata, paxos->get_version());
+    mon->reply_command(m, r, rs, rdata, get_version());
     return true;
   } else
     return false;
@@ -315,7 +327,7 @@ bool LogMonitor::prepare_command(MMonCommand *m)
   ss << "unrecognized command";
 
   getline(ss, rs);
-  mon->reply_command(m, err, rs, paxos->get_version());
+  mon->reply_command(m, err, rs, get_version());
   return false;
 }
 

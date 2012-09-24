@@ -76,9 +76,20 @@ endif
 # monitor
 ceph_mon_SOURCES = ceph_mon.cc
 ceph_mon_LDFLAGS = $(AM_LDFLAGS)
-ceph_mon_LDADD = libmon.a $(LIBGLOBAL_LDA)
-ceph_mon_CXXFLAGS = ${AM_CXXFLAGS}
+ceph_mon_LDADD = libmon.a $(LIBOS_LDA) $(LIBGLOBAL_LDA)
+ceph_mon_CXXFLAGS = ${AM_CXXFLAGS} \
+	-I$(top_srcdir)/src/leveldb/include
 bin_PROGRAMS += ceph-mon
+
+mon_store_converter_SOURCES = \
+  mon_store_converter.cc \
+	mon/MonitorStore.cc
+mon_store_converter_LDFLAGS = ${AM_LDFLAGS}
+mon_store_converter_LDADD =  $(LIBOS_LDA) $(LIBGLOBAL_LDA)
+mon_store_converter_CXXFLAGS = ${AM_CXXFLAGS} \
+	-I$(top_srcdir)/src/leveldb/include
+bin_PROGRAMS += mon_store_converter
+
 
 # osd
 ceph_osd_SOURCES = ceph_osd.cc objclass/class_debug.cc \
@@ -107,6 +118,8 @@ ceph_CXXFLAGS = ${AM_CXXFLAGS}
 
 ceph_conf_SOURCES = ceph_conf.cc
 ceph_conf_LDADD = $(LIBGLOBAL_LDA)
+ceph_conf_CXXFLAGS = ${AM_CXXFLAGS} \
+	-I$(top_srcdir)/src/leveldb/include
 ceph_authtool_SOURCES = ceph_authtool.cc
 ceph_authtool_LDADD = $(LIBGLOBAL_LDA)
 bin_PROGRAMS += ceph ceph-conf ceph-authtool
@@ -924,6 +937,14 @@ test_keyvaluedb_iterators_LDADD =  ${UNITTEST_STATIC_LDADD} $(LIBOS_LDA) $(LIBGL
 test_keyvaluedb_iterators_CXXFLAGS = ${AM_CXXFLAGS} ${UNITTEST_CXXFLAGS} $(LEVELDB_INCLUDE)
 bin_DEBUGPROGRAMS += test_keyvaluedb_iterators
 
+test_store_tool_SOURCES = \
+  test/ObjectMap/test_store_tool/test_store_tool.cc \
+  os/LevelDBStore.cc
+test_store_tool_LDFLAGS = ${AM_LDFLAGS}
+test_store_tool_LDADD =  $(LIBOS_LDA) $(LIBGLOBAL_LDA)
+test_store_tool_CXXFLAGS = ${AM_CXXFLAGS} ${UNITTEST_CXXFLAGS} \
+	-I$(top_srcdir)/src/leveldb/include
+bin_DEBUGPROGRAMS += test_store_tool
 
 # shell scripts
 editpaths = sed \
@@ -1217,8 +1238,9 @@ libmon_a_SOURCES = \
 	mon/LogMonitor.cc \
 	mon/AuthMonitor.cc \
 	mon/Elector.cc \
-	mon/MonitorStore.cc
-libmon_a_CXXFLAGS= ${CRYPTO_CXXFLAGS} ${AM_CXXFLAGS}
+	os/LevelDBStore.cc
+libmon_a_CXXFLAGS= ${CRYPTO_CXXFLAGS} ${AM_CXXFLAGS} \
+	-I$(top_srcdir)/src/leveldb/include
 noinst_LIBRARIES += libmon.a
 
 libmds_a_SOURCES = \
@@ -1633,6 +1655,7 @@ noinst_HEADERS = \
         messages/MMonProbe.h\
         messages/MMonSubscribe.h\
         messages/MMonSubscribeAck.h\
+        messages/MMonSync.h \
         messages/MOSDAlive.h\
         messages/MOSDBoot.h\
         messages/MOSDFailure.h\
@@ -1676,7 +1699,7 @@ noinst_HEADERS = \
         mon/MonClient.h\
         mon/MonMap.h\
         mon/Monitor.h\
-        mon/MonitorStore.h\
+				mon/MonitorDBStore.h\
         mon/OSDMonitor.h\
         mon/PGMap.h\
         mon/PGMonitor.h\
