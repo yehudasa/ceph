@@ -160,6 +160,14 @@ class interval_set {
     return m.size();
   }
 
+  typename interval_set<T>::const_iterator begin() const {
+    return typename interval_set<T>::const_iterator(m.begin());
+  }
+
+  typename interval_set<T>::const_iterator end() const {
+    return typename interval_set<T>::const_iterator(m.end());
+  }
+
   typename interval_set<T>::iterator begin() {
     return typename interval_set<T>::iterator(m.begin());
   }
@@ -168,13 +176,6 @@ class interval_set {
     return typename interval_set<T>::iterator(m.end());
   }
 
-  typename interval_set<T>::const_iterator begin() const {
-    return typename interval_set<T>::const_iterator(m.begin());
-  }
-
-  typename interval_set<T>::const_iterator end() const {
-    return typename interval_set<T>::const_iterator(m.end());
-  }
 
   // helpers
  private:

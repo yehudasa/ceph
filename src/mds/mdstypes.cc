@@ -522,3 +522,50 @@ void session_info_t::decode(bufferlist::iterator& p)
   prealloc_inos.insert(used_inos);
   used_inos.clear();
 }
+
+void session_info_t::dump(Formatter *f) const
+{
+  f->dump_stream("inst") << inst;
+
+  f->open_array_section("completed_requests");
+  for (set<tid_t>::const_iterator p = completed_requests.begin();
+       p != completed_requests.end();
+       ++p)
+    f->dump_unsigned("tid", *p);
+  f->close_section();
+
+  f->open_array_section("prealloc_inos");
+  for (interval_set<inodeno_t>::const_iterator p = prealloc_inos.begin();
+       p != prealloc_inos.end();
+       ++p) {
+    f->open_object_section("ino_range");
+    f->dump_unsigned("start", p.get_start());
+    f->dump_unsigned("length", p.get_len());
+    f->close_section();
+  }
+  f->close_section();
+
+  f->open_array_section("used_inos");
+  for (interval_set<inodeno_t>::const_iterator p = prealloc_inos.begin();
+       p != prealloc_inos.end();
+       ++p) {
+    f->open_object_section("ino_range");
+    f->dump_unsigned("start", p.get_start());
+    f->dump_unsigned("length", p.get_len());
+    f->close_section();
+  }
+  f->close_section();
+}
+
+void session_info_t::generate_test_instances(list<session_info_t*>& ls)
+{
+  ls.push_back(new session_info_t);
+  ls.push_back(new session_info_t);
+  ls.back()->inst = entity_inst_t(entity_name_t::MDS(12), entity_addr_t());
+  ls.back()->completed_requests.insert(234);
+  ls.back()->completed_requests.insert(237);
+  ls.back()->prealloc_inos.insert(333, 12);
+  ls.back()->prealloc_inos.insert(377, 112);
+  ls.back()->used_inos.insert(777, 12);
+  ls.back()->used_inos.insert(888, 1212);
+}
