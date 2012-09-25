@@ -649,3 +649,27 @@ void string_snap_t::generate_test_instances(list<string_snap_t*>& ls)
   ls.back()->name = "bar";
   ls.back()->snapid = 456;
 }
+
+
+/*
+ * MDSCacheObjectInfo
+ */
+void MDSCacheObjectInfo::encode(bufferlist& bl) const
+{
+  __u8 struct_v = 1;
+  ::encode(struct_v, bl);
+  ::encode(ino, bl);
+  ::encode(dirfrag, bl);
+  ::encode(dname, bl);
+  ::encode(snapid, bl);
+}
+
+void MDSCacheObjectInfo::decode(bufferlist::iterator& p)
+{
+  __u8 struct_v;
+  ::decode(struct_v, p);
+  ::decode(ino, p);
+  ::decode(dirfrag, p);
+  ::decode(dname, p);
+  ::decode(snapid, p);
+}
