@@ -656,20 +656,43 @@ void string_snap_t::generate_test_instances(list<string_snap_t*>& ls)
  */
 void MDSCacheObjectInfo::encode(bufferlist& bl) const
 {
-  __u8 struct_v = 1;
-  ::encode(struct_v, bl);
+  ENCODE_START(2, 2, bl);
   ::encode(ino, bl);
   ::encode(dirfrag, bl);
   ::encode(dname, bl);
   ::encode(snapid, bl);
+  ENCODE_FINISH(bl);
 }
 
 void MDSCacheObjectInfo::decode(bufferlist::iterator& p)
 {
-  __u8 struct_v;
-  ::decode(struct_v, p);
+  DECODE_START_LEGACY_COMPAT_LEN(2, 2, 2, p);
   ::decode(ino, p);
   ::decode(dirfrag, p);
   ::decode(dname, p);
   ::decode(snapid, p);
+  DECODE_FINISH(p);
+}
+
+void MDSCacheObjectInfo::dump(Formatter *f) const
+{
+  f->dump_unsigned("ino", ino);
+  f->dump_stream("dirfrag") << dirfrag;
+  f->dump_string("name", dname);
+  f->dump_unsigned("snapid", snapid);
+}
+
+void MDSCacheObjectInfo::generate_test_instances(list<MDSCacheObjectInfo*>& ls)
+{
+  ls.push_back(new MDSCacheObjectInfo);
+  ls.push_back(new MDSCacheObjectInfo);
+  ls.back()->ino = 1;
+  ls.back()->dirfrag = dirfrag_t(2, 3);
+  ls.back()->dname = "fooname";
+  ls.back()->snapid = CEPH_NOSNAP;
+  ls.push_back(new MDSCacheObjectInfo);
+  ls.back()->ino = 121;
+  ls.back()->dirfrag = dirfrag_t(222, 0);
+  ls.back()->dname = "bar foo";
+  ls.back()->snapid = 21322;
 }
