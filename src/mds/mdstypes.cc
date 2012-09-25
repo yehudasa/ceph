@@ -499,6 +499,28 @@ void fnode_t::generate_test_instances(list<fnode_t*>& ls)
 
 
 /*
+ * old_rstat_t
+ */
+void old_rstat_t::encode(bufferlist& bl) const
+{
+  __u8 struct_v = 1;
+  ::encode(struct_v, bl);
+  ::encode(first, bl);
+  ::encode(rstat, bl);
+  ::encode(accounted_rstat, bl);
+}
+
+void old_rstat_t::decode(bufferlist::iterator& bl)
+{
+  __u8 struct_v;
+  ::decode(struct_v, bl);
+  ::decode(first, bl);
+  ::decode(rstat, bl);
+  ::decode(accounted_rstat, bl);
+}
+
+
+/*
  * session_info_t
  */
 void session_info_t::encode(bufferlist& bl) const
