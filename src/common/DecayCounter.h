@@ -51,28 +51,8 @@ public:
 
  public:
 
-  void encode(bufferlist& bl) const {
-    __u8 struct_v = 3;
-    ::encode(struct_v, bl);
-    ::encode(val, bl);
-    ::encode(delta, bl);
-    ::encode(vel, bl);
-  }
-  void decode(const utime_t &t, bufferlist::iterator &p) {
-    __u8 struct_v;
-    ::decode(struct_v, p);
-    if (struct_v < 2) {
-      double half_life;
-      ::decode(half_life, p);
-    }
-    if (struct_v < 3) {
-      double k;
-      ::decode(k, p);
-    }
-    ::decode(val, p);
-    ::decode(delta, p);
-    ::decode(vel, p);
-  }
+  void encode(bufferlist& bl) const;
+  void decode(const utime_t &t, bufferlist::iterator& p);
 
   DecayCounter(const utime_t &now)
     : val(0), delta(0), vel(0), last_decay(now)
@@ -131,25 +111,8 @@ public:
     last_decay = now;
     val = delta = 0;
   }
-  
-  void decay(utime_t now, const DecayRate &rate) {
-    utime_t el = now;
-    el -= last_decay;
 
-    if (el.sec() >= 1) {
-      // calculate new value
-      double newval = (val+delta) * exp((double)el * rate.k);
-      if (newval < .01) newval = 0.0;
-      
-      // calculate velocity approx
-      vel += (newval - val) * (double)el;
-      vel *= exp((double)el * rate.k);
-      
-      val = newval;
-      delta = 0;
-      last_decay = now;
-    }
-  }
+  void decay(utime_t now, const DecayRate &rate);
 };
 
 inline void encode(const DecayCounter &c, bufferlist &bl) { c.encode(bl); }
