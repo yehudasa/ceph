@@ -519,30 +519,51 @@ void old_rstat_t::decode(bufferlist::iterator& bl)
   ::decode(accounted_rstat, bl);
 }
 
+void old_rstat_t::dump(Formatter *f) const
+{
+  f->dump_unsigned("snapid", first);
+  f->open_object_section("rstat");
+  rstat.dump(f);
+  f->close_section();
+  f->open_object_section("accounted_rstat");
+  accounted_rstat.dump(f);
+  f->close_section();
+}
+
+void old_rstat_t::generate_test_instances(list<old_rstat_t*>& ls)
+{
+  ls.push_back(new old_rstat_t());
+  ls.push_back(new old_rstat_t());
+  ls.back()->first = 12;
+  list<nest_info_t*> nls;
+  nest_info_t::generate_test_instances(nls);
+  ls.back()->rstat = *nls.back();
+  ls.back()->accounted_rstat = *nls.front();
+}
 
 /*
  * session_info_t
  */
 void session_info_t::encode(bufferlist& bl) const
 {
-  __u8 v = 1;
-  ::encode(v, bl);
+  ENCODE_START(2, 2, bl);
   ::encode(inst, bl);
   ::encode(completed_requests, bl);
   ::encode(prealloc_inos, bl);   // hacky, see below.
   ::encode(used_inos, bl);
+  ENCODE_FINISH(bl);
 }
 
 void session_info_t::decode(bufferlist::iterator& p)
 {
-  __u8 v;
-  ::decode(v, p);
+  DECODE_START_LEGACY_COMPAT_LEN(2, 2, 2, p);
   ::decode(inst, p);
   ::decode(completed_requests, p);
   ::decode(prealloc_inos, p);
   ::decode(used_inos, p);
   prealloc_inos.insert(used_inos);
   used_inos.clear();
+  DECODE_FINISH(p);
 }
 
 void session_info_t::dump(Formatter *f) const
