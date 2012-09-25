@@ -602,6 +602,8 @@ struct string_snap_t {
 
   void encode(bufferlist& bl) const;
   void decode(bufferlist::iterator& p);
+  void dump(Formatter *f) const;
+  static void generate_test_instances(list<string_snap_t*>& ls);
 };
 WRITE_CLASS_ENCODER(string_snap_t)
 
