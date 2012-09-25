@@ -27,21 +27,7 @@ class MDSTableServer : public MDSTable {
 public:
   int table;
 
-  /* mds's requesting any pending ops.  child needs to encodig the corresponding
-   * pending mutation state in the table.
-   */
-  struct _pending {
-    uint64_t reqid;
-    __s32 mds;
-    version_t tid;
-
-    void encode(bufferlist& bl) const;
-    void decode(bufferlist::iterator& bl);
-    void dump(Formatter *f) const;
-    static void generate_test_instances(list<_pending*>& ls);
-  };
-  WRITE_CLASS_ENCODER(_pending)
-  map<version_t,_pending> pending_for_mds;  // ** child should encode this! **
+  map<version_t,mds_table_pending_t> pending_for_mds;  // ** child should encode this! **
 
 
 private:
@@ -112,6 +98,5 @@ private:
   void finish_recovery();
   void handle_mds_recovery(int who);
 };
-WRITE_CLASS_ENCODER(MDSTableServer::_pending)
 
 #endif

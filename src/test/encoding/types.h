@@ -108,9 +108,7 @@ TYPE(old_rstat_t)
 TYPE(session_info_t)
 TYPE(string_snap_t)
 TYPE(MDSCacheObjectInfo)
-
-#include "mds/MDSTableServer.h"
-TYPE(MDSTableServer::_pending)
+TYPE(mds_table_pending_t)
 
 #ifdef WITH_RADOSGW
 

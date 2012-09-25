@@ -26,45 +26,6 @@
 #undef dout_prefix
 #define dout_prefix *_dout << "mds." << mds->get_nodeid() << ".tableserver(" << get_mdstable_name(table) << ") "
 
-/*
- * MDSTableServer::_pending
- */
-
-void MDSTableServer::_pending::encode(bufferlist& bl) const
-{
-  ENCODE_START(2, 2, bl);
-  ::encode(reqid, bl);
-  ::encode(mds, bl);
-  ::encode(tid, bl);
-  ENCODE_FINISH(bl);
-}
-
-void MDSTableServer::_pending::decode(bufferlist::iterator& bl)
-{
-  DECODE_START_LEGACY_COMPAT_LEN(2, 2, 2, bl);
-  ::decode(reqid, bl);
-  ::decode(mds, bl);
-  ::decode(tid, bl);
-  DECODE_FINISH(bl);
-}
-
-void MDSTableServer::_pending::dump(Formatter *f) const
-{
-  f->dump_unsigned("reqid", reqid);
-  f->dump_unsigned("mds", mds);
-  f->dump_unsigned("tid", tid);
-}
-
-void MDSTableServer::_pending::generate_test_instances(list<MDSTableServer::_pending*>& ls)
-{
-  ls.push_back(new _pending);
-  ls.push_back(new _pending);
-  ls.back()->reqid = 234;
-  ls.back()->mds = 2;
-  ls.back()->tid = 35434;
-}
-
-
 /* This function DOES put the passed message before returning */
 void MDSTableServer::handle_request(MMDSTableRequest *req)
 {
@@ -195,7 +156,7 @@ void MDSTableServer::handle_mds_recovery(int who)
     dout(7) << "handle_mds_recovery mds." << who << dendl;
   
   // resend agrees for recovered mds
-  for (map<version_t,_pending>::iterator p = pending_for_mds.begin();
+  for (map<version_t,mds_table_pending_t>::iterator p = pending_for_mds.begin();
        p != pending_for_mds.end();
        p++) {
     if (who >= 0 && p->second.mds != who)

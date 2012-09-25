@@ -798,6 +798,28 @@ namespace __gnu_cxx {
 }
 
 
+/*
+ * mds_table_pending_t
+ *
+ * mds's requesting any pending ops.  child needs to encodig the
+ * corresponding pending mutation state in the table.
+ */
+  /* mds's requesting any pending ops.  child needs to encodig the corresponding
+   * pending mutation state in the table.
+   */
+struct mds_table_pending_t {
+  uint64_t reqid;
+  __s32 mds;
+  version_t tid;
+
+  void encode(bufferlist& bl) const;
+  void decode(bufferlist::iterator& bl);
+  void dump(Formatter *f) const;
+  static void generate_test_instances(list<mds_table_pending_t*>& ls);
+};
+WRITE_CLASS_ENCODER(mds_table_pending_t)
+
+
 
 // ================================================================
 
