@@ -599,18 +599,9 @@ struct string_snap_t {
   string_snap_t() {}
   string_snap_t(const string& n, snapid_t s) : name(n), snapid(s) {}
   string_snap_t(const char *n, snapid_t s) : name(n), snapid(s) {}
-  void encode(bufferlist& bl) const {
-    __u8 struct_v = 1;
-    ::encode(struct_v, bl);
-    ::encode(name, bl);
-    ::encode(snapid, bl);
-  }
-  void decode(bufferlist::iterator& bl) {
-    __u8 struct_v = 1;
-    ::decode(struct_v, bl);
-    ::decode(name, bl);
-    ::decode(snapid, bl);
-  }
+
+  void encode(bufferlist& bl) const;
+  void decode(bufferlist::iterator& p);
 };
 WRITE_CLASS_ENCODER(string_snap_t)
 

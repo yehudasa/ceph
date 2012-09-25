@@ -612,3 +612,23 @@ void session_info_t::generate_test_instances(list<session_info_t*>& ls)
   ls.back()->used_inos.insert(777, 12);
   ls.back()->used_inos.insert(888, 1212);
 }
+
+
+/*
+ * string_snap_t
+ */
+void string_snap_t::encode(bufferlist& bl) const
+{
+  __u8 struct_v = 1;
+  ::encode(struct_v, bl);
+  ::encode(name, bl);
+  ::encode(snapid, bl);
+}
+
+void string_snap_t::decode(bufferlist::iterator& bl)
+{
+  __u8 struct_v = 1;
+  ::decode(struct_v, bl);
+  ::decode(name, bl);
+  ::decode(snapid, bl);
+}
