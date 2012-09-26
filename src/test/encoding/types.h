@@ -110,6 +110,9 @@ TYPE(string_snap_t)
 TYPE(MDSCacheObjectInfo)
 TYPE(mds_table_pending_t)
 
+#include "mds/events/ECommitted.h"
+TYPE(ECommitted)
+
 #ifdef WITH_RADOSGW
 
 #include "rgw/rgw_rados.h"
