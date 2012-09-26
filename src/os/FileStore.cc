@@ -1938,7 +1938,7 @@ int FileStore::mount()
   {
     LevelDBStore *omap_store = new LevelDBStore(omap_dir);
     stringstream err;
-    if (omap_store->init(err)) {
+    if (omap_store->create_and_open(err)) {
       derr << "Error initializing leveldb: " << err.str() << dendl;
       ret = -1;
       goto close_current_fd;
