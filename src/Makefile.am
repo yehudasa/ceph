@@ -1809,6 +1809,7 @@ noinst_HEADERS = \
         mon/MonClient.h\
         mon/MonMap.h\
         mon/Monitor.h\
+	mon/MonitorStore.h\
         mon/MonitorDBStore.h\
         mon/OSDMonitor.h\
         mon/PGMap.h\
