@@ -1238,6 +1238,7 @@ libmon_a_SOURCES = \
 	mon/LogMonitor.cc \
 	mon/AuthMonitor.cc \
 	mon/Elector.cc \
+	mon/MonitorStore.cc \
 	os/LevelDBStore.cc
 libmon_a_CXXFLAGS= ${CRYPTO_CXXFLAGS} ${AM_CXXFLAGS} \
 	-I$(top_srcdir)/src/leveldb/include
@@ -1699,6 +1700,7 @@ noinst_HEADERS = \
         mon/MonClient.h\
         mon/MonMap.h\
         mon/Monitor.h\
+				mon/MonitorStore.h\
 				mon/MonitorDBStore.h\
         mon/OSDMonitor.h\
         mon/PGMap.h\
