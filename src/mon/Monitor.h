@@ -1399,6 +1399,8 @@ public:
 
    private:
 
+    bool _check_gv_store();
+
     void _init() {
       MonitorDBStore *db_ptr = new MonitorDBStore(path);
       db.reset(db_ptr);
@@ -1433,9 +1435,11 @@ public:
       db->apply_transaction(tx);
     }
 
+    void _convert_finish_features(MonitorDBStore::Transaction &t);
     void _mark_convert_finish() {
       MonitorDBStore::Transaction tx;
       tx.erase("mon_convert", "on_going");
+      _convert_finish_features(tx);
       db->apply_transaction(tx);
     }
 
@@ -1448,6 +1452,7 @@ public:
 
 #define CEPH_MON_FEATURE_INCOMPAT_BASE CompatSet::Feature (1, "initial feature set (~v.18)")
 #define CEPH_MON_FEATURE_INCOMPAT_GV CompatSet::Feature (2, "global version sequencing (v0.52)")
+#define CEPH_MON_FEATURE_INCOMPAT_SINGLE_PAXOS CompatSet::Feature (3, "single paxos with k/v store (v0.\?)")
 
 long parse_pos_long(const char *s, ostream *pss = NULL);
 
