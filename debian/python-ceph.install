@@ -1,1 +1,2 @@
-usr/lib/python*
+usr/lib/python*/dist-packages/rados.py
+usr/lib/python*/dist-packages/rbd.py
