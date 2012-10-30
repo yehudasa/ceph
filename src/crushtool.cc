@@ -474,8 +474,10 @@ int main(int argc, const char **argv)
     if (unsafe_tunables)
       cc.enable_unsafe_tunables();
     int r = cc.compile(in, srcfn.c_str());
-    if (r < 0) 
+    if (r < 0) {
+      cerr << "error compiling '" << srcfn << "'" << std::endl;
       exit(1);
+    }
 
     modified = true;
   }

@@ -1,4 +1,5 @@
-
+// -*- mode:C++; tab-width:8; c-basic-offset:2; indent-tabs-mode:t -*-
+// vim: ts=8 sw=2 smarttab
 #include "CrushCompiler.h"
 
 #ifndef EBADE
@@ -644,6 +645,7 @@ int CrushCompiler::parse_crush(iter_t const& i)
 { 
   find_used_bucket_ids(i);
 
+  int err = 0;
   int r = 0;
   for (iter_t p = i->children.begin(); p != i->children.end(); p++) {
     switch (p->value.id().to_long()) {
@@ -665,10 +667,14 @@ int CrushCompiler::parse_crush(iter_t const& i)
     default:
       assert(0);
     }
+    // flush out all the errors and return the error only after the whole
+    // tree has been parsed.
+    if (r < 0)
+      err = r;
   }
 
-  if (r < 0)
-    return r;
+  if (err < 0)
+    return err;
 
   //err << "max_devices " << crush.get_max_devices() << std::endl;
   crush.finalize();
