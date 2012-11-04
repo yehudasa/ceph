@@ -36,22 +36,26 @@
 #include "common/Cond.h"
 #include "common/Mutex.h"
 #include "common/strtol.h"
+#include "common/LogEntry.h"
 #include "auth/KeyRing.h"
 #include "auth/AuthAuthorizeHandler.h"
 #include "include/uuid.h"
 #include "include/assert.h"
 
 #include "messages/MOSDBoot.h"
+#include "messages/MOSDAlive.h"
 #include "messages/MOSDPGCreate.h"
 #include "messages/MOSDPGRemove.h"
 #include "messages/MOSDMap.h"
 #include "messages/MPGStats.h"
+#include "messages/MLog.h"
+#include "messages/MOSDPGTemp.h"
 
 using namespace std;
 
 #define dout_subsys ceph_subsys_
 #undef dout_prefix
-#define dout_prefix *_dout << "mon_osd_msg_gen "
+#define dout_prefix *_dout << "mon_load_gen "
 
 typedef boost::mt11213b rngen_t;
 
@@ -176,7 +180,6 @@ class ClientStub : public Dispatcher
 
 class OSDStub : public Dispatcher
 {
-
   Mutex lock;
   SafeTimer timer;
   AuthAuthorizeHandlerRegistry *auth_handler_registry;
@@ -193,6 +196,10 @@ class OSDStub : public Dispatcher
   rngen_t gen;
   boost::uniform_int<> mon_osd_rng;
 
+  utime_t last_boot_attempt;
+  static const double STUB_BOOT_INTERVAL = 10.0;
+
+
  public:
 
   enum {
@@ -200,9 +207,10 @@ class OSDStub : public Dispatcher
     STUB_MON_OSD_PGTEMP	  = 2,
     STUB_MON_OSD_FAILURE  = 3,
     STUB_MON_OSD_PGSTATS  = 4,
+    STUB_MON_LOG	  = 5,
 
     STUB_MON_OSD_FIRST	  = STUB_MON_OSD_ALIVE,
-    STUB_MON_OSD_LAST	  = STUB_MON_OSD_PGSTATS,
+    STUB_MON_OSD_LAST	  = STUB_MON_LOG,
   };
 
   struct C_Tick : public Context {
@@ -313,18 +321,32 @@ class OSDStub : public Dispatcher
 
     update_osd_stat();
 
-    dout(0) << __func__ << " boot!" << dendl;
-    MOSDBoot *mboot = new MOSDBoot;
-    mboot->sb = sb;
-    monc->send_mon_message(mboot);
-
-
     dout(0) << __func__ << " adding tick timer" << dendl;
     timer.add_event_after(1.0, new C_Tick(this));
     // give a chance to the mons to inform us of what PGs we should create
     timer.add_event_after(30.0, new C_CreatePGs(this));
 
     return 0;
+  }
+
+  void boot() {
+    dout(0) << "osd." << whoami << "::" << __func__
+	    << " boot?" << dendl;
+
+    utime_t now = ceph_clock_now(messenger->cct);
+    if ((last_boot_attempt > 0.0)
+	&& ((now - last_boot_attempt)) <= STUB_BOOT_INTERVAL) {
+      dout(0) << "osd." << whoami << "::" << __func__
+	      << " backoff and try again later." << dendl;
+      return;
+    }
+
+    dout(0) << "osd." << whoami << "::" << __func__
+	    << " boot!" << dendl;
+    MOSDBoot *mboot = new MOSDBoot;
+    mboot->sb = sb;
+    last_boot_attempt = now;
+    monc->send_mon_message(mboot);
   }
 
   void add_pg(pg_t pgid, epoch_t epoch, pg_t parent) {
@@ -466,7 +488,7 @@ class OSDStub : public Dispatcher
     set<int> pgs_pos;
 
     int num_pgs = pg_rng(gen);
-    while (pgs_pos.size() < num_pgs)
+    while ((int)pgs_pos.size() < num_pgs)
       pgs_pos.insert(pg_rng(gen));
 
     map<pg_t,pg_stat_t>::iterator it = pgs.begin();
@@ -489,34 +511,133 @@ class OSDStub : public Dispatcher
     }
   }
 
-  void tick() {
-    dout(0) << __func__ << dendl;
+  void op_alive() {
+    dout(0) << "osd." << whoami << "::" << __func__ << dendl;
+    if (!osdmap.exists(whoami)) {
+      dout(0) << "osd." << whoami << "::" << __func__
+	      << " I'm not in the osdmap! wtf?\n";
+      JSONFormatter f(true);
+      osdmap.dump(&f);
+      f.flush(*_dout);
+      *_dout << dendl;
+    }
+    if (osdmap.get_epoch() == 0) {
+      dout(0) << "osd." << whoami << "::" << __func__
+	      << " wait for osdmap" << dendl;
+      return;
+    }
+    epoch_t up_thru = osdmap.get_up_thru(whoami);
+    dout(0) << "osd." << whoami << "::" << __func__
+	    << "up_thru: " << osdmap.get_up_thru(whoami) << dendl;
 
-    update_osd_stat();
+    monc->send_mon_message(new MOSDAlive(osdmap.get_epoch(), up_thru));
+  }
+
+  void op_pgtemp() {
+    if (osdmap.get_epoch() == 0) {
+      dout(0) << "osd." << whoami << "::" << __func__
+	      << " wait for osdmap" << dendl;
+      return;
+    }
+    dout(0) << "osd." << whoami << "::" << __func__ << dendl;
+    MOSDPGTemp *m = new MOSDPGTemp(osdmap.get_epoch());
+    monc->send_mon_message(m);
+  }
+
+  void op_failure() {
+    dout(0) << "osd." << whoami << "::" << __func__ << dendl;
+  }
+
+  void op_pgstats() {
+    dout(0) << "osd." << whoami << "::" << __func__ << dendl;
+    
     modify_pgs();
     if (pgs_changes.size() > 0)
       send_pg_stats();
     monc->sub_want("osd_pg_creates", 0, CEPH_SUBSCRIBE_ONETIME);
     monc->renew_subs();
 
-
     dout(0) << "osd." << whoami << "::" << __func__
-	    << " pg pools:\n";
+      << " pg pools:\n";
 
+    JSONFormatter f(true);
+    f.open_array_section("pools");
     const map<int64_t,pg_pool_t> &osdmap_pools = osdmap.get_pools();
     map<int64_t,pg_pool_t>::const_iterator pit;
     for (pit = osdmap_pools.begin(); pit != osdmap_pools.end(); ++pit) {
       const int64_t pool_id = pit->first;
       const pg_pool_t &pool = pit->second;
-      *_dout << "- pool id: " << pool_id << "\n";
-      JSONFormatter f(true);
+      f.open_object_section("pool");
+      f.dump_int("pool_id", pool_id);
+      f.open_object_section("pool_dump");
       pool.dump(&f);
-      *_dout << "- pool:\n";
-      f.flush(*_dout);
-      *_dout << "\n";
+      f.close_section();
+      f.close_section();
+    }
+    f.close_section();
+    f.flush(*_dout);
+    *_dout << dendl;
+  }
+
+  void op_log() {
+    dout(0) << "osd." << whoami << "::" << __func__ << dendl;
+
+    MLog *m = new MLog(monc->get_fsid());
+
+    boost::uniform_int<> log_rng(1, 10);
+    size_t num_entries = log_rng(gen);
+    dout(0) << "osd." << whoami << "::" << __func__
+	    << " send " << num_entries << " log messages" << dendl;
+
+    utime_t now = ceph_clock_now(messenger->cct);
+    int seq = 0;
+    for (; num_entries > 0; --num_entries) {
+      LogEntry e;
+      e.who = messenger->get_myinst();
+      e.stamp = now;
+      e.seq = seq++;
+      e.type = CLOG_DEBUG;
+      e.msg = "OSDStub::op_log";
+      m->entries.push_back(e);
     }
 
-    *_dout << dendl;
+    monc->send_mon_message(m);
+  }
+
+  void tick() {
+    dout(0) << "osd." << whoami << "::" << __func__ << dendl;
+
+    if (!osdmap.exists(whoami)) {
+      dout(0) << "osd." << whoami << "::" << __func__
+	      << " not in the cluster; boot!" << dendl;
+      boot();
+      timer.add_event_after(1.0, new C_Tick(this));
+      return;
+    }
+
+    update_osd_stat();
+
+    boost::uniform_int<> op_rng(STUB_MON_OSD_FIRST, STUB_MON_OSD_LAST);
+    int op = op_rng(gen);
+    //int op = STUB_MON_OSD_ALIVE;
+
+    switch (op) {
+    case STUB_MON_OSD_ALIVE:
+      op_alive();
+      break;
+    case STUB_MON_OSD_PGTEMP:
+      op_pgtemp();
+      break;
+    case STUB_MON_OSD_FAILURE:
+      op_failure();
+      break;
+    case STUB_MON_OSD_PGSTATS:
+      op_pgstats();
+      break;
+    case STUB_MON_LOG:
+      op_log();
+      break;
+    }
     timer.add_event_after(1.0, new C_Tick(this));
   }
 
@@ -533,7 +654,6 @@ class OSDStub : public Dispatcher
       return;
     }
 
-    utime_t now = ceph_clock_now(messenger->cct);
     for (map<pg_t,pg_create_t>::iterator it = m->mkpg.begin();
 	 it != m->mkpg.end(); ++it) {
       pg_create_t &c = it->second;
@@ -553,22 +673,25 @@ class OSDStub : public Dispatcher
   }
 
   void handle_osd_map(MOSDMap *m) {
+    dout(0) << "osd." << whoami << "::" << __func__ << dendl;
     assert(m->fsid == monc->get_fsid());
 
     epoch_t first = m->get_first();
     epoch_t last = m->get_last();
-    dout(0) << __func__ << " epochs [" << first << "," << last << "]"
+    dout(0) << "osd." << whoami << "::" << __func__
+	    << " epochs [" << first << "," << last << "]"
 	    << " current " << osdmap.get_epoch() << dendl;
 
     if (last <= osdmap.get_epoch()) {
-      dout(0) << __func__ << " no new maps here; dropping" << dendl;
+      dout(0) << "osd." << whoami << "::" << __func__
+	      << " no new maps here; dropping" << dendl;
       m->put();
       return;
     }
 
     if (first > osdmap.get_epoch() + 1) {
-      dout(10) << __func__ << " message skips epochs "
-	<< osdmap.get_epoch() + 1 << ".." << (first-1) << dendl;
+      dout(0) << "osd." << whoami << "::" << __func__
+	      << osdmap.get_epoch() + 1 << ".." << (first-1) << dendl;
       if ((m->oldest_map < first && osdmap.get_epoch() == 0) ||
 	  m->oldest_map <= osdmap.get_epoch()) {
 	monc->sub_want("osdmap", osdmap.get_epoch()+1,
@@ -586,7 +709,8 @@ class OSDStub : public Dispatcher
       rit = m->maps.rbegin();
       if (start_full <= rit->first) {
 	start_full = rit->first;
-	dout(0) << __func__ << " full epoch " << start_full << dendl;
+	dout(0) << "osd." << whoami << "::" << __func__
+		<< " full epoch " << start_full << dendl;
 	bufferlist &bl = rit->second;
 	bufferlist::iterator p = bl.begin();
 	osdmap.decode(p);
@@ -599,7 +723,8 @@ class OSDStub : public Dispatcher
       if (it == m->incremental_maps.end())
 	continue;
 
-      dout(0) << __func__ << " incremental epoch " << e
+      dout(0) << "osd." << whoami << "::" << __func__
+	      << " incremental epoch " << e
 	      << " on full epoch " << start_full << dendl;
       OSDMap::Incremental inc;
       bufferlist &bl = it->second;
@@ -608,16 +733,39 @@ class OSDStub : public Dispatcher
 
       int err = osdmap.apply_incremental(inc);
       if (err < 0) {
-	derr << __func__ << "** ERROR: applying incremental: "
+	derr << "osd." << whoami << "::" << __func__
+	     << "** ERROR: applying incremental: "
 	     << cpp_strerror(err) << dendl;
 	assert(0 == "error applying incremental");
       }
     }
-    dout(0) << __func__ << " done" << dendl;
+    dout(20) << "osd." << whoami << "::" << __func__
+	    << "\nosdmap:\n";
+    JSONFormatter f(true);
+    osdmap.dump(&f);
+    f.flush(*_dout);
+    *_dout << dendl;
+
+    if (osdmap.is_up(whoami) &&
+	osdmap.get_addr(whoami) == messenger->get_myaddr()) {
+      dout(0) << "osd." << whoami << "::" << __func__
+	      << " got into the osdmap and we're up!" << dendl;
+    }
+
+    if (m->newest_map && m->newest_map > last) {
+      dout(0) << "osd." << whoami << "::" << __func__
+	      << " they have more maps; requesting them!" << dendl;
+      monc->sub_want("osdmap", osdmap.get_epoch()+1, CEPH_SUBSCRIBE_ONETIME);
+      monc->renew_subs();
+    }
+
+    dout(0) << "osd." << whoami << "::" << __func__
+	    << " done" << dendl;
+    m->put();
   }
 
   bool ms_dispatch(Message *m) {
-    dout(0) << __func__ << " " << *m << dendl;
+    dout(0) << "osd." << whoami << "::" << __func__ << " " << *m << dendl;
 
     switch (m->get_type()) {
     case MSG_OSD_PG_CREATE:
@@ -634,16 +782,18 @@ class OSDStub : public Dispatcher
   }
 
   void ms_handle_connect(Connection *con) {
-    dout(0) << __func__ << " " << con << dendl;
+    dout(0) << "osd." << whoami << "::" << __func__
+	    << " " << con << dendl;
     if (con->get_peer_type() == CEPH_ENTITY_TYPE_MON) {
-      dout(10) << __func__ << " on mon" << dendl;
+      dout(0) << "osd." << whoami << "::" << __func__
+	      << " on mon" << dendl;
     }
   }
 
   void ms_handle_remote_reset(Connection *con) {}
 
   bool ms_handle_reset(Connection *con) {
-    dout(0) << __func__ << dendl;
+    dout(0) << "osd." << whoami << "::" << __func__ << dendl;
     OSD::Session *session = (OSD::Session *)con->get_priv();
     if (!session)
       return false;
