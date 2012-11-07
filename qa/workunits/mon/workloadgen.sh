@@ -4,7 +4,7 @@
 # $0.sh - run mon workload generator
 
 d() {
-  [ $DEBUG -eq 1 ] && echo "## DEBUG ## $*"
+  [[ "$DEBUG" != "" && $DEBUG -eq 1 ]] && echo "## DEBUG ## $*"
 }
 
 d "Start workunit"
