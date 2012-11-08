@@ -52,9 +52,25 @@ if [[ $create_crush -eq 1 ]]; then
   tmp_crush_fn="/tmp/ceph.$run_id.crush"
   ceph $extra osd getcrushmap -o $tmp_crush_fn
   crushtool -d $tmp_crush_fn -o $tmp_crush_fn.plain
+
+  highest_root_id=0
+  root_ids_raw="`cat $tmp_crush_fn.plain | grep id`"
+  ifs=$IFS
+  IFS=$'\n'
+  for l in $root_ids_raw; do
+    root_id=`echo $l | sed 's/.*-\([[:digit:]]\+\).*/\1/'`
+    d "root id = $root_id ; highest = $highest_root_id"
+    if [[ $root_id -gt $highest_root_id ]]; then
+      highest_root_id=$root_id
+    fi
+  done
+  our_root_id=$(($highest_root_id+1))
+
+
+
   cat << EOF >> $tmp_crush_fn.plain
 root testing {
-  id -2
+  id -$our_root_id
   alg straw
   hash 0  # rjenkins1
 }
