@@ -24,6 +24,10 @@ if [[ $num_osds == "" ]]; then
   num_osds=10
 fi
 
+if [[ "$LOADGEN_NUM_OSDS" != "" ]]; then
+  num_osds=$LOADGEN_NUM_OSDS
+fi
+
 extra=
 [ ! -z $TEST_CEPH_CONF ] && extra="-c $TEST_CEPH_CONF"
 
@@ -82,6 +86,10 @@ rule testingrbd {
   step emit
 }
 EOF
+
+  if [[ $DEBUG -eq 1 ]]; then
+    cat $tmp_crush_fn.plain
+  fi
 
   crushtool -c $tmp_crush_fn.plain -o $tmp_crush_fn
   if [[ $? -eq 1 ]]; then
