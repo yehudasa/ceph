@@ -65,8 +65,7 @@ if [[ $create_crush -eq 1 ]]; then
     fi
   done
   our_root_id=$(($highest_root_id+1))
-
-
+  IFS=$ifs
 
   cat << EOF >> $tmp_crush_fn.plain
 root testing {
