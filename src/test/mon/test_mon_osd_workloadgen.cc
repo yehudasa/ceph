@@ -442,7 +442,7 @@ class OSDStub : public Dispatcher
 
       JSONFormatter f(true);
       s.dump(&f);
-      dout(0) << "osd." << whoami << "::" << __func__
+      dout(20) << "osd." << whoami << "::" << __func__
 	      << " pg " << pgid << " stats:\n";
       f.flush(*_dout);
       *_dout << dendl;
@@ -497,14 +497,14 @@ class OSDStub : public Dispatcher
     int pgs_at = 0;
     while (pos_it != pgs_pos.end()) {
       int at = *pos_it;
-      dout(0) << "osd." << whoami << "::" << __func__
+      dout(10) << "osd." << whoami << "::" << __func__
 	      << " pg at pos " << at << dendl;
       while ((pgs_at != at) && (it != pgs.end())) {
 	++it;
 	++pgs_at;
       }
       assert(it != pgs.end());
-      dout(0) << "osd." << whoami << "::" << __func__
+      dout(10) << "osd." << whoami << "::" << __func__
 	      << " pg at pos " << at << ": " << it->first << dendl;
       modify_pg(it->first);
       ++pos_it;
@@ -557,7 +557,7 @@ class OSDStub : public Dispatcher
     monc->sub_want("osd_pg_creates", 0, CEPH_SUBSCRIBE_ONETIME);
     monc->renew_subs();
 
-    dout(0) << "osd." << whoami << "::" << __func__
+    dout(20) << "osd." << whoami << "::" << __func__
       << " pg pools:\n";
 
     JSONFormatter f(true);
@@ -657,7 +657,7 @@ class OSDStub : public Dispatcher
     for (map<pg_t,pg_create_t>::iterator it = m->mkpg.begin();
 	 it != m->mkpg.end(); ++it) {
       pg_create_t &c = it->second;
-      dout(0) << __func__ << " pg " << it->first
+      dout(10) << __func__ << " pg " << it->first
 	      << " created " << c.created
 	      << " parent " << c.parent << dendl;
       if (pgs.count(it->first)) {
@@ -723,7 +723,7 @@ class OSDStub : public Dispatcher
       if (it == m->incremental_maps.end())
 	continue;
 
-      dout(0) << "osd." << whoami << "::" << __func__
+      dout(10) << "osd." << whoami << "::" << __func__
 	      << " incremental epoch " << e
 	      << " on full epoch " << start_full << dendl;
       OSDMap::Incremental inc;
