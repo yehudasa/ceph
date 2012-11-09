@@ -137,6 +137,7 @@ class Inode {
   //int open_by_mode[CEPH_FILE_MODE_NUM];
   map<int,int> open_by_mode;
   map<int,int> cap_refs;
+  bool rdcache_ref;
 
   ObjectCacher::ObjectSet oset;
 
@@ -199,6 +200,7 @@ class Inode {
       cap_item(this), flushing_cap_item(this), last_flush_tid(0),
       snaprealm(0), snaprealm_item(this), snapdir_parent(0),
       oset((void *)this, newlayout->fl_pg_pool, ino),
+      rdcache_ref(false),
       reported_size(0), wanted_max_size(0), requested_max_size(0),
       _ref(0), ll_ref(0), 
       dir(0), dn_set()

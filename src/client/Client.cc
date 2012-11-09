@@ -2400,7 +2400,11 @@ void Client::_async_invalidate(Inode *in, int64_t off, int64_t len, bool keep_ca
     client_lock.Unlock();
 }
 
-void Client::_schedule_invalidate_callback(Inode *in, int64_t off, int64_t len, bool keep_caps) {
+void Client::_schedule_invalidate_callback(Inode *in, int64_t off, int64_t len, bool keep_caps)
+{
+  // if we don't hold a ref for our cached data, don't put.
+  if (!in->rdcache_ref)
+    keep_caps = true;
 
   if (ino_invalidate_cb)
     // we queue the invalidate, which calls the callback and decrements the ref
@@ -5198,8 +5202,10 @@ int Client::_read_async(Fh *f, uint64_t off, uint64_t len, bufferlist *bl)
   }
 
   // we will populate the cache here
-  if (in->cap_refs[CEPH_CAP_FILE_CACHE] == 0)
+  if (!in->rdcache_ref) {
+    in->rdcache_ref = true;
     in->get_cap_ref(CEPH_CAP_FILE_CACHE);
+  }
   
   ldout(cct, 10) << "readahead=" << readahead << " nr_consec=" << f->nr_consec_read
 	   << " max_byes=" << conf->client_readahead_max_bytes
