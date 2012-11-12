@@ -214,7 +214,12 @@ int FileStore::lfn_open(coll_t cid, const hobject_t& oid, int flags, mode_t mode
 	if (r < 0)
 	  return -errno;
       }
-      assert(!(fd_open.count(fd->get_fd())));
+      if (fd_open.count(fd->get_fd())) {
+	int dup_fd = ::dup(fd->get_fd());
+	if (dup_fd < 0)
+	  return -errno;
+	return dup_fd;
+      }
       fd_open[fd->get_fd()] = fd;
       logger->inc(l_os_fd_cache_hit);
       return fd->get_fd();
@@ -299,7 +304,10 @@ void FileStore::lfn_close(int fd)
 {
   dout(10) << "lfn_close " << fd << dendl;
   Mutex::Locker l(lfn_cache_lock);
-  fd_open.erase(fd);
+  if (fd_open.count(fd))
+    fd_open.erase(fd);
+  else
+    ::close(fd);
 }
 
 int FileStore::lfn_link(coll_t c, coll_t cid, const hobject_t& o) 
