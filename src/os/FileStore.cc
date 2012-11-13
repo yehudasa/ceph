@@ -3218,7 +3218,7 @@ void FileStore::flusher_entry()
 	} else 
 	  dout(10) << "flusher_entry JUST closing " << fd << " (stop=" << stop << ", ep=" << ep
 		   << ", sync_epoch=" << sync_epoch << ")" << dendl;
-	TEMP_FAILURE_RETRY(::close(fd));
+	lfn_close(fd);
       }
       lock.Lock();
       flusher_queue_len -= num;   // they're definitely closed, forget
