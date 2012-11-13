@@ -152,6 +152,9 @@ int FileStore::init_index(coll_t cid)
   return r;
 }
 
+
+// -------------------------
+
 int FileStore::lfn_find(coll_t cid, const hobject_t& oid, IndexedPath *path)
 {
   Index index; 
@@ -198,12 +201,31 @@ int FileStore::lfn_stat(coll_t cid, const hobject_t& oid, struct stat *buf)
 
 int FileStore::lfn_open(coll_t cid, const hobject_t& oid, int flags, mode_t mode,
 			IndexedPath *path,
-			Index *index) {
+			Index *index)
+{
+
+  FDRef fd;
+  {
+    Mutex::Locker l(lfn_cache_lock);
+    bool found = fd_cache.lookup(oid, &fd);
+    if (found) {
+      if (flags & O_TRUNC) {
+	int r = ftruncate(fd->get_fd(), 0);
+	if (r < 0)
+	  return -errno;
+      }
+      assert(!(fd_open.count(fd->get_fd())));
+      fd_open[fd->get_fd()] = fd;
+      logger->inc(l_os_fd_cache_hit);
+      return fd->get_fd();
+    }
+  }
+
   Index index2;
   IndexedPath path2;
   if (!path)
     path = &path2;
-  int fd, exist;
+  int exist;
   int r = 0;
   if (!index) {
     index = &index2;
@@ -223,25 +245,35 @@ int FileStore::lfn_open(coll_t cid, const hobject_t& oid, int flags, mode_t mode
     goto fail;
   }
 
-  r = ::open((*path)->path(), flags, mode);
+  r = ::open((*path)->path(), (flags & ~O_ACCMODE) | O_RDWR, mode);
   if (r < 0) {
     r = -errno;
     dout(10) << "error opening file " << (*path)->path() << " with flags="
 	     << flags << " and mode=" << mode << ": " << cpp_strerror(-r) << dendl;
     goto fail;
   }
-  fd = r;
+  fd = FDRef(new FDHolder(r));
+  dout(20) << "lfn_open fd " << fd->get_fd() << dendl;
 
   if ((flags & O_CREAT) && (!exist)) {
     r = (*index)->created(oid, (*path)->path());
     if (r < 0) {
-      TEMP_FAILURE_RETRY(::close(fd));
+      TEMP_FAILURE_RETRY(::close(fd->get_fd()));
       derr << "error creating " << oid << " (" << (*path)->path()
 	   << ") in index: " << cpp_strerror(-r) << dendl;
       goto fail;
     }
   }
-  return fd;
+
+  
+  {
+    Mutex::Locker l(lfn_cache_lock);
+    assert(!(fd_open.count(fd->get_fd())));
+    fd_open[fd->get_fd()] = fd;
+    fd_cache.add(oid, fd);
+    logger->inc(l_os_fd_cache_miss);
+  }
+  return fd->get_fd();
 
  fail:
   assert(!m_filestore_fail_eio || r != -EIO);
@@ -265,7 +297,9 @@ int FileStore::lfn_open(coll_t cid, const hobject_t& oid, int flags)
 
 void FileStore::lfn_close(int fd)
 {
-  TEMP_FAILURE_RETRY(::close(fd));
+  dout(10) << "lfn_close " << fd << dendl;
+  Mutex::Locker l(lfn_cache_lock);
+  fd_open.erase(fd);
 }
 
 int FileStore::lfn_link(coll_t c, coll_t cid, const hobject_t& o) 
@@ -390,6 +424,8 @@ FileStore::FileStore(const std::string &base, const std::string &jdev, const cha
 	g_conf->filestore_op_thread_suicide_timeout, &op_tp),
   flusher_queue_len(0), flusher_thread(this),
   logger(NULL),
+  lfn_cache_lock("FileStore::lfn_cache_lock", 0, 1, 0, g_ceph_context),
+  fd_cache(g_conf->filestore_fd_cache_size),
   m_filestore_btrfs_clone_range(g_conf->filestore_btrfs_clone_range),
   m_filestore_btrfs_snap (g_conf->filestore_btrfs_snap ),
   m_filestore_commit_timeout(g_conf->filestore_commit_timeout),
@@ -457,6 +493,9 @@ FileStore::FileStore(const std::string &base, const std::string &jdev, const cha
   plb.add_fl_avg(l_os_commit_len, "commitcycle_interval");
   plb.add_fl_avg(l_os_commit_lat, "commitcycle_latency");
   plb.add_u64_counter(l_os_j_full, "journal_full");
+
+  plb.add_u64_counter(l_os_fd_cache_hit, "fd_cache_hit");
+  plb.add_u64_counter(l_os_fd_cache_miss, "fd_cache_miss");
 
   logger = plb.create_perf_counters();
 }

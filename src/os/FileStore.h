@@ -40,6 +40,7 @@ using namespace __gnu_cxx;
 #include "IndexManager.h"
 #include "ObjectMap.h"
 #include "SequencerPosition.h"
+#include "common/simple_cache.hpp"
 
 #include "include/uuid.h"
 
@@ -269,6 +270,19 @@ private:
 
 
   PerfCounters *logger;
+
+private:
+  Mutex lfn_cache_lock;
+  class FDHolder {
+    int fd;
+  public:
+    FDHolder(int fd) : fd(fd) {}
+    ~FDHolder() { ::close(fd); }
+    int get_fd() { return fd; }
+  };
+  typedef std::tr1::shared_ptr<FDHolder> FDRef;
+  SimpleLRU<hobject_t, FDRef> fd_cache;
+  map<int, FDRef> fd_open;
 
 public:
   int lfn_find(coll_t cid, const hobject_t& oid, IndexedPath *path);
