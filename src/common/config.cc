@@ -540,6 +540,10 @@ void md_config_t::_apply_changes(std::ostream *oss)
       (*oss) << "applying configuration change: " << key << " = '"
 		     << buf << "'\n";
     }
+    // skip observers if this is a debug change
+    if (strncmp(key.c_str(), "debug_", 6) == 0)
+      continue;
+
     pair < obs_map_t::iterator, obs_map_t::iterator >
       range(observers.equal_range(key));
     for (obs_map_t::iterator r = range.first; r != range.second; ++r) {
@@ -639,6 +643,7 @@ int md_config_t::set_val(const char *key, const char *val, bool meta)
 	  //	  cout << "subsys " << subsys.get_name(o) << " log " << log << " gather " << gather << std::endl;
 	  subsys.set_log_level(o, log);
 	  subsys.set_gather_level(o, gather);
+	  changed.insert(key);
 	  return 0;
 	}
 	return -EINVAL;
