@@ -158,6 +158,7 @@ OSDService::OSDService(OSD *osd) :
   rep_scrub_wq(osd->rep_scrub_wq),
   class_handler(osd->class_handler),
   publish_lock("OSDService::publish_lock"),
+  pre_publish_lock("OSDService::pre_publish_lock"),
   sched_scrub_lock("OSDService::sched_scrub_lock"), scrubs_pending(0),
   scrubs_active(0),
   watch_lock("OSD::watch_lock"),
@@ -2491,7 +2492,7 @@ void OSD::send_alive()
 
 void OSDService::send_message_osd_cluster(int peer, Message *m, epoch_t from_epoch)
 {
-  Mutex::Locker l(publish_lock);
+  Mutex::Locker l(pre_publish_lock);
 
   // service map is always newer/newest
   assert(from_epoch <= next_osdmap->get_epoch());
@@ -2506,7 +2507,7 @@ void OSDService::send_message_osd_cluster(int peer, Message *m, epoch_t from_epo
 
 Connection *OSDService::get_con_osd_cluster(int peer, epoch_t from_epoch)
 {
-  Mutex::Locker l(publish_lock);
+  Mutex::Locker l(pre_publish_lock);
 
   // service map is always newer/newest
   assert(from_epoch <= next_osdmap->get_epoch());
@@ -2520,7 +2521,7 @@ Connection *OSDService::get_con_osd_cluster(int peer, epoch_t from_epoch)
 
 Connection *OSDService::get_con_osd_hb(int peer, epoch_t from_epoch)
 {
-  Mutex::Locker l(publish_lock);
+  Mutex::Locker l(pre_publish_lock);
 
   // service map is always newer/newest
   assert(from_epoch <= next_osdmap->get_epoch());
@@ -3988,6 +3989,7 @@ void OSD::activate_map()
   }
   to_remove.clear();
 
+  service.pre_publish_map(osdmap);
   service.publish_map(osdmap);
 
   // scan pg's
