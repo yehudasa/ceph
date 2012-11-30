@@ -3032,7 +3032,7 @@ void PG::sub_op_scrub_reserve(OpRequestRef op)
 
   MOSDSubOpReply *reply = new MOSDSubOpReply(m, 0, get_osdmap()->get_epoch(), CEPH_OSD_FLAG_ACK);
   ::encode(scrubber.reserved, reply->get_data());
-  osd->cluster_messenger->send_message(reply, m->get_connection());
+  osd->send_message_osd_cluster(reply, m->get_connection());
 }
 
 void PG::sub_op_scrub_reserve_reply(OpRequestRef op)
@@ -3090,7 +3090,7 @@ void PG::sub_op_scrub_stop(OpRequestRef op)
   scrubber.reserved = false;
 
   MOSDSubOpReply *reply = new MOSDSubOpReply(m, 0, get_osdmap()->get_epoch(), CEPH_OSD_FLAG_ACK);
-  osd->cluster_messenger->send_message(reply, m->get_connection());
+  osd->send_message_osd_cluster(reply, m->get_connection());
 }
 
 void PG::clear_scrub_reserved()
@@ -3357,7 +3357,7 @@ void PG::replica_scrub(MOSDRepScrub *msg)
   ::encode(map, subop->get_data());
   subop->ops = scrub;
 
-  osd->cluster_messenger->send_message(subop, msg->get_connection());
+  osd->send_message_osd_cluster(subop, msg->get_connection());
 }
 
 /* Scrub:
@@ -4234,7 +4234,7 @@ void PG::fulfill_log(int from, const pg_query_t &query, epoch_t query_epoch)
   ConnectionRef con = osd->get_con_osd_cluster(from, get_osdmap()->get_epoch());
   if (con) {
     osd->osd->_share_map_outgoing(from, con.get(), get_osdmap());
-    osd->cluster_messenger->send_message(mlog, con.get());
+    osd->send_message_osd_cluster(mlog, con.get());
   } else {
     mlog->put();
   }
@@ -5260,7 +5260,7 @@ PG::RecoveryState::WaitRemoteBackfillReserved::WaitRemoteBackfillReserved(my_con
     pg->backfill_target, pg->get_osdmap()->get_epoch());
   if (con) {
     if ((con->features & CEPH_FEATURE_BACKFILL_RESERVATION)) {
-      pg->osd->cluster_messenger->send_message(
+      pg->osd->send_message_osd_cluster(
         new MBackfillReserve(
 	  MBackfillReserve::REQUEST,
 	  pg->info.pgid,
@@ -5506,7 +5506,7 @@ PG::RecoveryState::WaitRemoteRecoveryReserved::WaitRemoteRecoveryReserved(my_con
     ConnectionRef con = pg->osd->get_con_osd_cluster(*acting_osd_it, pg->get_osdmap()->get_epoch());
     if (con) {
       if ((con->features & CEPH_FEATURE_RECOVERY_RESERVATION)) {
-	pg->osd->cluster_messenger->send_message(
+	pg->osd->send_message_osd_cluster(
           new MRecoveryReserve(MRecoveryReserve::REQUEST,
 			       pg->info.pgid,
 			       pg->get_osdmap()->get_epoch()),
@@ -5553,7 +5553,7 @@ void PG::RecoveryState::Recovering::release_reservations()
     ConnectionRef con = pg->osd->get_con_osd_cluster(*i, pg->get_osdmap()->get_epoch());
     if (con) {
       if ((con->features & CEPH_FEATURE_RECOVERY_RESERVATION)) {
-	pg->osd->cluster_messenger->send_message(
+	pg->osd->send_message_osd_cluster(
           new MRecoveryReserve(MRecoveryReserve::RELEASE,
 			       pg->info.pgid,
 			       pg->get_osdmap()->get_epoch()),
