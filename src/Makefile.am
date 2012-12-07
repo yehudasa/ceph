@@ -1384,7 +1384,7 @@ libclient_la_SOURCES = \
 	client/Inode.cc \
 	client/Dentry.cc \
 	client/MetaRequest.cc \
-	client/SnapRealm.cc \
+	client/client_SnapRealm.cc \
 	client/MetaSession.cc \
 	client/Trace.cc
 libclient_la_LIBADD = libosdc.la $(LIBEDIT_LIBS)
