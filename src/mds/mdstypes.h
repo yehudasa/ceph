@@ -403,6 +403,15 @@ struct inode_t {
     truncate_pending++;
   }
 
+  bool has_layout() const {
+    // why on earth is there no converse of memchr() in string.h?
+    const char *p = (const char *)&layout;
+    for (size_t i = 0; i < sizeof(layout); i++)
+      if (p[i] != '\0')
+	return true;
+    return false;
+  }
+
   uint64_t get_layout_size_increment() {
     return (uint64_t)layout.fl_object_size * (uint64_t)layout.fl_stripe_count;
   }

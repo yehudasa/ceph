@@ -67,7 +67,6 @@ public:
     string symlink;
     bufferlist snapbl;
     bool dirty;
-    struct file_layout_policy_t *dir_layout;
     typedef map<snapid_t, old_inode_t> old_inodes_t;
     old_inodes_t old_inodes;
 
@@ -79,12 +78,14 @@ public:
     fullbit(const string& d, snapid_t df, snapid_t dl, 
 	    version_t v, inode_t& i, fragtree_t &dft, 
 	    map<string,bufferptr> &xa, const string& sym,
-	    bufferlist &sbl, bool dr, file_layout_policy_t *defl = NULL,
+	    bufferlist &sbl, bool dr,
 	    old_inodes_t *oi = NULL) :
       //dn(d), dnfirst(df), dnlast(dl), dnv(v), 
       //inode(i), dirfragtree(dft), xattrs(xa), symlink(sym), snapbl(sbl), dirty(dr) 
-      dir_layout(NULL), _enc(1024)
+      _enc(1024)
     {
+      __u8 struct_v = 3;
+      ::encode(struct_v, _enc);
       ::encode(d, _enc);
       ::encode(df, _enc);
       ::encode(dl, _enc);
@@ -96,22 +97,17 @@ public:
       if (i.is_dir()) {
 	::encode(dft, _enc);
 	::encode(sbl, _enc);
-	::encode((defl ? true : false), _enc);
-	if (defl)
-	  ::encode(*defl, _enc);
       }
       ::encode(dr, _enc);      
       ::encode(oi ? true : false, _enc);
       if (oi)
 	::encode(*oi, _enc);
     }
-    fullbit(bufferlist::iterator &p) : dir_layout(NULL) {
+    fullbit(bufferlist::iterator &p) {
       decode(p);
     }
-    fullbit() : dir_layout(NULL) {}
-    ~fullbit() {
-      delete dir_layout;
-    }
+    fullbit() {}
+    ~fullbit() {}
 
     void encode(bufferlist& bl) const {
       __u8 struct_v = 3;
@@ -133,12 +129,12 @@ public:
       if (inode.is_dir()) {
 	::decode(dirfragtree, bl);
 	::decode(snapbl, bl);
-	if (struct_v >= 2) {
+	if (struct_v == 2) {
 	  bool dir_layout_exists;
 	  ::decode(dir_layout_exists, bl);
 	  if (dir_layout_exists) {
-	    dir_layout = new file_layout_policy_t;
-	    ::decode(*dir_layout, bl);
+	    ::decode(struct_v, bl);
+	    ::decode(inode.layout, bl);
 	  }
 	}
       }
@@ -559,11 +555,6 @@ private:
     //cout << "journaling " << in->inode.ino << " at " << my_offset << std::endl;
 
     inode_t *pi = in->get_projected_inode();
-    file_layout_policy_t *default_layout = NULL;
-    if (in->is_dir())
-      default_layout = (in->get_projected_node() ?
-                           in->get_projected_node()->dir_layout :
-                           in->default_layout);
 
     bufferlist snapbl;
     sr_t *sr = in->get_projected_srnode();
@@ -577,7 +568,7 @@ private:
 									 *pi, in->dirfragtree,
 									 *in->get_projected_xattrs(),
 									 in->symlink, snapbl,
-									 dirty, default_layout,
+									 dirty,
 									 &in->old_inodes)));
   }
 
@@ -608,12 +599,6 @@ private:
     if (!pdft) pdft = &in->dirfragtree;
     if (!px) px = &in->xattrs;
 
-    file_layout_policy_t *default_layout = NULL;
-    if (in->is_dir())
-      default_layout = (in->get_projected_node() ?
-                           in->get_projected_node()->dir_layout :
-                           in->default_layout);
-
     bufferlist snapbl;
     if (psnapbl)
       snapbl = *psnapbl;
@@ -627,7 +612,7 @@ private:
 		       0,
 		       *pi, *pdft, *px,
 		       in->symlink, snapbl,
-		       dirty, default_layout, &in->old_inodes);
+		       dirty, &in->old_inodes);
   }
   
   dirlump& add_dir(CDir *dir, bool dirty, bool complete=false, bool isnew=false) {
