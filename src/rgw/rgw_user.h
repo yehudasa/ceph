@@ -219,7 +219,31 @@ struct RGWUserAdminRequest {
   bool max_buckets_specified;
   bool perm_specified;
   bool suspension_op;
-  uint32_t key_op;
+
+  RGWUserAdminRequest()
+  {
+    max_buckets = RGW_DEFAULT_MAX_BUCKETS;
+    key_type = -1;
+    perm_mask = 0;
+    is_suspended = 0;
+
+    existing_user = false;
+    existing_key = false;
+    existing_subuser = false;
+    subuser_specified = false;
+    purge_keys = false;
+    gen_secret = false;
+    gen_access = false;
+    id_specified = false;
+    key_specified = false;
+    type_specified = false;
+    purge_data = false;
+    display_name_specified = false;
+    user_email_specified = false;
+    max_buckets_specified = false;
+    perm_specified = false;
+    suspension_op = false;
+  }
 };
 
 
@@ -247,29 +271,30 @@ class RGWAccessKeyPool
 
 private:
 
-  bool create_key(RGWUserAdminRequest req, string &err_msg);
-  bool generate_key(RGWUserAdminRequest req, string &err_msg);
-  bool modify_key(RGWUserAdminRequest req, string &err_msg);
+  bool create_key(RGWUserAdminRequest &req, string &err_msg);
+  bool generate_key(RGWUserAdminRequest &req, string &err_msg);
+  bool modify_key(RGWUserAdminRequest &req, string &err_msg);
 
-  bool check_existing_key(RGWUserAdminRequest req);
-  bool check_request(RGWUserAdminRequest req, string &err_msg);
+  bool check_existing_key(RGWUserAdminRequest &req);
+  bool check_request(RGWUserAdminRequest &req, string &err_msg);
 
   /* API Contract Fulfilment */
-  bool execute_add(RGWUserAdminRequest req, string &err_msg, bool defer_save);
-  bool execute_remove(RGWUserAdminRequest req, string &err_msg, bool defer_save);
+  bool execute_add(RGWUserAdminRequest &req, string &err_msg, bool defer_save);
+  bool execute_remove(RGWUserAdminRequest &req, string &err_msg, bool defer_save);
 
   friend class RGWUser;
   friend class RGWSubUserPool;
 
 public:
 
-  RGWAccessKeyPool(RGWUser *user);
+  RGWAccessKeyPool(RGWUser *_user);
   ~RGWAccessKeyPool();
 
+  bool init(RGWUser *_user);
 
   /* API Contracted Methods */
-  bool add(RGWUserAdminRequest, string &err_msg);
-  bool remove(RGWUserAdminRequest, string &err_msg);
+  bool add(RGWUserAdminRequest &req, string &err_msg);
+  bool remove(RGWUserAdminRequest &req, string &err_msg);
 };
 
 class RGWSubUserPool
@@ -282,23 +307,25 @@ class RGWSubUserPool
   map<string, RGWSubUser> *subuser_map;
 
 private:
-  bool check_request(RGWUserAdminRequest req, string &err_msg);
+  bool check_request(RGWUserAdminRequest &req, string &err_msg);
 
-  /* API Contract Fulfilment */
-  bool execute_add(RGWUserAdminRequest req, string &err_msg, bool defer_save);
-  bool execute_remove(RGWUserAdminRequest req, string &err_msg, bool defer_save);
-  bool execute_modify(RGWUserAdminRequest req, string &err_msg, bool defer_save);
+  /* API Contract Fulfillment */
+  bool execute_add(RGWUserAdminRequest &req, string &err_msg, bool defer_save);
+  bool execute_remove(RGWUserAdminRequest &req, string &err_msg, bool defer_save);
+  bool execute_modify(RGWUserAdminRequest &req, string &err_msg, bool defer_save);
 
 public:
-  bool exists(std::string subuser);
 
-  RGWSubUserPool(RGWUser *rgw_user);
+  RGWSubUserPool(RGWUser *_user);
   ~RGWSubUserPool();
 
+  bool exists(std::string subuser);
+  bool init(RGWUser *_user);
+
   /* API contracted methods */
-  bool add(RGWUserAdminRequest req, string &err_msg);
-  bool remove(RGWUserAdminRequest req, string &err_msg);
-  bool modify(RGWUserAdminRequest req, string &err_msg);
+  bool add(RGWUserAdminRequest &req, string &err_msg);
+  bool remove(RGWUserAdminRequest &req, string &err_msg);
+  bool modify(RGWUserAdminRequest &req, string &err_msg);
 
   friend class RGWUser;
 };
@@ -313,11 +340,14 @@ class RGWUserCapPool
 private:
 public:
 
-  RGWUserCapPool(RGWUser *user);
+  RGWUserCapPool(RGWUser *_user);
   ~RGWUserCapPool();
 
-  bool add(RGWUserAdminRequest req, std::string &err_msg);
-  bool remove(RGWUserAdminRequest req, std::string &err_msg);
+  bool init(RGWUser *_user);
+
+  /* API contracted methods */
+  bool add(RGWUserAdminRequest &req, std::string &err_msg);
+  bool remove(RGWUserAdminRequest &req, std::string &err_msg);
 
   friend class RGWUser;
 };
@@ -331,31 +361,42 @@ private:
   RGWRados *store;
 
   string user_id;
-  bool failure;
-  bool populated;
+  mutable bool failure;
+  mutable bool populated;
 
   void set_failure() { failure = true; };
-  bool check_request(RGWUserAdminRequest req, string &err_msg);
+  void set_populated() { populated = true; };
+  bool check_request(RGWUserAdminRequest &req, string &err_msg);
   bool update(std::string &err_msg);
  
-  /* API Contract Fulfilment */
-  bool execute_add(RGWUserAdminRequest req, string &err_msg);
-  bool execute_remove(RGWUserAdminRequest req, string &err_msg);
-  bool execute_modify(RGWUserAdminRequest req, string &err_msg);
+  /* API Contract Fulfillment */
+  bool execute_add(RGWUserAdminRequest &req, string &err_msg);
+  bool execute_remove(RGWUserAdminRequest &req, string &err_msg);
+  bool execute_modify(RGWUserAdminRequest &req, string &err_msg);
 
 public:
-  RGWUser(RGWRados *_store, RGWUserAdminRequest req);
+  RGWUser(RGWRados *_store, RGWUserAdminRequest &req);
+
+  /*
+   * primarily useful for users which already exist as access keys, subuers
+   * and caps will be disabled by default for non-existing users
+   */
   RGWUser(RGWRados *_store, pair<int, string> user);
+
+  /* this will need to be initialized at some point in order to be useful */
   RGWUser(RGWRados *_store);
+
+  /* anonymous user info */
   RGWUser();
   ~RGWUser();
 
   bool init(pair<int, string> user);
-  bool init(RGWUserAdminRequest req);
+  bool init(RGWUserAdminRequest &req);
 
-
-  bool is_populated() { return populated; };
+  bool is_populated() { return populated; }; // consider removing?
   bool has_failed() { return failure; };
+
+  bool init_members();
 
   /* API Contracted Members */
   RGWUserCapPool *caps;
@@ -363,11 +404,18 @@ public:
   RGWSubUserPool *subusers;
 
   /* API Contracted Methods */
-  bool add(RGWUserAdminRequest req, string &err_msg);
-  bool remove(RGWUserAdminRequest req, string &err_msg);
-  bool modify(RGWUserAdminRequest req, string &err_msg);
+  bool add(RGWUserAdminRequest &req, string &err_msg);
+  bool remove(RGWUserAdminRequest &req, string &err_msg);
+
+  /* remove an already populated RGWUser */
+  bool remove(string &err_msg);
+  bool modify(RGWUserAdminRequest &req, string &err_msg);
+
+  /* retrieve info from an existing user in the RGW system */
   bool info (std::pair<uint32_t, std::string> id, RGWUserInfo &fetched_info, string &err_msg);
-  bool info (RGWUserAdminRequest req, RGWUserInfo &fetched_info, string &err_msg);
+  bool info (RGWUserAdminRequest &req, RGWUserInfo &fetched_info, string &err_msg);
+
+  /* info from an already populated RGWUser */
   bool info (RGWUserInfo &fetched_info, string &err_msg);
 
 
