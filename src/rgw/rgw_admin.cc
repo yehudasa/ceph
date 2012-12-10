@@ -498,32 +498,32 @@ static void remove_old_indexes(RGWUserInfo& old_info, RGWUserInfo& new_info)
     cerr << "ERROR: this should be fixed manually!" << std::endl;
 }
 
-static bool char_is_unreserved_url(char c)
-{
-  if (isalnum(c))
-    return true;
+//static bool char_is_unreserved_url(char c)
+//{
+//  if (isalnum(c))
+//    return true;
+//
+//  switch (c) {
+//  case '-':
+//  case '.':
+//  case '_':
+//  case '~':
+//    return true;
+//  default:
+//    return false;
+//  }
+//}
 
-  switch (c) {
-  case '-':
-  case '.':
-  case '_':
-  case '~':
-    return true;
-  default:
-    return false;
-  }
-}
-
-static bool validate_access_key(string& key)
-{
-  const char *p = key.c_str();
-  while (*p) {
-    if (!char_is_unreserved_url(*p))
-      return false;
-    p++;
-  }
-  return true;
-}
+//static bool validate_access_key(string& key)
+//{
+//  const char *p = key.c_str();
+//  while (*p) {
+//    if (!char_is_unreserved_url(*p))
+//      return false;
+//    p++;
+//  }
+//  return true;
+//}
 
 static void dump_bucket_usage(map<RGWObjCategory, RGWBucketStats>& stats, Formatter *formatter)
 {
@@ -569,86 +569,86 @@ int bucket_stats(rgw_bucket& bucket, Formatter *formatter)
   return 0;
 }
 
-enum ObjectKeyType {
-  KEY_TYPE_SWIFT,
-  KEY_TYPE_S3,
-};
+//enum ObjectKeyType {
+//  KEY_TYPE_SWIFT,
+//  KEY_TYPE_S3,
+//};
 
-static int remove_object(RGWRados *store, rgw_bucket& bucket, std::string& object)
-{
-  int ret = -EINVAL;
-  RGWRadosCtx *rctx = new RGWRadosCtx(store);
-  rgw_obj obj(bucket,object);
+//static int remove_object(RGWRados *store, rgw_bucket& bucket, std::string& object)
+//{
+//  int ret = -EINVAL;
+//  RGWRadosCtx *rctx = new RGWRadosCtx(store);
+//  rgw_obj obj(bucket,object);
+//
+//  ret = store->delete_obj(rctx, obj);
+//
+//  return ret;
+//}
 
-  ret = store->delete_obj(rctx, obj);
-
-  return ret;
-}
-
-static int remove_bucket(RGWRados *store, rgw_bucket& bucket, bool delete_children)
-{
-  int ret;
-  map<RGWObjCategory, RGWBucketStats> stats;
-  std::vector<RGWObjEnt> objs;
-  std::string prefix, delim, marker, ns;
-  map<string, bool> common_prefixes;
-  rgw_obj obj;
-  RGWBucketInfo info;
-  bufferlist bl;
-
-  ret = store->get_bucket_stats(bucket, stats);
-  if (ret < 0)
-    return ret;
-
-  obj.bucket = bucket;
-  int max = 1000;
-
-  ret = rgw_get_obj(store, NULL, store->params.domain_root, bucket.name, bl, NULL);
-
-  bufferlist::iterator iter = bl.begin();
-  try {
-    ::decode(info, iter);
-  } catch (buffer::error& err) {
-    cerr << "ERROR: could not decode buffer info, caught buffer::error" << std::endl;
-    return -EIO;
-  }
-
-  if (delete_children) {
-    ret = store->list_objects(bucket, max, prefix, delim, marker, objs, common_prefixes,
-                                 false, ns, (bool *)false, NULL);
-    if (ret < 0)
-      return ret;
-
-    while (objs.size() > 0) {
-      std::vector<RGWObjEnt>::iterator it = objs.begin();
-      for (it = objs.begin(); it != objs.end(); it++) {
-        ret = remove_object(store, bucket, (*it).name);
-        if (ret < 0)
-          return ret;
-      }
-      objs.clear();
-
-      ret = store->list_objects(bucket, max, prefix, delim, marker, objs, common_prefixes,
-                                   false, ns, (bool *)false, NULL);
-      if (ret < 0)
-        return ret;
-    }
-  }
-
-  ret = store->delete_bucket(bucket);
-  if (ret < 0) {
-    cerr << "ERROR: could not remove bucket " << bucket.name << std::endl;
-
-    return ret;
-  }
-
-  ret = rgw_remove_user_bucket_info(store, info.owner, bucket);
-  if (ret < 0) {
-    cerr << "ERROR: unable to remove user bucket information" << std::endl;
-  }
-
-  return ret;
-}
+//static int remove_bucket(RGWRados *store, rgw_bucket& bucket, bool delete_children)
+//{
+//  int ret;
+//  map<RGWObjCategory, RGWBucketStats> stats;
+//  std::vector<RGWObjEnt> objs;
+//  std::string prefix, delim, marker, ns;
+//  map<string, bool> common_prefixes;
+//  rgw_obj obj;
+//  RGWBucketInfo info;
+//  bufferlist bl;
+//
+//  ret = store->get_bucket_stats(bucket, stats);
+//  if (ret < 0)
+//    return ret;
+//
+//  obj.bucket = bucket;
+//  int max = 1000;
+//
+//  ret = rgw_get_obj(store, NULL, store->params.domain_root, bucket.name, bl, NULL);
+//
+//  bufferlist::iterator iter = bl.begin();
+//  try {
+//    ::decode(info, iter);
+//  } catch (buffer::error& err) {
+//    cerr << "ERROR: could not decode buffer info, caught buffer::error" << std::endl;
+//    return -EIO;
+//  }
+//
+//  if (delete_children) {
+//    ret = store->list_objects(bucket, max, prefix, delim, marker, objs, common_prefixes,
+//                                 false, ns, (bool *)false, NULL);
+//    if (ret < 0)
+//      return ret;
+//
+//    while (objs.size() > 0) {
+//      std::vector<RGWObjEnt>::iterator it = objs.begin();
+//      for (it = objs.begin(); it != objs.end(); it++) {
+//        ret = remove_object(store, bucket, (*it).name);
+//        if (ret < 0)
+//          return ret;
+//      }
+//      objs.clear();
+//
+//      ret = store->list_objects(bucket, max, prefix, delim, marker, objs, common_prefixes,
+//                                   false, ns, (bool *)false, NULL);
+//      if (ret < 0)
+//        return ret;
+//    }
+//  }
+//
+//  ret = store->delete_bucket(bucket);
+//  if (ret < 0) {
+//    cerr << "ERROR: could not remove bucket " << bucket.name << std::endl;
+//
+//    return ret;
+//  }
+//
+//  ret = rgw_remove_user_bucket_info(store, info.owner, bucket);
+//  if (ret < 0) {
+//    cerr << "ERROR: unable to remove user bucket information" << std::endl;
+//  }
+//
+//  return ret;
+//}
 
 static bool bucket_object_check_filter(const string& name)
 {

@@ -91,4 +91,15 @@ static inline int stringtoul(const string& s, uint32_t *val)
   return 0;
 }
 
+static inline int str_to_bool(const char *s, int def_val)
+{
+  if (!s)
+    return def_val;
+
+  return (strcasecmp(s, "on") == 0 ||
+          strcasecmp(s, "yes") == 0 ||
+          strcasecmp(s, "true") == 0 ||
+          strcasecmp(s, "1") == 0);
+}
+
 #endif
