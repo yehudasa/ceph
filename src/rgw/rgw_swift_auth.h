@@ -3,7 +3,7 @@
 
 #include "rgw_op.h"
 
-#define RGW_SWIFT_TOKEN_EXPIRATION (15 * 60)
+#define RGW_SWIFT_TOKEN_EXPIRATION (24 * 3600)
 
 extern int rgw_swift_verify_signed_token(CephContext *cct, const char *token, RGWUserInfo& info);
 
