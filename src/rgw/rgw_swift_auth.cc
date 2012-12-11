@@ -30,6 +30,7 @@ static int build_token(string& swift_user, string& key, uint64_t nonce, utime_t&
 
   char buf[bl.length() * 2 + 1];
   buf_to_hex((const unsigned char *)bl.c_str(), bl.length(), buf);
+  dout(0) << "build_token user=" << swift_user << " expiration=" << expiration << " token=" << buf << dendl;
   dout(20) << "build_token token=" << buf << dendl;
 
   char k[CEPH_CRYPTO_HMACSHA1_DIGESTSIZE];
@@ -97,7 +98,9 @@ int rgw_swift_verify_signed_token(CephContext *cct, const char *token, RGWUserIn
     dout(0) << "NOTICE: failed to decode token: caught exception" << dendl;
     return -EINVAL;
   }
+  dout(0) << "verify_token user=" << swift_user << " expiration=" << expiration << " token=" << token << dendl;
   utime_t now = ceph_clock_now(cct);
+  dout(1) << "token expiration=" << expiration << dendl;
   if (expiration < now) {
     dout(0) << "NOTICE: old timed out token was used now=" << now << " token.expiration=" << expiration << dendl;
     return -EPERM;
