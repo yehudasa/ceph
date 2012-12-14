@@ -39,6 +39,7 @@ Thread::~Thread()
 
 void *Thread::_entry_func(void *arg) {
   void *r = ((Thread*)arg)->entry();
+  if (g_lockdep) assert(0 == lockdep_lock_count());
   return r;
 }
 

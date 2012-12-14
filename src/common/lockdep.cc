@@ -154,6 +154,16 @@ static bool does_follow(int a, int b)
   return false;
 }
 
+int lockdep_lock_count()
+{
+  int c;
+  pthread_t p = pthread_self();
+  pthread_mutex_lock(&lockdep_mutex);
+  c = held[p].size();
+  pthread_mutex_unlock(&lockdep_mutex);
+  return c;
+}
+
 int lockdep_will_lock(const char *name, int id)
 {
   pthread_t p = pthread_self();
