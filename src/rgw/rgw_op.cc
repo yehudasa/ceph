@@ -384,13 +384,13 @@ int RGWGetObj::read_user_manifest_part(rgw_bucket& bucket, RGWObjEnt& ent, RGWAc
     if (ret < 0)
       goto done_err;
 
-    len = bl.length();
+    off_t len = bl.length();
     cur_ofs += len;
     ofs += len;
     ret = 0;
     perfcounter->tinc(l_rgw_get_lat,
                       (ceph_clock_now(s->cct) - start_time));
-    send_response_data(bl);
+    send_response_data(bl, 0, len);
 
     start_time = ceph_clock_now(s->cct);
   }
@@ -524,6 +524,37 @@ int RGWGetObj::handle_user_manifest(const char *prefix)
   return 0;
 }
 
+class RGWGetObj_CB : public RGWGetDataCB
+{
+  RGWGetObj *op;
+public:
+  RGWGetObj_CB(RGWGetObj *_op) : op(_op) {}
+  virtual ~RGWGetObj_CB() {}
+  
+  int handle_data(bufferlist& bl, off_t bl_ofs, off_t bl_len) {
+dout(0) << __FILE__ << ":" << __LINE__ << " ofs=" << bl_ofs << " len=" << bl_len << dendl;
+    return op->get_data_cb(bl, bl_ofs, bl_len);
+dout(0) << __FILE__ << ":" << __LINE__ << dendl;
+  }
+};
+
+int RGWGetObj::get_data_cb(bufferlist& bl, off_t bl_ofs, off_t bl_len)
+{
+dout(0) << __FILE__ << ":" << __LINE__ << dendl;
+  return send_response_data(bl, bl_ofs, bl_len);
+dout(0) << __FILE__ << ":" << __LINE__ << dendl;
+#if 0
+// FIXME
+  if (start_time > gc_invalidate_time) {
+    r = store->defer_gc(s->obj_ctx, obj);
+    if (r < 0) {
+      dout(0) << "WARNING: could not defer gc entry for obj" << dendl;
+    }
+    gc_invalidate_time = start_time;
+    gc_invalidate_time += (s->cct->_conf->rgw_gc_obj_min_wait / 2);
+#endif
+}
+
 void RGWGetObj::execute()
 {
   void *handle = NULL;
@@ -532,6 +563,8 @@ void RGWGetObj::execute()
   utime_t gc_invalidate_time = ceph_clock_now(s->cct);
   gc_invalidate_time += (s->cct->_conf->rgw_gc_obj_min_wait / 2);
 
+  RGWGetObj_CB cb(this);
+
   map<string, bufferlist>::iterator attr_iter;
 
   perfcounter->inc(l_rgw_get);
@@ -539,11 +572,11 @@ void RGWGetObj::execute()
 
   ret = get_params();
   if (ret < 0)
-    goto done;
+    goto done_err;
 
   ret = init_common();
   if (ret < 0)
-    goto done;
+    goto done_err;
 
   new_ofs = ofs;
   new_end = end;
@@ -551,7 +584,7 @@ void RGWGetObj::execute()
   ret = store->prepare_get_obj(s->obj_ctx, obj, &new_ofs, &new_end, &attrs, mod_ptr,
                                unmod_ptr, &lastmod, if_match, if_nomatch, &total_len, &s->obj_size, &handle, &s->err);
   if (ret < 0)
-    goto done;
+    goto done_err;
 
   attr_iter = attrs.find(RGW_ATTR_USER_MANIFEST);
   if (attr_iter != attrs.end()) {
@@ -568,10 +601,20 @@ void RGWGetObj::execute()
   start = ofs;
 
   if (!get_data || ofs > end)
-    goto done;
+    goto done_err;
 
   perfcounter->inc(l_rgw_get_b, end - ofs);
 
+  ret = store->get_obj_iterate(s->obj_ctx, &handle, obj, ofs, end, &cb);
+
+  perfcounter->tinc(l_rgw_get_lat,
+                   (ceph_clock_now(s->cct) - start_time));
+  if (ret < 0) {
+    goto done_err;
+  }
+
+  store->finish_get_obj(&handle);
+#if 0
   while (ofs <= end) {
     ret = store->get_obj(s->obj_ctx, &handle, obj, bl, ofs, end);
     if (ret < 0) {
@@ -588,8 +631,6 @@ void RGWGetObj::execute()
     ofs += len;
     ret = 0;
 
-    perfcounter->tinc(l_rgw_get_lat,
-                     (ceph_clock_now(s->cct) - start_time));
     ret = send_response_data(bl);
     bl.clear();
     if (ret < 0) {
@@ -614,7 +655,9 @@ void RGWGetObj::execute()
   return;
 
 done:
-  send_response_data(bl);
+#endif
+done_err:
+  send_response_data(bl, 0, 0);
   store->finish_get_obj(&handle);
 }
 

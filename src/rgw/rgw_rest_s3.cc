@@ -94,8 +94,9 @@ static struct response_attr_param resp_attr_params[] = {
   {NULL, NULL},
 };
 
-int RGWGetObj_ObjStore_S3::send_response_data(bufferlist& bl)
+int RGWGetObj_ObjStore_S3::send_response_data(bufferlist& bl, off_t bl_ofs, off_t bl_len)
 {
+dout(0) << __FILE__ << ":" << __LINE__ << dendl;
   const char *content_type = NULL;
   string content_type_str;
   int orig_ret = ret;
@@ -176,7 +177,7 @@ done:
 
 send_data:
   if (get_data && !orig_ret) {
-    int r = s->cio->write(bl.c_str(), len);
+    int r = s->cio->write(bl.c_str() + bl_ofs, bl_len);
     if (r < 0)
       return r;
   }
