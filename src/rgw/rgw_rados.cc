@@ -2335,8 +2335,7 @@ int RGWRados::prepare_get_obj(void *ctx, rgw_obj& obj,
 
 done_err:
   delete new_ctx;
-  delete state;
-  *handle = NULL;
+  finish_get_obj(handle);
   return r;
 }
 
@@ -2648,8 +2647,7 @@ done:
     r = bl.length();
   }
   if (r < 0 || !len || ((off_t)(ofs + len - 1) == end)) {
-    delete state;
-    *handle = NULL;
+    finish_get_obj(handle);
   }
 
 done_ret:
@@ -2665,10 +2663,10 @@ struct get_obj_aio_data {
   off_t ofs;
 };
 
-struct get_obj_data {
+struct get_obj_data : public RefCountedObject {
   RGWRados *rados;
   void *ctx;
-  void **handle;
+  IoCtx io_ctx;
   map<off_t, bufferlist> bl_map;
   map<off_t, librados::AioCompletion *> completion_map;
   uint64_t total_read;
@@ -2678,13 +2676,14 @@ struct get_obj_data {
   RGWGetDataCB *client_cb;
 
   get_obj_data() : total_read(0), lock("get_obj_data"), data_lock("get_obj_data::data_lock") {}
+  virtual ~get_obj_data() {}
 };
 
 static int _get_obj_iterate_cb(rgw_obj& obj, off_t obj_ofs, off_t read_ofs, off_t len, bool is_head_obj, RGWObjState *astate, void *arg)
 {
   struct get_obj_data *d = (struct get_obj_data *)arg;
 
-  return d->rados->get_obj_iterate_cb(d->ctx, astate, d->handle, obj, obj_ofs, read_ofs, len, is_head_obj, arg);
+  return d->rados->get_obj_iterate_cb(d->ctx, astate, obj, obj_ofs, read_ofs, len, is_head_obj, arg);
 }
 
 static void _get_obj_aio_completion_cb(completion_t cb, void *arg)
@@ -2721,6 +2720,9 @@ void RGWRados::get_obj_aio_completion_cb(completion_t c, void *arg)
   }
 
   aiter = d->completion_map.find(aio_data->ofs);
+
+dout(0) << __FILE__ << ":" << __LINE__ << " aio_data->ofs=" << aio_data->ofs << dendl;
+
   assert(aiter != d->completion_map.end());
   completion = aiter->second;
   r = completion->get_return_value();
@@ -2744,6 +2746,7 @@ void RGWRados::get_obj_aio_completion_cb(completion_t c, void *arg)
 
     map<off_t, bufferlist>::iterator old_liter = liter++;
     bl_list.push_back(old_liter->second);
+dout(0) << __FILE__ << ":" << __LINE__ << dendl;
     d->bl_map.erase(old_liter);
   }
   d->lock.Unlock();
@@ -2754,15 +2757,19 @@ void RGWRados::get_obj_aio_completion_cb(completion_t c, void *arg)
   }
 
   d->data_lock.Unlock();
+  d->put();
+
   return;
 
 done_unlock:
   d->lock.Unlock();
   d->data_lock.Unlock();
+  d->put();
+
 }
 
 int RGWRados::get_obj_iterate_cb(void *ctx, RGWObjState *astate,
-		         void **handle, rgw_obj& obj,
+		         rgw_obj& obj,
 			 off_t obj_ofs,
                          off_t read_ofs, off_t len,
                          bool is_head_obj, void *arg)
@@ -2770,7 +2777,6 @@ int RGWRados::get_obj_iterate_cb(void *ctx, RGWObjState *astate,
   RGWRadosCtx *rctx = (RGWRadosCtx *)ctx;
   ObjectReadOperation op;
   struct get_obj_data *d = (struct get_obj_data *)arg;
-
 
   if (is_head_obj) {
     /* only when reading from the head object do we need to do the atomic test */
@@ -2820,10 +2826,9 @@ int RGWRados::get_obj_iterate_cb(void *ctx, RGWObjState *astate,
 
   ldout(cct, 20) << "rados->get_obj_iterate_cb obj-ofs=" << obj_ofs << " read_ofs=" << read_ofs << " len=" << len << dendl;
   op.read(read_ofs, len, &bl, NULL);
+  d->get();
 
-  GetObjState *state = *(GetObjState **)handle;
-
-  int r = state->io_ctx.aio_operate(oid, c, &op, NULL);
+  int r = d->io_ctx.aio_operate(oid, c, &op, NULL);
   ldout(cct, 20) << "rados->aio_operate r=" << r << " bl.length=" << bl.length() << dendl;
 
   if (r < 0) {
@@ -2831,6 +2836,7 @@ int RGWRados::get_obj_iterate_cb(void *ctx, RGWObjState *astate,
     d->completion_map.erase(obj_ofs);
     d->bl_map.erase(obj_ofs);
     d->lock.Unlock();
+    d->put();
   }
 
   return r;
@@ -2840,34 +2846,61 @@ int RGWRados::get_obj_iterate(void *ctx, void **handle, rgw_obj& obj,
                               off_t ofs, off_t end,
 			      RGWGetDataCB *cb)
 {
-  struct get_obj_data data;
+  struct get_obj_data *data = new get_obj_data;
 
-  data.rados = this;
-  data.ctx = ctx;
-  data.handle = handle;
-  data.client_cb = cb;
+  GetObjState *state = *(GetObjState **)handle;
 
-  int r = iterate_obj(ctx, obj, ofs, end, RGW_MAX_CHUNK_SIZE, _get_obj_iterate_cb, (void *)&data);
+  data->rados = this;
+  data->ctx = ctx;
+  data->io_ctx.dup(state->io_ctx);
+  data->client_cb = cb;
+
+  int r = iterate_obj(ctx, obj, ofs, end, RGW_MAX_CHUNK_SIZE, _get_obj_iterate_cb, (void *)data);
   if (r < 0) {
-    return r;
+    goto err_exit_lock;
   }
 
+  data->lock.Lock();
+
   do {
-    data.lock.Lock();
-    map<off_t, librados::AioCompletion *>::iterator iter = data.completion_map.begin();
-    if (iter == data.completion_map.end()) {
-      data.lock.Unlock();
+    map<off_t, librados::AioCompletion *>::iterator iter = data->completion_map.begin();
+    if (iter == data->completion_map.end()) {
       break;
     }
+    off_t cur_ofs = iter->first;
     librados::AioCompletion *c = iter->second;
-    data.completion_map.erase(iter);
-    data.lock.Unlock();
+    data->lock.Unlock();
 
     c->wait_for_complete_and_cb();
+    r = c->get_return_value();
     c->release();
+
+    data->lock.Lock();
+    data->completion_map.erase(cur_ofs);
+
+    if (r < 0) {
+      goto err_exit;
+    }
   } while (true);
 
-  return data.total_read;
+  data->lock.Unlock();
+
+  data->put();
+  return 0;
+
+err_exit_lock:
+  data->lock.Lock();
+err_exit:
+  for (map<off_t, librados::AioCompletion *>::iterator iter = data->completion_map.begin();
+       iter != data->completion_map.end(); ++iter) {
+    librados::AioCompletion  *c = iter->second;
+    c->release();
+  }
+  data->lock.Unlock();
+
+  data->put();
+
+  return r;
 }
 
 void RGWRados::finish_get_obj(void **handle)

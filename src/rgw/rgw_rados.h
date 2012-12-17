@@ -3,6 +3,7 @@
 
 #include "include/rados/librados.hpp"
 #include "include/Context.h"
+#include "common/RefCountedObj.h"
 #include "rgw_common.h"
 #include "cls/rgw/cls_rgw_types.h"
 #include "rgw_log.h"
@@ -642,7 +643,7 @@ public:
 	              RGWGetDataCB *cb);
 
   int get_obj_iterate_cb(void *ctx, RGWObjState *astate,
-                         void **handle, rgw_obj& obj,
+                         rgw_obj& obj,
                          off_t obj_ofs, off_t read_ofs, off_t len,
                          bool is_head_obj, void *arg);
 
