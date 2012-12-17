@@ -2712,16 +2712,13 @@ void RGWRados::get_obj_aio_completion_cb(completion_t c, void *arg)
   d->lock.Lock();
 
   liter = d->bl_map.begin();
-  assert(liter != d->bl_map.end());
 
-  if (liter->first != aio_data->ofs) {
-    /* out of order response */
+  if (liter == d->bl_map.end() ||
+      liter->first != aio_data->ofs) {
     goto done_unlock;
   }
 
   aiter = d->completion_map.find(aio_data->ofs);
-
-dout(0) << __FILE__ << ":" << __LINE__ << " aio_data->ofs=" << aio_data->ofs << dendl;
 
   assert(aiter != d->completion_map.end());
   completion = aiter->second;
@@ -2746,7 +2743,6 @@ dout(0) << __FILE__ << ":" << __LINE__ << " aio_data->ofs=" << aio_data->ofs << 
 
     map<off_t, bufferlist>::iterator old_liter = liter++;
     bl_list.push_back(old_liter->second);
-dout(0) << __FILE__ << ":" << __LINE__ << dendl;
     d->bl_map.erase(old_liter);
   }
   d->lock.Unlock();
@@ -2765,7 +2761,6 @@ done_unlock:
   d->lock.Unlock();
   d->data_lock.Unlock();
   d->put();
-
 }
 
 int RGWRados::get_obj_iterate_cb(void *ctx, RGWObjState *astate,
@@ -2828,7 +2823,10 @@ int RGWRados::get_obj_iterate_cb(void *ctx, RGWObjState *astate,
   op.read(read_ofs, len, &bl, NULL);
   d->get();
 
-  int r = d->io_ctx.aio_operate(oid, c, &op, NULL);
+  librados::IoCtx io_ctx(d->io_ctx);
+  io_ctx.locator_set_key(key);
+
+  int r = io_ctx.aio_operate(oid, c, &op, NULL);
   ldout(cct, 20) << "rados->aio_operate r=" << r << " bl.length=" << bl.length() << dendl;
 
   if (r < 0) {
