@@ -2756,6 +2756,7 @@ struct get_obj_data : public RefCountedObject {
   }
 
   void cancel_io(off_t ofs) {
+    ldout(cct, 20) << "get_obj_data::cancel_io() ofs=" << ofs << dendl;
     lock.Lock();
     map<off_t, AioCompletion *>::iterator iter = completion_map.find(ofs);
     if (iter != completion_map.end()) {
@@ -2772,6 +2773,7 @@ struct get_obj_data : public RefCountedObject {
   }
 
   void cancel_all_io() {
+    ldout(cct, 20) << "get_obj_data::cancel_all_io()" << dendl;
     Mutex::Locker l(lock);
     for (map<off_t, librados::AioCompletion *>::iterator iter = completion_map.begin();
          iter != completion_map.end(); ++iter) {
@@ -2853,6 +2855,7 @@ void RGWRados::get_obj_aio_completion_cb(completion_t c, void *arg)
   list<bufferlist>::iterator iter;
   int r;
 
+  ldout(cct, 20) << "get_obj_aio_completion_cb: io completion ofs=" << ofs << " len=" << len << dendl;
   d->throttle.put(len);
 
   if (d->is_cancelled())
@@ -2927,7 +2930,7 @@ int RGWRados::get_obj_iterate_cb(void *ctx, RGWObjState *astate,
     return d->get_err_code();
   }
 
-  ldout(cct, 20) << "rados->get_obj_iterate_cb obj-ofs=" << obj_ofs << " read_ofs=" << read_ofs << " len=" << len << dendl;
+  ldout(cct, 20) << "rados->get_obj_iterate_cb oid=" << oid << " obj-ofs=" << obj_ofs << " read_ofs=" << read_ofs << " len=" << len << dendl;
   op.read(read_ofs, len, pbl, NULL);
 
   librados::IoCtx io_ctx(d->io_ctx);
@@ -2966,6 +2969,7 @@ int RGWRados::get_obj_iterate(void *ctx, void **handle, rgw_obj& obj,
   while (!done) {
     r = data->wait_next_io(&done);
     if (r < 0) {
+      dout(10) << "get_obj_iterate() r=" << r << ", canceling all io" << dendl;
       data->cancel_all_io();
       break;
     }
