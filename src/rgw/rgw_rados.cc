@@ -2663,20 +2663,159 @@ struct get_obj_aio_data {
   off_t ofs;
 };
 
+struct get_obj_io {
+  off_t len;
+  bufferlist bl;
+};
+
+static void _get_obj_aio_completion_cb(completion_t cb, void *arg);
+
 struct get_obj_data : public RefCountedObject {
   RGWRados *rados;
   void *ctx;
   IoCtx io_ctx;
-  map<off_t, bufferlist> bl_map;
+  map<off_t, get_obj_io> io_map;
   map<off_t, librados::AioCompletion *> completion_map;
   uint64_t total_read;
   Mutex lock;
   Mutex data_lock;
   list<get_obj_aio_data> aio_data;
   RGWGetDataCB *client_cb;
+  atomic_t cancelled;
+  atomic_t err_code;
 
   get_obj_data() : total_read(0), lock("get_obj_data"), data_lock("get_obj_data::data_lock") {}
-  virtual ~get_obj_data() {}
+  virtual ~get_obj_data() { } 
+  void set_cancelled(int r) {
+    cancelled.set(1);
+    err_code.set(r);
+  }
+
+  bool is_cancelled() {
+    return cancelled.read() == 1;
+  }
+
+  int get_err_code() {
+    return err_code.read();
+  }
+
+  int wait_next_io(bool *done) {
+    lock.Lock();
+    map<off_t, librados::AioCompletion *>::iterator iter = completion_map.begin();
+    if (iter == completion_map.end()) {
+      *done = true;
+      return 0;
+    }
+    off_t cur_ofs = iter->first;
+    librados::AioCompletion *c = iter->second;
+    lock.Unlock();
+
+    c->wait_for_complete_and_cb();
+    int r = c->get_return_value();
+    c->release();
+
+    lock.Lock();
+    completion_map.erase(cur_ofs);
+
+    if (completion_map.empty()) {
+      *done = true;
+    }
+    lock.Unlock();
+    
+    return r;
+  }
+
+  void add_io(off_t ofs, bufferlist **pbl, AioCompletion **pc) {
+    Mutex::Locker l(lock);
+
+    get_obj_io& io = io_map[ofs];
+    *pbl = &io.bl;
+
+    struct get_obj_aio_data aio;
+    aio.ofs = ofs;
+    aio.op_data = this;
+
+    aio_data.push_back(aio);
+
+    struct get_obj_aio_data *paio_data =  &aio_data.back(); /* last element */
+
+    librados::AioCompletion *c = librados::Rados::aio_create_completion((void *)paio_data, _get_obj_aio_completion_cb, NULL);
+    completion_map[ofs] = c;
+
+    *pc = c;
+
+    get();
+  }
+
+  void cancel_io(off_t ofs) {
+    lock.Lock();
+    map<off_t, AioCompletion *>::iterator iter = completion_map.find(ofs);
+    if (iter != completion_map.end()) {
+      AioCompletion *c = iter->second;
+      c->release();
+      completion_map.erase(ofs);
+      io_map.erase(ofs);
+    }
+    lock.Unlock();
+
+    /* we don't drop a reference here -- e.g., not calling d->put(), because we still
+     * need IoCtx to live, as io callback may still be called
+     */
+  }
+
+  void cancel_all_io() {
+    Mutex::Locker l(lock);
+    for (map<off_t, librados::AioCompletion *>::iterator iter = completion_map.begin();
+         iter != completion_map.end(); ++iter) {
+      librados::AioCompletion  *c = iter->second;
+      c->release();
+    }
+  }
+
+  int get_complete_ios(off_t ofs, list<bufferlist>& bl_list) {
+    Mutex::Locker l(lock);
+
+    map<off_t, get_obj_io>::iterator liter = io_map.begin();
+
+    if (liter == io_map.end() ||
+        liter->first != ofs) {
+      return 0;
+    }
+
+    map<off_t, librados::AioCompletion *>::iterator aiter;
+    aiter = completion_map.find(ofs);
+    if (aiter == completion_map.end()) {
+    /* completion map does not hold this io, it was cancelled */
+      return 0;
+    }
+
+    AioCompletion *completion = aiter->second;
+    int r = completion->get_return_value();
+    if (r < 0)
+      return r;
+
+    for (; aiter != completion_map.end(); aiter++) {
+      completion = aiter->second;
+      if (!completion->is_complete()) {
+        /* reached a request that is not yet complete, stop */
+        break;
+      }
+
+      r = completion->get_return_value();
+      if (r < 0) {
+        set_cancelled(r); /* mark it as cancelled, so that we don't continue processing next operations */
+        return r;
+      }
+
+      total_read += r;
+
+      map<off_t, get_obj_io>::iterator old_liter = liter++;
+      bl_list.push_back(old_liter->second.bl);
+      io_map.erase(old_liter);
+    }
+
+    return 0;
+  }
 };
 
 static int _get_obj_iterate_cb(rgw_obj& obj, off_t obj_ofs, off_t read_ofs, off_t len, bool is_head_obj, RGWObjState *astate, void *arg)
@@ -2699,68 +2838,32 @@ void RGWRados::get_obj_aio_completion_cb(completion_t c, void *arg)
 {
   struct get_obj_aio_data *aio_data = (struct get_obj_aio_data *)arg;
   struct get_obj_data *d = aio_data->op_data;
+  off_t ofs = aio_data->ofs;
 
   list<bufferlist> bl_list;
   list<bufferlist>::iterator iter;
-  map<off_t, librados::AioCompletion *>::iterator aiter;
-  map<off_t, bufferlist>::iterator liter;
-  AioCompletion *completion;
   int r;
+
+  if (d->is_cancelled())
+    goto done;
 
   d->data_lock.Lock();
 
-  d->lock.Lock();
-
-  liter = d->bl_map.begin();
-
-  if (liter == d->bl_map.end() ||
-      liter->first != aio_data->ofs) {
-    goto done_unlock;
-  }
-
-  aiter = d->completion_map.find(aio_data->ofs);
-
-  assert(aiter != d->completion_map.end());
-  completion = aiter->second;
-  r = completion->get_return_value();
+  r = d->get_complete_ios(ofs, bl_list);
   if (r < 0) {
     goto done_unlock;
   }
-
-  for (; aiter != d->completion_map.end(); ++aiter) {
-    completion = aiter->second;
-    if (!completion->is_complete()) {
-      /* reached a request that is not yet complete, stop */
-      break;
-    }
-
-    r = completion->get_return_value();
-    if (r < 0) {
-      goto done_unlock;
-    }
-
-    d->total_read += r;
-
-    map<off_t, bufferlist>::iterator old_liter = liter++;
-    bl_list.push_back(old_liter->second);
-    d->bl_map.erase(old_liter);
-  }
-  d->lock.Unlock();
 
   for (iter = bl_list.begin(); iter != bl_list.end(); ++iter) {
     bufferlist& bl = *iter;
     d->client_cb->handle_data(bl, 0, bl.length());
   }
 
-  d->data_lock.Unlock();
-  d->put();
-
-  return;
-
 done_unlock:
-  d->lock.Unlock();
   d->data_lock.Unlock();
+done:
   d->put();
+  return;
 }
 
 int RGWRados::get_obj_iterate_cb(void *ctx, RGWObjState *astate,
@@ -2803,38 +2906,28 @@ int RGWRados::get_obj_iterate_cb(void *ctx, RGWObjState *astate,
   rgw_bucket bucket;
   get_obj_bucket_and_oid_key(obj, bucket, oid, key);
 
-  d->lock.Lock();
-  bufferlist& bl = d->bl_map[obj_ofs];
+  bufferlist *pbl;
+  AioCompletion *c;
 
-  struct get_obj_aio_data aio_data;
-  aio_data.ofs = obj_ofs;
-  aio_data.op_data = d;
+  d->add_io(obj_ofs, &pbl, &c);
 
-  d->aio_data.push_back(aio_data);
-
-  struct get_obj_aio_data *paio_data =  &d->aio_data.back(); /* last element */
-
-  librados::AioCompletion *c = librados::Rados::aio_create_completion((void *)paio_data, _get_obj_aio_completion_cb, NULL);
-  d->completion_map[obj_ofs] = c;
-
-  d->lock.Unlock();
+  // d->throttle.get(len);
+  if (d->is_cancelled()) {
+    return d->get_err_code();
+  }
 
   ldout(cct, 20) << "rados->get_obj_iterate_cb obj-ofs=" << obj_ofs << " read_ofs=" << read_ofs << " len=" << len << dendl;
-  op.read(read_ofs, len, &bl, NULL);
-  d->get();
+  op.read(read_ofs, len, pbl, NULL);
 
   librados::IoCtx io_ctx(d->io_ctx);
   io_ctx.locator_set_key(key);
 
   int r = io_ctx.aio_operate(oid, c, &op, NULL);
-  ldout(cct, 20) << "rados->aio_operate r=" << r << " bl.length=" << bl.length() << dendl;
+  ldout(cct, 20) << "rados->aio_operate r=" << r << " bl.length=" << pbl->length() << dendl;
 
   if (r < 0) {
-    d->lock.Lock();
-    d->completion_map.erase(obj_ofs);
-    d->bl_map.erase(obj_ofs);
-    d->lock.Unlock();
-    d->put();
+    d->set_cancelled(r);
+    d->cancel_io(obj_ofs);
   }
 
   return r;
@@ -2845,6 +2938,7 @@ int RGWRados::get_obj_iterate(void *ctx, void **handle, rgw_obj& obj,
 			      RGWGetDataCB *cb)
 {
   struct get_obj_data *data = new get_obj_data;
+  bool done = false;
 
   GetObjState *state = *(GetObjState **)handle;
 
@@ -2855,49 +2949,19 @@ int RGWRados::get_obj_iterate(void *ctx, void **handle, rgw_obj& obj,
 
   int r = iterate_obj(ctx, obj, ofs, end, RGW_MAX_CHUNK_SIZE, _get_obj_iterate_cb, (void *)data);
   if (r < 0) {
-    goto err_exit_lock;
+    goto done;
   }
 
-  data->lock.Lock();
-
-  do {
-    map<off_t, librados::AioCompletion *>::iterator iter = data->completion_map.begin();
-    if (iter == data->completion_map.end()) {
+  while (!done) {
+    r = data->wait_next_io(&done);
+    if (r < 0) {
+      data->cancel_all_io();
       break;
     }
-    off_t cur_ofs = iter->first;
-    librados::AioCompletion *c = iter->second;
-    data->lock.Unlock();
-
-    c->wait_for_complete_and_cb();
-    r = c->get_return_value();
-    c->release();
-
-    data->lock.Lock();
-    data->completion_map.erase(cur_ofs);
-
-    if (r < 0) {
-      goto err_exit;
-    }
-  } while (true);
-
-  data->lock.Unlock();
-
-  data->put();
-  return 0;
-
-err_exit_lock:
-  data->lock.Lock();
-err_exit:
-  for (map<off_t, librados::AioCompletion *>::iterator iter = data->completion_map.begin();
-       iter != data->completion_map.end(); ++iter) {
-    librados::AioCompletion  *c = iter->second;
-    c->release();
   }
-  data->lock.Unlock();
 
+done:
   data->put();
-
   return r;
 }
 

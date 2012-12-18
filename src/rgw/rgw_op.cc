@@ -532,17 +532,14 @@ public:
   virtual ~RGWGetObj_CB() {}
   
   int handle_data(bufferlist& bl, off_t bl_ofs, off_t bl_len) {
-dout(0) << __FILE__ << ":" << __LINE__ << " ofs=" << bl_ofs << " len=" << bl_len << dendl;
     return op->get_data_cb(bl, bl_ofs, bl_len);
-dout(0) << __FILE__ << ":" << __LINE__ << dendl;
   }
 };
 
 int RGWGetObj::get_data_cb(bufferlist& bl, off_t bl_ofs, off_t bl_len)
 {
-dout(0) << __FILE__ << ":" << __LINE__ << dendl;
   return send_response_data(bl, bl_ofs, bl_len);
-dout(0) << __FILE__ << ":" << __LINE__ << dendl;
+#warning FIXME garbage collection
 #if 0
 // FIXME
   if (start_time > gc_invalidate_time) {
