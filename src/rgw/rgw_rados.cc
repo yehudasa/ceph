@@ -4,6 +4,7 @@
 
 #include "common/errno.h"
 #include "common/Formatter.h"
+#include "common/Throttle.h"
 
 #include "rgw_rados.h"
 #include "rgw_cache.h"
@@ -2661,6 +2662,7 @@ struct get_obj_data;
 struct get_obj_aio_data {
   struct get_obj_data *op_data;
   off_t ofs;
+  off_t len;
 };
 
 struct get_obj_io {
@@ -2671,6 +2673,7 @@ struct get_obj_io {
 static void _get_obj_aio_completion_cb(completion_t cb, void *arg);
 
 struct get_obj_data : public RefCountedObject {
+  CephContext *cct;
   RGWRados *rados;
   void *ctx;
   IoCtx io_ctx;
@@ -2683,8 +2686,11 @@ struct get_obj_data : public RefCountedObject {
   RGWGetDataCB *client_cb;
   atomic_t cancelled;
   atomic_t err_code;
+  Throttle throttle;
 
-  get_obj_data() : total_read(0), lock("get_obj_data"), data_lock("get_obj_data::data_lock") {}
+  get_obj_data(CephContext *_cct) : cct(_cct),
+    total_read(0), lock("get_obj_data"), data_lock("get_obj_data::data_lock"),
+    throttle(cct, "get_obj_data", cct->_conf->rgw_get_obj_window_size) {}
   virtual ~get_obj_data() { } 
   void set_cancelled(int r) {
     cancelled.set(1);
@@ -2704,6 +2710,7 @@ struct get_obj_data : public RefCountedObject {
     map<off_t, librados::AioCompletion *>::iterator iter = completion_map.begin();
     if (iter == completion_map.end()) {
       *done = true;
+      lock.Unlock();
       return 0;
     }
     off_t cur_ofs = iter->first;
@@ -2725,7 +2732,7 @@ struct get_obj_data : public RefCountedObject {
     return r;
   }
 
-  void add_io(off_t ofs, bufferlist **pbl, AioCompletion **pc) {
+  void add_io(off_t ofs, off_t len, bufferlist **pbl, AioCompletion **pc) {
     Mutex::Locker l(lock);
 
     get_obj_io& io = io_map[ofs];
@@ -2733,6 +2740,7 @@ struct get_obj_data : public RefCountedObject {
 
     struct get_obj_aio_data aio;
     aio.ofs = ofs;
+    aio.len = len;
     aio.op_data = this;
 
     aio_data.push_back(aio);
@@ -2839,10 +2847,13 @@ void RGWRados::get_obj_aio_completion_cb(completion_t c, void *arg)
   struct get_obj_aio_data *aio_data = (struct get_obj_aio_data *)arg;
   struct get_obj_data *d = aio_data->op_data;
   off_t ofs = aio_data->ofs;
+  off_t len = aio_data->len;
 
   list<bufferlist> bl_list;
   list<bufferlist>::iterator iter;
   int r;
+
+  d->throttle.put(len);
 
   if (d->is_cancelled())
     goto done;
@@ -2909,9 +2920,9 @@ int RGWRados::get_obj_iterate_cb(void *ctx, RGWObjState *astate,
   bufferlist *pbl;
   AioCompletion *c;
 
-  d->add_io(obj_ofs, &pbl, &c);
+  d->add_io(obj_ofs, len, &pbl, &c);
 
-  // d->throttle.get(len);
+  d->throttle.get(len);
   if (d->is_cancelled()) {
     return d->get_err_code();
   }
@@ -2937,7 +2948,7 @@ int RGWRados::get_obj_iterate(void *ctx, void **handle, rgw_obj& obj,
                               off_t ofs, off_t end,
 			      RGWGetDataCB *cb)
 {
-  struct get_obj_data *data = new get_obj_data;
+  struct get_obj_data *data = new get_obj_data(cct);
   bool done = false;
 
   GetObjState *state = *(GetObjState **)handle;
@@ -2947,7 +2958,7 @@ int RGWRados::get_obj_iterate(void *ctx, void **handle, rgw_obj& obj,
   data->io_ctx.dup(state->io_ctx);
   data->client_cb = cb;
 
-  int r = iterate_obj(ctx, obj, ofs, end, RGW_MAX_CHUNK_SIZE, _get_obj_iterate_cb, (void *)data);
+  int r = iterate_obj(ctx, obj, ofs, end, cct->_conf->rgw_get_obj_max_req_size, _get_obj_iterate_cb, (void *)data);
   if (r < 0) {
     goto done;
   }
