@@ -75,6 +75,7 @@ protected:
   bool get_data;
   bool partial_content;
   rgw_obj obj;
+  utime_t gc_invalidate_time;
 
   int init_common();
 public:

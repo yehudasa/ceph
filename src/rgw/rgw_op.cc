@@ -538,18 +538,17 @@ public:
 
 int RGWGetObj::get_data_cb(bufferlist& bl, off_t bl_ofs, off_t bl_len)
 {
-  return send_response_data(bl, bl_ofs, bl_len);
-#warning FIXME garbage collection
-#if 0
-// FIXME
+  /* garbage collection related handling */
+  utime_t start_time = ceph_clock_now(s->cct);
   if (start_time > gc_invalidate_time) {
-    r = store->defer_gc(s->obj_ctx, obj);
+    int r = store->defer_gc(s->obj_ctx, obj);
     if (r < 0) {
       dout(0) << "WARNING: could not defer gc entry for obj" << dendl;
     }
     gc_invalidate_time = start_time;
     gc_invalidate_time += (s->cct->_conf->rgw_gc_obj_min_wait / 2);
-#endif
+  }
+  return send_response_data(bl, bl_ofs, bl_len);
 }
 
 void RGWGetObj::execute()
@@ -557,7 +556,7 @@ void RGWGetObj::execute()
   void *handle = NULL;
   utime_t start_time = s->time;
   bufferlist bl;
-  utime_t gc_invalidate_time = ceph_clock_now(s->cct);
+  gc_invalidate_time = ceph_clock_now(s->cct);
   gc_invalidate_time += (s->cct->_conf->rgw_gc_obj_min_wait / 2);
 
   RGWGetObj_CB cb(this);
@@ -611,48 +610,7 @@ void RGWGetObj::execute()
   }
 
   store->finish_get_obj(&handle);
-#if 0
-  while (ofs <= end) {
-    ret = store->get_obj(s->obj_ctx, &handle, obj, bl, ofs, end);
-    if (ret < 0) {
-      goto done;
-    }
-    len = ret;
 
-    if (!len) {
-      dout(0) << "WARNING: failed to read object, returned zero length" << dendl;
-      ret = -EIO;
-      goto done;
-    }
-
-    ofs += len;
-    ret = 0;
-
-    ret = send_response_data(bl);
-    bl.clear();
-    if (ret < 0) {
-      dout(0) << "NOTICE: failed to send response to client" << dendl;
-      goto done;
-    }
-
-    start_time = ceph_clock_now(s->cct);
-
-    if (ofs <= end) {
-      if (start_time > gc_invalidate_time) {
-	int r = store->defer_gc(s->obj_ctx, obj);
-	if (r < 0) {
-	  dout(0) << "WARNING: could not defer gc entry for obj" << dendl;
-	}
-	gc_invalidate_time = start_time;
-        gc_invalidate_time += (s->cct->_conf->rgw_gc_obj_min_wait / 2);
-      }
-    }
-  }
-
-  return;
-
-done:
-#endif
 done_err:
   send_response_data(bl, 0, 0);
   store->finish_get_obj(&handle);
