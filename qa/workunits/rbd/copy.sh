@@ -165,7 +165,7 @@ test_remove() {
     rbd create -s 1 test1
     rados rm -p rbd test1.rbd
     rbd rm test1
-    rbd ls | wc -l | grep "^0$"
+    rbd ls | tee /tmp/ls.out | wc -l | grep "^0$"
 
     # remove with header missing
     rbd create --new-format -s 1 test2
