@@ -136,6 +136,22 @@ public:
       crush->chooseleaf_descend_once != 0;
   }
 
+  /**
+   * set the latest/best default tunable values
+   *
+   * Note that these new values may be incompatible with older
+   * versions of crush, as indicated by the has_nondefault_tunable*()
+   * methods.
+   */
+  void set_new_default_tunables() {
+    // CEPH_FEATURE_CRUSH_TUNABLES
+    crush->choose_local_tries = 0;
+    crush->choose_local_fallback_tries = 0;
+    crush->choose_total_tries = 50;
+    // CEPH_FEATURE_CRUSH_TUNABLES2
+    crush->chooseleaf_descend_once = 1;
+  }
+
   // bucket types
   int get_num_type_names() const {
     return type_map.size();

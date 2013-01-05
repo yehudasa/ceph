@@ -1648,6 +1648,9 @@ void OSDMap::build_simple_crush_map(CephContext *cct, CrushWrapper& crush,
 
   crush.create();
 
+  // set potentially incompat tunables
+  crush.set_new_default_tunables();
+
   crush.set_type_name(0, "osd");
   crush.set_type_name(1, "host");
   crush.set_type_name(2, "rack");
@@ -1770,6 +1773,9 @@ void OSDMap::build_simple_crush_map_from_conf(CephContext *cct, CrushWrapper& cr
   const md_config_t *conf = cct->_conf;
 
   crush.create();
+
+  // set potentially incompat tunables
+  crush.set_new_default_tunables();
 
   crush.set_type_name(0, "osd");
   crush.set_type_name(1, "host");

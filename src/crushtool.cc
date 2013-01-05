@@ -510,6 +510,7 @@ int main(int argc, const char **argv)
     }
 
     crush.create();
+    crush.set_new_default_tunables();
 
     vector<int> lower_items;
     vector<int> lower_weights;
