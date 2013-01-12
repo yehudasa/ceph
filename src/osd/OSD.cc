@@ -1946,9 +1946,7 @@ void OSD::tick()
   // periodically kick recovery work queue
   recovery_tp.wake();
   
-  if (scrub_should_schedule()) {
-    sched_scrub();
-  }
+  sched_scrub();
 
   map_lock.get_read();
 
@@ -3087,11 +3085,11 @@ void OSD::handle_scrub(MOSDScrub *m)
       PG *pg = p->second;
       pg->lock();
       if (pg->is_primary()) {
-	if (m->repair)
-	  pg->state_set(PG_STATE_REPAIR);
-	if (pg->queue_scrub()) {
-	  dout(10) << "queueing " << *pg << " for scrub" << dendl;
-	}
+	pg->unreg_scrub();
+	pg->must_scrub = true;
+	pg->must_repair = m->repair;
+	pg->reg_scrub();
+	dout(10) << "marking " << *pg << " for scrub" << dendl;
       }
       pg->unlock();
     }
@@ -3103,11 +3101,11 @@ void OSD::handle_scrub(MOSDScrub *m)
 	PG *pg = pg_map[*p];
 	pg->lock();
 	if (pg->is_primary()) {
-	  if (m->repair)
-	    pg->state_set(PG_STATE_REPAIR);
-	  if (pg->queue_scrub()) {
-	    dout(10) << "queueing " << *pg << " for scrub" << dendl;
-	  }
+	  pg->unreg_scrub();
+	  pg->must_scrub = true;
+	  pg->must_repair = m->repair;
+	  pg->reg_scrub();
+	  dout(10) << "marking " << *pg << " for scrub" << dendl;
 	}
 	pg->unlock();
       }
@@ -3154,7 +3152,9 @@ void OSD::sched_scrub()
 {
   assert(osd_lock.is_locked());
 
-  dout(20) << "sched_scrub" << dendl;
+  bool should = scrub_should_schedule();
+
+  dout(20) << "sched_scrub should=" << (int)should << dendl;
 
   pair<utime_t,pg_t> pos;
   utime_t max = ceph_clock_now(g_ceph_context);
@@ -3171,7 +3171,7 @@ void OSD::sched_scrub()
     utime_t t = pos.first;
     pg_t pgid = pos.second;
 
-    if (t > max) {
+    if (t > max && t != utime_t()) {
       dout(10) << " " << pgid << " at " << t
 	       << " > " << max << " (" << g_conf->osd_scrub_max_interval << " seconds ago)" << dendl;
       break;
@@ -3181,7 +3181,9 @@ void OSD::sched_scrub()
     sched_scrub_lock.Unlock();
     PG *pg = _lookup_lock_pg(pgid);
     if (pg) {
-      if (pg->is_active() && !pg->sched_scrub()) {
+      if (pg->is_active() &&
+	  (should || pg->must_scrub) &&
+	  !pg->sched_scrub()) {
 	pg->unlock();
 	sched_scrub_lock.Lock();
 	break;
