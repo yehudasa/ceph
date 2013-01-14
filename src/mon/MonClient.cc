@@ -290,7 +290,8 @@ int MonClient::init()
 	r = 0;
 	no_keyring_disabled_cephx = true;
       } else {
-	lderr(cct) << "ERROR: missing keyring, cannot use cephx for authentication" << dendl;
+        lderr(cct) << "ERROR: missing keyring (" << cct->_conf->keyring
+                   << "), cannot use cephx for authentication" << dendl;
       }
     }
   }
@@ -359,7 +360,9 @@ int MonClient::authenticate(double timeout)
   }
 
   if (authenticate_err < 0 && no_keyring_disabled_cephx) {
-    lderr(cct) << "authenticate NOTE: no keyring found; disabled cephx authentication" << dendl;
+    lderr(cct) << "authenticate NOTE: no keyring found ("
+               << cct->_conf->keyring
+               << "); disabled cephx authentication" << dendl;
   }
 
   return authenticate_err;
