@@ -582,7 +582,8 @@ bool MDSMonitor::preprocess_command(MMonCommand *m)
 	}
 	if (r == 0) {
 	  rdata.append(ds);
-	  ss << "dumped mdsmap epoch " << p->get_epoch();
+          if (format != "json")
+            ss << " ";
 	}
 	if (p != &mdsmap)
 	  delete p;

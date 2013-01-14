@@ -964,13 +964,13 @@ bool PGMonitor::preprocess_command(MMonCommand *m)
 	}
 	if (r == 0) {
 	  rdata.append(ds);
-	  ss << "dumped " << what << " in format " << format;
+          if (format != "json")
+            ss << "dumped " << what << " in format " << format;
 	}
 	r = 0;
       }
     }
     else if (m->cmd[1] == "dump_json") {
-      ss << "ok";
       r = 0;
       JSONFormatter jsf(true);
       jsf.open_object_section("pg_map");
@@ -984,7 +984,6 @@ bool PGMonitor::preprocess_command(MMonCommand *m)
       r = dump_stuck_pg_stats(ss, rdata, args);
     }
     else if (m->cmd[1] == "dump_pools_json") {
-      ss << "ok";
       r = 0;
       JSONFormatter jsf(true);
       jsf.open_object_section("pg_map");
@@ -1429,7 +1428,8 @@ int PGMonitor::dump_stuck_pg_stats(ostream& ss,
     pg_map.dump_stuck_plain(ds, stuck_type, cutoff);
   }
   rdata.append(ds);
-  ss << "ok";
+  if (format != "json")
+    ss << "";
   return 0;
 }
 

@@ -231,7 +231,8 @@ bool MonmapMonitor::preprocess_command(MMonCommand *m)
 	}
 	if (r == 0) {
 	  rdata.append(ds);
-	  ss << "dumped monmap epoch " << p->get_epoch();
+          if (format != "json")
+            ss << " ";
 	}
   	if (p != mon->monmap)
 	  delete p;
