@@ -6469,6 +6469,25 @@ int Client::_setxattr(Inode *in, const char *name, const void *value, size_t siz
     return -EROFS;
   }
 
+  // special xattr?
+  if (strncmp(name, "user.ceph.", 10) == 0) {
+    if (strcmp(name, "user.ceph.dir.layout.pool") == 0) {
+      char term[size+1];
+      memcpy(term, value, size);
+      term[size] = '\0';
+      char *e = 0;
+      long pool = strtol(term, &e, 10);
+      ldout(cct, 10) << " term '" << term << "' " << (void*)term << " e " << (void*)e << " pool " << pool << dendl;
+      if ((e == term || e == 0 || e != term + strlen(term)) || pool < 0)
+	return -EINVAL;
+      ldout(cct, 10) << "_setxattr ceph.dir.layout.pool to " << pool << dendl;
+      ceph_file_layout layout = in->layout;
+      layout.fl_pg_pool = pool;
+      return _set_dir_layout(in, &layout, uid, gid);
+    }
+    return -EINVAL;
+  }
+
   MetaRequest *req = new MetaRequest(CEPH_MDS_OP_SETXATTR);
   filepath path;
   in->make_nosnap_relative_path(path);
@@ -7226,6 +7245,18 @@ int Client::ll_release(Fh *fh)
 
 // =========================================
 // layout
+
+int Client::_set_dir_layout(Inode *in, ceph_file_layout *layout, uid_t uid, gid_t gid)
+{
+  MetaRequest *req = new MetaRequest(CEPH_MDS_OP_SETDIRLAYOUT);
+  filepath path;
+  in->make_nosnap_relative_path(path);
+  req->set_filepath(path);
+  req->inode = in;
+  req->head.args.setlayout.layout = *layout;
+  return make_request(req, uid, gid);
+}
+
 
 // default layout
 
