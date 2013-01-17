@@ -572,3 +572,40 @@ void session_info_t::generate_test_instances(list<session_info_t*>& ls)
   ls.back()->used_inos.insert(777, 12);
   ls.back()->used_inos.insert(888, 1212);
 }
+
+
+/*
+ * string_snap_t
+ */
+void string_snap_t::encode(bufferlist& bl) const
+{
+  ENCODE_START(2, 2, bl);
+  ::encode(name, bl);
+  ::encode(snapid, bl);
+  ENCODE_FINISH(bl);
+}
+
+void string_snap_t::decode(bufferlist::iterator& bl)
+{
+  DECODE_START_LEGACY_COMPAT_LEN(2, 2, 2, bl);
+  ::decode(name, bl);
+  ::decode(snapid, bl);
+  DECODE_FINISH(bl);
+}
+
+void string_snap_t::dump(Formatter *f) const
+{
+  f->dump_string("name", name);
+  f->dump_unsigned("snapid", snapid);
+}
+
+void string_snap_t::generate_test_instances(list<string_snap_t*>& ls)
+{
+  ls.push_back(new string_snap_t);
+  ls.push_back(new string_snap_t);
+  ls.back()->name = "foo";
+  ls.back()->snapid = 123;
+  ls.push_back(new string_snap_t);
+  ls.back()->name = "bar";
+  ls.back()->snapid = 456;
+}
