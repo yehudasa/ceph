@@ -637,20 +637,10 @@ struct mds_table_pending_t {
   uint64_t reqid;
   __s32 mds;
   version_t tid;
-  void encode(bufferlist& bl) const {
-    __u8 struct_v = 1;
-    ::encode(struct_v, bl);
-    ::encode(reqid, bl);
-    ::encode(mds, bl);
-    ::encode(tid, bl);
-  }
-  void decode(bufferlist::iterator& bl) {
-    __u8 struct_v;
-    ::decode(struct_v, bl);
-    ::decode(reqid, bl);
-    ::decode(mds, bl);
-    ::decode(tid, bl);
-  }
+  void encode(bufferlist& bl) const;
+  void decode(bufferlist::iterator& bl);
+  void dump(Formatter *f) const;
+  static void generate_test_instances(list<mds_table_pending_t*>& ls);
 };
 WRITE_CLASS_ENCODER(mds_table_pending_t)
 
