@@ -125,8 +125,10 @@ public:
     entity_inst_t get_inst() const { return entity_inst_t(entity_name_t::MDS(rank), addr); }
 
     void encode(bufferlist& bl) const;
+    void encode_old(bufferlist& bl) const;
     void decode(bufferlist::iterator& p);
     void dump(Formatter *f) const;
+    static void generate_test_instances(list<mds_info_t*>& ls);
   };
 
 
