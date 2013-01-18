@@ -67,6 +67,8 @@ public:
   }
 
   bool create_canned(string id, string name, string canned_acl);
+  bool create_canned_from_grantees(ACLOwner owner, 
+          vector< pair<ACLOwner,string> > grantees);
 };
 
 class ACLOwner_S3 : public ACLOwner, public XMLObj
@@ -109,6 +111,18 @@ public:
     bool ret = _acl.create_canned(id, name, canned_acl);
     owner.set_id(id);
     owner.set_name(name);
+    return ret;
+  }
+
+  virtual bool create_canned_from_grantees(ACLOwner _owner, 
+          vector< pair<ACLOwner,string> > grantees) {
+    
+    RGWAccessControlList_S3& _acl = static_cast<RGWAccessControlList_S3 &>(acl);
+    bool ret = _acl.create_canned_from_grantees(_owner, grantees);
+
+    owner.set_id(_owner.get_id());
+    owner.set_name(_owner.get_display_name());
+
     return ret;
   }
 };

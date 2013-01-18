@@ -9,6 +9,7 @@
 #include "rgw_rest_s3.h"
 #include "rgw_acl.h"
 #include "rgw_policy_s3.h"
+#include "rgw_user.h"
 
 #include "common/armor.h"
 
@@ -1222,10 +1223,56 @@ void RGWGetACLs_ObjStore_S3::send_response()
   s->cio->write(acls.c_str(), acls.size());
 }
 
+int RGWPutACLs_ObjStore_S3::num_grantees(ACLOwner &owner, vector< pair<ACLOwner, string> > &grantees)
+{
+  int ret;
+  RGWBucketInfo bucket_info;
+  RGWUserInfo bucket_owner_info;
+  ACLOwner bucket_owner;
+
+  grantees.clear();
+
+  // look for a canned acl requiring the bucket owner
+  if (s->canned_acl.find("bucket-owner") != string::npos) {
+    ACLOwner bucket_owner;
+
+    ret = store->get_bucket_info(NULL, s->bucket_name_str, bucket_info);
+    if (ret < 0)
+      return -EINVAL;
+
+    ret = rgw_get_user_info_by_uid(store, bucket_info.owner, bucket_owner_info);
+    if (ret < 0)
+      return -EINVAL;
+
+    bucket_owner.set_id(bucket_info.owner);
+    bucket_owner.set_name(bucket_owner_info.display_name);
+
+    pair<ACLOwner, string> b(bucket_owner, s->canned_acl);
+    grantees.push_back(b);
+  }
+
+  return (grantees.size());
+}
+
 int RGWPutACLs_ObjStore_S3::get_canned_policy(ACLOwner& owner, stringstream& ss)
 {
   RGWAccessControlPolicy_S3 s3policy(s->cct);
-  bool r = s3policy.create_canned(owner.get_id(), owner.get_display_name(), s->canned_acl);
+  vector <pair<ACLOwner,string> > grantees;
+
+  bool r;
+
+  int additional_grantees = num_grantees(owner, grantees);
+
+  if (additional_grantees < 0)
+    return -EINVAL;
+
+  ldout(s->cct, 0) << "nunmber of grantees: " << (additional_grantees + 1) << dendl;
+
+  if (additional_grantees)
+   r = s3policy.create_canned_from_grantees(owner, grantees);
+  else
+   r = s3policy.create_canned(owner.get_id(), owner.get_display_name(), s->canned_acl);
+  
   if (!r)
     return -EINVAL;
 

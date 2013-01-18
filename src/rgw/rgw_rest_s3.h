@@ -161,6 +161,15 @@ public:
   ~RGWPutACLs_ObjStore_S3() {}
 
   int get_canned_policy(ACLOwner& owner, stringstream& ss);
+
+  /* 
+   * returns:
+   *   0: if no additonal user grants besides the owner are specified
+   *   > 0: if multiple user grants are specified by the request
+   *   < 0: if error occured
+   */ 
+  int num_grantees(ACLOwner &owner, vector< pair<ACLOwner, string> > &grantees);
+
   void send_response();
 };
 
