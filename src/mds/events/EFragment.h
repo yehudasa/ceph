@@ -50,18 +50,17 @@ public:
   }
 
   void encode(bufferlist &bl) const {
-    __u8 struct_v = 3;
-    ::encode(struct_v, bl);
+    ENCODE_START(4, 4, bl);
     ::encode(stamp, bl);
     ::encode(op, bl);
     ::encode(ino, bl);
     ::encode(basefrag, bl);
     ::encode(bits, bl);
     ::encode(metablob, bl);
+    ENCODE_FINISH(bl);
   } 
   void decode(bufferlist::iterator &bl) {
-    __u8 struct_v;
-    ::decode(struct_v, bl);
+    DECODE_START_LEGACY_COMPAT_LEN(4, 4, 4, bl);
     if (struct_v >= 2)
       ::decode(stamp, bl);
     if (struct_v >= 3)
@@ -72,6 +71,7 @@ public:
     ::decode(basefrag, bl);
     ::decode(bits, bl);
     ::decode(metablob, bl);
+    DECODE_FINISH(bl);
   }
 
   void replay(MDS *mds);
