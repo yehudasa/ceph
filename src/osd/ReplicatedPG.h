@@ -887,11 +887,13 @@ protected:
     OpRequestRef op;
     epoch_t same_since;
     eversion_t last_complete;
-    C_OSD_CommittedPushedObject(ReplicatedPG *p, OpRequestRef o, epoch_t ss, eversion_t lc) : pg(p), op(o), same_since(ss), last_complete(lc) {
+    MOSDSubOpReply *reply;
+    C_OSD_CommittedPushedObject(ReplicatedPG *p, OpRequestRef o, epoch_t ss, eversion_t lc, MOSDSubOpReply *r)
+      : pg(p), op(o), same_since(ss), last_complete(lc), reply(r) {
       pg->get();
     }
     void finish(int r) {
-      pg->_committed_pushed_object(op, same_since, last_complete);
+      pg->_committed_pushed_object(op, same_since, last_complete, reply);
       pg->put();
     }
   };
@@ -914,7 +916,7 @@ protected:
   void sub_op_modify_reply(OpRequestRef op);
   void _applied_recovered_object(ObjectStore::Transaction *t, ObjectContext *obc);
   void _applied_recovered_object_replica(ObjectStore::Transaction *t);
-  void _committed_pushed_object(OpRequestRef op, epoch_t same_since, eversion_t lc);
+  void _committed_pushed_object(OpRequestRef op, epoch_t same_since, eversion_t lc, MOSDSubOpReply *reply);
   void recover_got(hobject_t oid, eversion_t v);
   void sub_op_push(OpRequestRef op);
   void _failed_push(OpRequestRef op);

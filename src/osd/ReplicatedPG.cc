@@ -5422,7 +5422,8 @@ void ReplicatedPG::handle_pull_response(OpRequestRef op)
 		      onreadable,
 		      new C_OSD_CommittedPushedObject(this, op,
 						      info.history.same_interval_since,
-						      info.last_complete),
+						      info.last_complete,
+						      NULL),
 		      onreadable_sync);
   assert(r == 0);
 
@@ -5479,23 +5480,22 @@ void ReplicatedPG::handle_push(OpRequestRef op)
     submit_push_complete(m->recovery_info,
 			 t);
 
+  MOSDSubOpReply *reply = new MOSDSubOpReply(
+    m, 0, get_osdmap()->get_epoch(), CEPH_OSD_FLAG_ACK);
+
   int r = osd->store->
     queue_transaction(osr.get(), t,
 		      onreadable,
 		      new C_OSD_CommittedPushedObject(
 			this, op,
 			info.history.same_interval_since,
-			info.last_complete),
+			info.last_complete,
+			reply),
 		      onreadable_sync);
   assert(r == 0);
 
   osd->logger->inc(l_osd_push_in);
   osd->logger->inc(l_osd_push_inb, m->ops[0].indata.length());
-
-  MOSDSubOpReply *reply = new MOSDSubOpReply(
-    m, 0, get_osdmap()->get_epoch(), CEPH_OSD_FLAG_ACK);
-  assert(entity_name_t::TYPE_OSD == m->get_connection()->peer_type);
-  osd->send_message_osd_cluster(reply, m->get_connection());
 }
 
 int ReplicatedPG::send_push(int prio, int peer,
@@ -5752,11 +5752,16 @@ void ReplicatedPG::sub_op_pull(OpRequestRef op)
 }
 
 
-void ReplicatedPG::_committed_pushed_object(OpRequestRef op, epoch_t same_since, eversion_t last_complete)
+void ReplicatedPG::_committed_pushed_object(OpRequestRef op, epoch_t same_since, eversion_t last_complete,
+					    MOSDSubOpReply *reply)
 {
   lock();
   if (same_since == info.history.same_interval_since) {
     dout(10) << "_committed_pushed_object last_complete " << last_complete << " now ondisk" << dendl;
+
+    if (reply)
+      osd->send_message_osd_cluster(get_primary(), reply, get_osdmap()->get_epoch());
+
     last_complete_ondisk = last_complete;
 
     if (last_complete_ondisk == info.last_update) {
@@ -5775,9 +5780,10 @@ void ReplicatedPG::_committed_pushed_object(OpRequestRef op, epoch_t same_since,
 	  trim_peers();
       }
     }
-
   } else {
     dout(10) << "_committed_pushed_object pg has changed, not touching last_complete_ondisk" << dendl;
+    if (reply)
+      reply->put();
   }
 
   if (op)
@@ -6570,7 +6576,8 @@ int ReplicatedPG::recover_primary(int max)
 					    new C_OSD_AppliedRecoveredObject(this, t, obc),
 					    new C_OSD_CommittedPushedObject(this, OpRequestRef(),
 									    info.history.same_interval_since,
-									    info.last_complete),
+									    info.last_complete,
+									    NULL),
 					    new C_OSD_OndiskWriteUnlock(obc));
 	      continue;
 	    }
