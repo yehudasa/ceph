@@ -5423,12 +5423,12 @@ void ReplicatedPG::handle_pull_response(OpRequestRef op)
 		      new C_OSD_CommittedPushedObject(this, op,
 						      info.history.same_interval_since,
 						      info.last_complete,
-						      NULL),
+						      NULL,
+						      complete),
 		      onreadable_sync);
   assert(r == 0);
 
   if (complete) {
-    finish_recovery_op(hoid);
     pulling.erase(hoid);
     pull_from_peer[m->get_source().num()].erase(hoid);
     update_stats();
@@ -5490,7 +5490,7 @@ void ReplicatedPG::handle_push(OpRequestRef op)
 			this, op,
 			info.history.same_interval_since,
 			info.last_complete,
-			reply),
+			reply, false),
 		      onreadable_sync);
   assert(r == 0);
 
@@ -5753,7 +5753,7 @@ void ReplicatedPG::sub_op_pull(OpRequestRef op)
 
 
 void ReplicatedPG::_committed_pushed_object(OpRequestRef op, epoch_t same_since, eversion_t last_complete,
-					    MOSDSubOpReply *reply)
+					    MOSDSubOpReply *reply, bool finished_op)
 {
   lock();
   if (same_since == info.history.same_interval_since) {
@@ -5761,6 +5761,11 @@ void ReplicatedPG::_committed_pushed_object(OpRequestRef op, epoch_t same_since,
 
     if (reply)
       osd->send_message_osd_cluster(get_primary(), reply, get_osdmap()->get_epoch());
+
+    if (finished_op) {
+      MOSDSubOp *subop = (MOSDSubOp*)op->request;
+      finish_recovery_op(subop->poid);
+    }
 
     last_complete_ondisk = last_complete;
 
@@ -6577,7 +6582,7 @@ int ReplicatedPG::recover_primary(int max)
 					    new C_OSD_CommittedPushedObject(this, OpRequestRef(),
 									    info.history.same_interval_since,
 									    info.last_complete,
-									    NULL),
+									    NULL, false),
 					    new C_OSD_OndiskWriteUnlock(obc));
 	      continue;
 	    }
