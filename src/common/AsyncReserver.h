@@ -43,6 +43,11 @@ class AsyncReserver {
       queue.pop_front();
       f->queue(p.second);
       in_progress.insert(p.first);
+      generic_dout(0) << "async_reserver.do_queues " << p.first
+		      << " in_progress " << in_progress.size()
+		      << " queue " << queue.size()
+		      << " max " << max_allowed
+		      << dendl;
     }
   }
 public:
@@ -50,6 +55,16 @@ public:
     Finisher *f,
     unsigned max_allowed)
     : f(f), max_allowed(max_allowed), lock("AsyncReserver::lock") {}
+
+  int get_queue_len() const {
+    return queue.size();
+  }
+  int get_num_active() const {
+    return in_progress.size();
+  }
+  int get_max() const {
+    return max_allowed;
+  }
 
   void set_max(unsigned max) {
     Mutex::Locker l(lock);
@@ -75,6 +90,7 @@ public:
 	   !in_progress.count(item));
     queue.push_back(make_pair(item, on_reserved));
     queue_pointers.insert(make_pair(item, --queue.end()));
+    generic_dout(0) << "async_reserver.request " << item << dendl;
     do_queues();
   }
 
@@ -90,10 +106,12 @@ public:
     ) {
     Mutex::Locker l(lock);
     if (queue_pointers.count(item)) {
+      generic_dout(0) << "async_reserver.cancel " << item << " (in queue)" << dendl;
       queue.erase(queue_pointers[item]);
       queue_pointers.erase(item);
     } else {
       in_progress.erase(item);
+      generic_dout(0) << "async_reserver.cancel " << item << " (in progress)" << dendl;
     }
     do_queues();
   }

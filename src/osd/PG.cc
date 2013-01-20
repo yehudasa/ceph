@@ -5559,6 +5559,13 @@ PG::RecoveryState::WaitRemoteBackfillReserved::WaitRemoteBackfillReserved(my_con
   state_name = "Started/Primary/Active/WaitRemoteBackfillReserved";
   context< RecoveryMachine >().log_enter(state_name);
   PG *pg = context< RecoveryMachine >().pg;
+  dout(20) << " local_reserver " << pg->osd->local_reserver.get_num_active() << " active, "
+	   << pg->osd->local_reserver.get_queue_len() << " queued, "
+	   << pg->osd->local_reserver.get_max() << " max; remote_server "
+	   << pg->osd->remote_reserver.get_num_active() << " active, "
+	   << pg->osd->remote_reserver.get_queue_len() << " queued, "
+	   << pg->osd->remote_reserver.get_max() << " max"
+	   << dendl;
   pg->state_set(PG_STATE_BACKFILL_WAIT);
   ConnectionRef con = pg->osd->get_con_osd_cluster(
     pg->backfill_target, pg->get_osdmap()->get_epoch());
@@ -5614,6 +5621,13 @@ PG::RecoveryState::WaitLocalBackfillReserved::WaitLocalBackfillReserved(my_conte
   state_name = "Started/Primary/Active/WaitLocalBackfillReserved";
   context< RecoveryMachine >().log_enter(state_name);
   PG *pg = context< RecoveryMachine >().pg;
+  dout(20) << " local_reserver " << pg->osd->local_reserver.get_num_active() << " active, "
+	   << pg->osd->local_reserver.get_queue_len() << " queued, "
+	   << pg->osd->local_reserver.get_max() << " max; remote_server "
+	   << pg->osd->remote_reserver.get_num_active() << " active, "
+	   << pg->osd->remote_reserver.get_queue_len() << " queued, "
+	   << pg->osd->remote_reserver.get_max() << " max"
+	   << dendl;
   pg->state_set(PG_STATE_BACKFILL_WAIT);
   pg->osd->local_reserver.request_reservation(
     pg->info.pgid,
@@ -5660,6 +5674,13 @@ PG::RecoveryState::RepWaitRecoveryReserved::RepWaitRecoveryReserved(my_context c
   state_name = "Started/ReplicaActive/RepWaitRecoveryReserved";
   context< RecoveryMachine >().log_enter(state_name);
   PG *pg = context< RecoveryMachine >().pg;
+  dout(20) << " local_reserver " << pg->osd->local_reserver.get_num_active() << " active, "
+	   << pg->osd->local_reserver.get_queue_len() << " queued, "
+	   << pg->osd->local_reserver.get_max() << " max; remote_server "
+	   << pg->osd->remote_reserver.get_num_active() << " active, "
+	   << pg->osd->remote_reserver.get_queue_len() << " queued, "
+	   << pg->osd->remote_reserver.get_max() << " max"
+	   << dendl;
 
   pg->osd->remote_reserver.request_reservation(
     pg->info.pgid,
@@ -5778,6 +5799,13 @@ PG::RecoveryState::WaitLocalRecoveryReserved::WaitLocalRecoveryReserved(my_conte
   state_name = "Started/Primary/Active/WaitLocalRecoveryReserved";
   context< RecoveryMachine >().log_enter(state_name);
   PG *pg = context< RecoveryMachine >().pg;
+  dout(20) << " local_reserver " << pg->osd->local_reserver.get_num_active() << " active, "
+          << pg->osd->local_reserver.get_queue_len() << " queued, "
+          << pg->osd->local_reserver.get_max() << " max; remote_server "
+          << pg->osd->remote_reserver.get_num_active() << " active, "
+          << pg->osd->remote_reserver.get_queue_len() << " queued, "
+          << pg->osd->remote_reserver.get_max() << " max"
+          << dendl;
   pg->state_set(PG_STATE_RECOVERY_WAIT);
   pg->osd->local_reserver.request_reservation(
     pg->info.pgid,
