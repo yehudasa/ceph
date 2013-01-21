@@ -6040,7 +6040,9 @@ bool OSD::op_is_discardable(MOSDOp *op)
  */
 void OSD::enqueue_op(PG *pg, OpRequestRef op)
 {
-  dout(15) << "enqueue_op " << op << " " << *(op->request) << dendl;
+  dout(15) << "enqueue_op " << op << " prio " << op->request->get_priority()
+	   << " cost " << op->request->get_data().length()
+	   << " " << *(op->request) << dendl;
   op_wq.queue(make_pair(PGRef(pg), op));
 }
 
@@ -6125,7 +6127,9 @@ void OSDService::dequeue_pg(PG *pg, list<OpRequestRef> *dequeued)
  */
 void OSD::dequeue_op(PGRef pg, OpRequestRef op)
 {
-  dout(10) << "dequeue_op " << op << " " << *(op->request)
+  dout(10) << "dequeue_op " << op << " prio " << op->request->get_priority()
+	   << " cost " << op->request->get_data().length()
+	   << " " << *(op->request)
 	   << " pg " << *pg << dendl;
   if (pg->deleting)
     return;
