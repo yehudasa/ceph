@@ -300,8 +300,8 @@ public:
       return ret;
     }
 
-    for (typename map<unsigned, SubQueue>::iterator i = queue.begin();
-	 i != queue.end();
+    for (typename map<unsigned, SubQueue>::reverse_iterator i = queue.rbegin();
+	 i != queue.rend();
 	 ++i) {
       assert(!(i->second.empty()));
       if (i->second.front().first < i->second.num_tokens()) {
