@@ -153,8 +153,29 @@ bool OpTracker::check_ops_in_flight(std::vector<string> &warning_vector)
       utime_t age = now - (*i)->received_time;
       stringstream ss;
       ss << "slow request " << age << " seconds old, received at " << (*i)->received_time
-	 << ": " << *((*i)->request) << " currently "
-	 << (!(*i)->events.empty() ? (*i)->events.rbegin()->second : (*i)->state_string());
+	 << ": " << *((*i)->request);
+      list<pair<utime_t,string> >::reverse_iterator q = (*i)->events.rbegin();
+      if (q == (*i)->events.rend()) {
+	ss << " currently " << (*i)->state_string();
+      } else {
+	ss << " last " << q->second;
+	q++;
+	if (q != (*i)->events.rend()) {
+	  ss << ", " << q->second;
+	  q++;
+	}
+	if (q != (*i)->events.rend()) {
+	  ss << ", " << q->second;
+	  q++;
+	}
+	if (q != (*i)->events.rend()) {
+	  ss << ", " << q->second;
+	  q++;
+	}
+	if (q != (*i)->events.rend()) {
+	  ss << ", ...";
+	}
+      }
       warning_vector.push_back(ss.str());
 
       // only those that have been shown will backoff
