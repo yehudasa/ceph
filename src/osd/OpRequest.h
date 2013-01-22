@@ -194,7 +194,8 @@ public:
     hit_flag_points |= flag_reached_pg;
     latest_flag_point = flag_reached_pg;
   }
-  void mark_delayed() {
+  void mark_delayed(string s) {
+    mark_event(s);
     hit_flag_points |= flag_delayed;
     latest_flag_point = flag_delayed;
   }
@@ -203,8 +204,8 @@ public:
     hit_flag_points |= flag_started;
     latest_flag_point = flag_started;
   }
-  void mark_sub_op_sent() {
-    mark_event("sub_op_sent");
+  void mark_sub_op_sent(string s) {
+    mark_event(s);
     hit_flag_points |= flag_sub_op_sent;
     latest_flag_point = flag_sub_op_sent;
   }
