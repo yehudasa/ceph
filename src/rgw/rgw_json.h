@@ -91,4 +91,63 @@ public:
 };
 
 
+class JSONDecoder {
+public:
+  struct err {
+    err() {}
+  };
+
+  RGWJSONParser parser;
+
+  JSONDecoder(bufferlist& bl) {
+    if (!parser.parse(bl.c_str(), bl.length())) {
+      cout << "JSONDecoder::err()" << std::endl;
+      throw JSONDecoder::err();
+    }
+  }
+
+  template<class T>
+  static void decode_json(T& val, const string& name, JSONObj *obj);
+};
+
+template<class T>
+void decode_json_obj(T& val, JSONObj *obj)
+{
+  val.decode_json(obj);
+}
+
+static inline void decode_json_obj(string& val, JSONObj *obj)
+{
+  val = obj->get_data();
+}
+
+void decode_json_obj(long& val, JSONObj *obj);
+void decode_json_obj(int& val, JSONObj *obj);
+
+template<class T>
+void decode_json_obj(list<T>& l, JSONObj *obj)
+{
+  string s = obj->get_data();
+
+  JSONObjIter iter = obj->find_first();
+
+  for (; !iter.end(); ++iter) {
+    T val;
+    JSONObj *o = *iter;
+    decode_json_obj(val, o);
+    l.push_back(val);
+  }
+}
+
+template<class T>
+void JSONDecoder::decode_json(T& val, const string& name, JSONObj *obj)
+{
+  JSONObjIter iter = obj->find_first(name);
+  if (iter.end()) {
+    throw err();
+  }
+
+  decode_json_obj(val, *iter);
+}
+
 #endif

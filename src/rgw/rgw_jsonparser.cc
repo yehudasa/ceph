@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <string.h>
 
 #include <iostream>
@@ -23,10 +24,38 @@ void dump_array(JSONObj *obj)
 
 }
                                   
+struct Key {
+  string user;
+  string access_key;
+  string secret_key;
+
+  void decode_json(JSONObj *obj) {
+    JSONDecoder::decode_json(user, "user", obj);
+    JSONDecoder::decode_json(access_key, "access_key", obj);
+    JSONDecoder::decode_json(secret_key, "secret_key", obj);
+  }
+};
+
+struct UserInfo {
+  string uid;
+  string display_name;
+  int max_buckets;
+  list<Key> keys;
+
+  void decode_json(JSONObj *obj) {
+    JSONDecoder::decode_json(uid, "user_id", obj);
+    JSONDecoder::decode_json(display_name, "display_name", obj);
+    JSONDecoder::decode_json(max_buckets, "max_buckets", obj);
+    JSONDecoder::decode_json(keys, "keys", obj);
+  }
+};
+
+
 int main(int argc, char **argv) {
   RGWJSONParser parser;
 
   char buf[1024];
+  bufferlist bl;
 
   for (;;) {
     int done;
@@ -43,8 +72,10 @@ int main(int argc, char **argv) {
     if (!ret)
       cerr << "parse error" << std::endl;
 
-    if (done)
+    if (done) {
+      bl.append(buf, len);
       break;
+    }
   }
 
   JSONObjIter iter = parser.find_first();
@@ -74,6 +105,19 @@ int main(int argc, char **argv) {
     }
   }
 
+  UserInfo ui;
+
+  ui.decode_json(&parser);
+
+  cout << "uid=" << ui.uid << std::endl;
+  cout << "display_name=" << ui.display_name << std::endl;
+  cout << "max_buckets=" << ui.max_buckets << std::endl;
+
+  list<Key>::iterator kiter;
+  for (kiter = ui.keys.begin(); kiter != ui.keys.end(); ++kiter) {
+    Key k = *kiter;
+    cout << "key user=" << k.user << " access_key=" << k.access_key << " secret_key=" << k.secret_key << std::endl;
+  }
 
   exit(0);
 }
