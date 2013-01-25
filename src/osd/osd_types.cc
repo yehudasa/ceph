@@ -859,11 +859,14 @@ void object_stat_sum_t::dump(Formatter *f) const
   f->dump_int("num_write", num_wr);
   f->dump_int("num_write_kb", num_wr_kb);
   f->dump_int("num_scrub_errors", num_scrub_errors);
+  f->dump_int("objects_recovered_per_minute", objects_recovered_per_minute);
+  f->dump_int("bytes_recovered_per_minute", bytes_recovered_per_minute);
+  f->dump_int("keys_recovered_per_minute", keys_recovered_per_minute);
 }
 
 void object_stat_sum_t::encode(bufferlist& bl) const
 {
-  ENCODE_START(4, 3, bl);
+  ENCODE_START(5, 3, bl);
   ::encode(num_bytes, bl);
   ::encode(num_objects, bl);
   ::encode(num_object_clones, bl);
@@ -876,12 +879,15 @@ void object_stat_sum_t::encode(bufferlist& bl) const
   ::encode(num_wr, bl);
   ::encode(num_wr_kb, bl);
   ::encode(num_scrub_errors, bl);
+  ::encode(objects_recovered_per_minute, bl);
+  ::encode(bytes_recovered_per_minute, bl);
+  ::encode(keys_recovered_per_minute, bl);
   ENCODE_FINISH(bl);
 }
 
 void object_stat_sum_t::decode(bufferlist::iterator& bl)
 {
-  DECODE_START_LEGACY_COMPAT_LEN(4, 3, 3, bl);
+  DECODE_START_LEGACY_COMPAT_LEN(5, 3, 3, bl);
   ::decode(num_bytes, bl);
   if (struct_v < 3) {
     uint64_t num_kb;
@@ -902,6 +908,15 @@ void object_stat_sum_t::decode(bufferlist::iterator& bl)
     ::decode(num_scrub_errors, bl);
   else
     num_scrub_errors = 0;
+  if (struct_v >= 5) {
+    ::decode(objects_recovered_per_minute, bl);
+    ::decode(bytes_recovered_per_minute, bl);
+    ::decode(keys_recovered_per_minute, bl);
+  } else {
+    objects_recovered_per_minute = 0;
+    bytes_recovered_per_minute = 0;
+    keys_recovered_per_minute = 0;
+  }
   DECODE_FINISH(bl);
 }
 
@@ -920,6 +935,9 @@ void object_stat_sum_t::generate_test_instances(list<object_stat_sum_t*>& o)
   a.num_rd = 9; a.num_rd_kb = 10;
   a.num_wr = 11; a.num_wr_kb = 12;
   a.num_scrub_errors = 13;
+  a.objects_recovered_per_minute = 14;
+  a.bytes_recovered_per_minute = 15;
+  a.keys_recovered_per_minute = 16;
   o.push_back(new object_stat_sum_t(a));
 }
 
@@ -937,6 +955,9 @@ void object_stat_sum_t::add(const object_stat_sum_t& o)
   num_wr_kb += o.num_wr_kb;
   num_objects_unfound += o.num_objects_unfound;
   num_scrub_errors += o.num_scrub_errors;
+  objects_recovered_per_minute += o.objects_recovered_per_minute;
+  bytes_recovered_per_minute += o.bytes_recovered_per_minute;
+  keys_recovered_per_minute += o.keys_recovered_per_minute;
 }
 
 void object_stat_sum_t::sub(const object_stat_sum_t& o)
@@ -953,6 +974,9 @@ void object_stat_sum_t::sub(const object_stat_sum_t& o)
   num_wr_kb -= o.num_wr_kb;
   num_objects_unfound -= o.num_objects_unfound;
   num_scrub_errors -= o.num_scrub_errors;
+  objects_recovered_per_minute -= o.objects_recovered_per_minute;
+  bytes_recovered_per_minute -= o.bytes_recovered_per_minute;
+  keys_recovered_per_minute -= o.keys_recovered_per_minute;
 }
 
 
