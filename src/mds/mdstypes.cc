@@ -195,7 +195,8 @@ ostream& operator<<(ostream &out, const nest_info_t &n)
 void client_writeable_range_t::encode(bufferlist &bl) const
 {
   ENCODE_START(2, 2, bl);
-  ::encode(range, bl);
+  ::encode(range.first, bl);
+  ::encode(range.last, bl);
   ::encode(follows, bl);
   ENCODE_FINISH(bl);
 }
@@ -203,15 +204,18 @@ void client_writeable_range_t::encode(bufferlist &bl) const
 void client_writeable_range_t::decode(bufferlist::iterator& bl)
 {
   DECODE_START_LEGACY_COMPAT_LEN(2, 2, 2, bl);
-  ::decode(range, bl);
+  ::decode(range.first, bl);
+  ::decode(range.last, bl);
   ::decode(follows, bl);
   DECODE_FINISH(bl);
 }
 
 void client_writeable_range_t::dump(Formatter *f) const
 {
+  f->open_object_section("byte range");
   f->dump_unsigned("first", range.first);
   f->dump_unsigned("last", range.last);
+  f->close_section();
   f->dump_unsigned("follows", follows);
 }
 
@@ -226,7 +230,7 @@ void client_writeable_range_t::generate_test_instances(list<client_writeable_ran
 
 ostream& operator<<(ostream& out, const client_writeable_range_t& r)
 {
-  return out << r.range << "@" << r.follows;
+  return out << r.range.first << '-' << r.range.last << "@" << r.follows;
 }
 
 
@@ -306,9 +310,10 @@ void inode_t::decode(bufferlist::iterator &p)
   if (struct_v >= 3) {
     ::decode(client_ranges, p);
   } else {
-    map<client_t, byte_range_t> m;
+    map<client_t, client_writeable_range_t::byte_range_t> m;
     ::decode(m, p);
-    for (map<client_t, byte_range_t>::iterator q = m.begin(); q != m.end(); q++)
+    for (map<client_t, client_writeable_range_t::byte_range_t>::iterator
+	   q = m.begin(); q != m.end(); q++)
       client_ranges[q->first].range = q->second;
   }
     
@@ -841,4 +846,50 @@ void mds_load_t::generate_test_instances(list<mds_load_t*>& ls)
 {
   utime_t sample;
   ls.push_back(new mds_load_t(sample));
+}
+
+/*
+ * cap_reconnect_t
+ */
+void cap_reconnect_t::encode(bufferlist& bl) const {
+  ENCODE_START(1, 1, bl);
+  encode_old(bl); // extract out when something changes
+  ENCODE_FINISH(bl);
+}
+
+void cap_reconnect_t::encode_old(bufferlist& bl) const {
+  ::encode(path, bl);
+  capinfo.flock_len = flockbl.length();
+  ::encode(capinfo, bl);
+  ::encode_nohead(flockbl, bl);
+}
+
+void cap_reconnect_t::decode(bufferlist::iterator& bl) {
+  DECODE_START(1, bl);
+  decode_old(bl); // extract out when something changes
+  DECODE_FINISH(bl);
+}
+
+void cap_reconnect_t::decode_old(bufferlist::iterator& bl) {
+  ::decode(path, bl);
+  ::decode(capinfo, bl);
+  ::decode_nohead(capinfo.flock_len, flockbl, bl);
+}
+
+void cap_reconnect_t::dump(Formatter *f) const
+{
+  f->dump_string("path", path);
+  f->dump_int("cap_id", capinfo.cap_id);
+  f->dump_string("cap wanted", ccap_string(capinfo.wanted));
+  f->dump_string("cap issued", ccap_string(capinfo.issued));
+  f->dump_int("snaprealm", capinfo.snaprealm);
+  f->dump_int("path base ino", capinfo.pathbase);
+  f->dump_string("has file locks", capinfo.flock_len ? "true" : false);
+}
+
+void cap_reconnect_t::generate_test_instances(list<cap_reconnect_t*>& ls)
+{
+  ls.push_back(new cap_reconnect_t);
+  ls.back()->path = "/test/path";
+  ls.back()->capinfo.cap_id = 1;
 }

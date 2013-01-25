@@ -283,35 +283,15 @@ inline ostream& operator<<(ostream &out, const vinodeno_t &vino) {
 }
 
 
-struct byte_range_t {
-  uint64_t first, last;    // interval client can write to
-
-  byte_range_t() : first(0), last(0) {}
-
-  void encode(bufferlist &bl) const {
-    ::encode(first, bl);
-    ::encode(last, bl);
-  }
-  void decode(bufferlist::iterator& bl) {
-    ::decode(first, bl);
-    ::decode(last, bl);
-  }    
-};
-WRITE_CLASS_ENCODER(byte_range_t)
-
-inline ostream& operator<<(ostream& out, const byte_range_t& r)
-{
-  return out << r.first << '-' << r.last;
-}
-inline bool operator==(const byte_range_t& l, const byte_range_t& r) {
-  return l.first == r.first && l.last == r.last;
-}
-
-
 /*
  * client_writeable_range_t
  */
 struct client_writeable_range_t {
+  struct byte_range_t {
+    uint64_t first, last;    // interval client can write to
+    byte_range_t() : first(0), last(0) {}
+  };
+
   byte_range_t range;
   snapid_t follows;     // aka "data+metadata flushed thru"
 
@@ -321,13 +301,23 @@ struct client_writeable_range_t {
   void decode(bufferlist::iterator& bl);
   void dump(Formatter *f) const;
   static void generate_test_instances(list<client_writeable_range_t*>& ls);
+private:
+  void decode_byte_range(bufferlist::iterator& bl);
 };
+
+inline void decode(client_writeable_range_t::byte_range_t& range, bufferlist::iterator& bl) {
+  ::decode(range.first, bl);
+  ::decode(range.last, bl);
+}
+
 WRITE_CLASS_ENCODER(client_writeable_range_t)
 
 ostream& operator<<(ostream& out, const client_writeable_range_t& r);
 
-inline bool operator==(const client_writeable_range_t& l, const client_writeable_range_t& r) {
-  return l.range == r.range && l.follows == r.follows;
+inline bool operator==(const client_writeable_range_t& l,
+		       const client_writeable_range_t& r) {
+  return l.range.first == r.range.first && l.range.last == r.range.last &&
+    l.follows == r.follows;
 }
 
 
@@ -703,18 +693,13 @@ struct cap_reconnect_t {
     capinfo.pathbase = pino;
     capinfo.flock_len = 0;
   }
+  void encode(bufferlist& bl) const;
+  void decode(bufferlist::iterator& bl);
+  void encode_old(bufferlist& bl) const;
+  void decode_old(bufferlist::iterator& bl);
 
-  void encode(bufferlist& bl) const {
-    ::encode(path, bl);
-    capinfo.flock_len = flockbl.length();
-    ::encode(capinfo, bl);
-    ::encode_nohead(flockbl, bl);
-  }
-  void decode(bufferlist::iterator& bl) {
-    ::decode(path, bl);
-    ::decode(capinfo, bl);
-    ::decode_nohead(capinfo.flock_len, flockbl, bl);
-  }
+  void dump(Formatter *f) const;
+  static void generate_test_instances(list<cap_reconnect_t*>& ls);
 };
 WRITE_CLASS_ENCODER(cap_reconnect_t)
 
