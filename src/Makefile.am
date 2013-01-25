@@ -629,6 +629,11 @@ unittest_addrs_CXXFLAGS = ${AM_CXXFLAGS} ${UNITTEST_CXXFLAGS}
 unittest_addrs_LDADD = libglobal.la $(PTHREAD_LIBS) -lm ${UNITTEST_LDADD} $(CRYPTO_LIBS) $(EXTRALIBS)
 check_PROGRAMS += unittest_addrs
 
+unittest_ratemeasure_SOURCES = test/common/RateMeasure.cc
+unittest_ratemeasure_CXXFLAGS = ${AM_CXXFLAGS} ${UNITTEST_CXXFLAGS}
+unittest_ratemeasure_LDADD = libcommon.la $(PTHREAD_LIBS) -lm ${UNITTEST_LDADD} $(CRYPTO_LIBS) $(EXTRALIBS)
+check_PROGRAMS += unittest_ratemeasure
+
 unittest_workqueue_SOURCES = test/test_workqueue.cc
 unittest_workqueue_CXXFLAGS = ${AM_CXXFLAGS} ${UNITTEST_CXXFLAGS}
 unittest_workqueue_LDADD = libglobal.la $(PTHREAD_LIBS) -lm ${UNITTEST_LDADD} $(CRYPTO_LIBS) $(EXTRALIBS)
@@ -1501,6 +1506,7 @@ noinst_HEADERS = \
         common/MemoryModel.h\
         common/Mutex.h\
 	common/PrebufferedStreambuf.h\
+	common/RateMeasure.h\
         common/RWLock.h\
         common/Semaphore.h\
 	common/SimpleRNG.h\
