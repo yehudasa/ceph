@@ -279,6 +279,7 @@ int ReplicatedPG::do_command(vector<string>& cmd, ostream& ss,
     for (vector<int>::iterator p = acting.begin(); p != acting.end(); ++p)
       jsf.dump_unsigned("osd", *p);
     jsf.close_section();
+    jsf.dump_unsigned("epoch", get_osdmap()->get_epoch());
     jsf.open_object_section("info");
     info.dump(&jsf);
     jsf.close_section();
@@ -5311,6 +5312,7 @@ ObjectRecoveryInfo ReplicatedPG::recalc_subsets(const ObjectRecoveryInfo& recove
 
 void ReplicatedPG::handle_pull_response(OpRequestRef op)
 {
+  utime_t now = ceph_clock_now(NULL);
   MOSDSubOp *m = (MOSDSubOp *)op->request;
   bufferlist data;
   m->claim_data(data);
@@ -5354,6 +5356,8 @@ void ReplicatedPG::handle_pull_response(OpRequestRef op)
   data_included = usable_intervals;
   data.claim(usable_data);
 
+  recovery_byte_rate.add(now, data.length());
+
   bool first = pi.recovery_progress.first;
   pi.recovery_progress = m->recovery_progress;
 
@@ -5391,9 +5395,11 @@ void ReplicatedPG::handle_pull_response(OpRequestRef op)
 		   m->attrset,
 		   m->omap_entries,
 		   t);
+  recovery_key_rate.add(now, m->omap_entries.size());
 
   if (complete) {
     submit_push_complete(pi.recovery_info, t);
+    recovery_object_rate.add(now, 1);
 
     SnapSetContext *ssc;
     if (hoid.snap == CEPH_NOSNAP || hoid.snap == CEPH_SNAPDIR) {
@@ -5515,6 +5521,7 @@ int ReplicatedPG::send_push(int prio, int peer,
 {
   ObjectRecoveryProgress new_progress = progress;
 
+  utime_t now = ceph_clock_now(NULL);
   tid_t tid = osd->get_tid();
   osd_reqid_t rid(osd->get_cluster_msgr_name(), 0, tid);
   MOSDSubOp *subop = new MOSDSubOp(rid, info.pgid, recovery_info.soid,
@@ -5572,6 +5579,7 @@ int ReplicatedPG::send_push(int prio, int peer,
       else
 	available = 0;
     }
+
     if (!iter->valid())
       new_progress.omap_complete = true;
     else
@@ -5602,14 +5610,22 @@ int ReplicatedPG::send_push(int prio, int peer,
     subop->ops[0].indata.claim_append(bit);
   }
 
-  if (!subop->data_included.empty())
+  if (!subop->data_included.empty()) {
     new_progress.data_recovered_to = subop->data_included.range_end();
+  }
 
-  if (new_progress.is_complete(recovery_info))
+  if (new_progress.is_complete(recovery_info)) {
     new_progress.data_complete = true;
+    recovery_object_rate.add(now, 1);
+  }
+
+  uint64_t bytes = subop->ops[0].indata.length();
+  recovery_byte_rate.add(now, bytes);
+  if (subop->omap_entries.size())
+    recovery_key_rate.add(now, subop->omap_entries.size());
 
   osd->logger->inc(l_osd_push);
-  osd->logger->inc(l_osd_push_outb, subop->ops[0].indata.length());
+  osd->logger->inc(l_osd_push_outb, bytes);
   
   // send
   subop->recovery_info = recovery_info;

@@ -43,6 +43,7 @@
 #include "messages/MOSDPGLog.h"
 
 #include "common/DecayCounter.h"
+#include "common/RateMeasure.h"
 
 #include <list>
 #include <memory>
@@ -444,6 +445,7 @@ public:
 #ifdef DEBUG_RECOVERY_OIDS
   set<hobject_t> recovering_oids;
 #endif
+  RateMeasure recovery_object_rate, recovery_byte_rate, recovery_key_rate;
 
   utime_t replay_until;
 

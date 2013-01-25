@@ -68,6 +68,9 @@ PG::PG(OSDService *o, OSDMapRef curmap,
   recovery_item(this), scrub_item(this), scrub_finalize_item(this), snap_trim_item(this), stat_queue_item(this),
   recovery_ops_active(0),
   waiting_on_backfill(0),
+  recovery_object_rate(30, 5),
+  recovery_byte_rate(30, 5),
+  recovery_key_rate(30, 5),
   role(0),
   state(0),
   send_notify(false),
@@ -2249,6 +2252,18 @@ void PG::update_stats()
       }
       pg_stats_stable.stats.sum.num_objects_degraded = degraded;
       pg_stats_stable.stats.sum.num_objects_unfound = get_num_unfound();
+
+      pg_stats_stable.stats.sum.objects_recovered_per_minute = recovery_object_rate.get_rate(now, 60);
+      pg_stats_stable.stats.sum.bytes_recovered_per_minute = recovery_byte_rate.get_rate(now, 60);
+      pg_stats_stable.stats.sum.keys_recovered_per_minute = recovery_key_rate.get_rate(now, 60);
+      dout(15) << " recovery rate is "
+	       << pg_stats_stable.stats.sum.objects_recovered_per_minute << " objects,"
+	       << pg_stats_stable.stats.sum.bytes_recovered_per_minute << " bytes,"
+	       << pg_stats_stable.stats.sum.keys_recovered_per_minute << " keys" << dendl;
+    } else {
+      pg_stats_stable.stats.sum.objects_recovered_per_minute = 0;
+      pg_stats_stable.stats.sum.bytes_recovered_per_minute = 0;
+      pg_stats_stable.stats.sum.keys_recovered_per_minute = 0;
     }
 
     dout(15) << "update_stats " << pg_stats_stable.reported << dendl;
