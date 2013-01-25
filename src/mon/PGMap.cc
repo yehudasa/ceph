@@ -627,6 +627,18 @@ void PGMap::recovery_summary(ostream& out) const
 	<< "/" << pg_sum.stats.sum.num_objects << " unfound (" << b << "%)";
     first = false;
   }
+
+  if (pg_sum.stats.sum.objects_recovered_per_minute ||
+      pg_sum.stats.sum.bytes_recovered_per_minute ||
+      pg_sum.stats.sum.keys_recovered_per_minute) {
+    out << " recovering";
+    if (pg_sum.stats.sum.objects_recovered_per_minute)
+      out << " " << si_t(pg_sum.stats.sum.objects_recovered_per_minute / 60) << "o/s";
+    if (pg_sum.stats.sum.bytes_recovered_per_minute)
+      out << " " << si_t(pg_sum.stats.sum.bytes_recovered_per_minute / 60) << "B/s";
+    if (pg_sum.stats.sum.keys_recovered_per_minute)
+      out << " " << si_t(pg_sum.stats.sum.keys_recovered_per_minute / 60) << "k/s";
+  }
 }
 
 void PGMap::print_summary(ostream& out) const
