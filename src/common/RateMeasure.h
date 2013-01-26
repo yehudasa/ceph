@@ -64,9 +64,9 @@ public:
     int left = duration;
     time_t min_stamp = 0;
     std::deque<TimeSample>::const_reverse_iterator p = m_samples.rbegin();
-    for (++p;
-	 left > 0 && p != m_samples.rend();
-	 left -= m_precision, ++p) {
+    assert(p != m_samples.rend());
+    ++p;
+    for ( ; left > 0 && p != m_samples.rend(); left -= m_precision, ++p) {
       //std::cout << " t " << p->stamp << " v " << p->value << std::endl;
       r += p->value;
       min_stamp = p->stamp;
