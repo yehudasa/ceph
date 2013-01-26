@@ -278,7 +278,7 @@ def upstart_start(
     cluster,
     osd_id,
     ):
-    log.debug('Starting service...')
+    log.debug('Starting %s osd.%s...', cluster, osd_id)
     subprocess.check_call(
         args=[
             'initctl',
@@ -521,6 +521,7 @@ def activate(
 
         # indicate this daemon is managed by upstart
         if not os.path.exists(os.path.join(path, 'upstart')):
+            log.debug('Marking osd as managed by upstart...')
             with file(os.path.join(path, 'upstart'), 'w'):
                 pass
 
