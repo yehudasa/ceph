@@ -4,13 +4,9 @@
 #include <iostream>
 #include <include/types.h>
 
-// for testing DELETE ME
-#include <fstream>
-
 #include "json_spirit/json_spirit.h"
 
 
-using namespace std;
 using namespace json_spirit;
 
 
@@ -107,7 +103,7 @@ public:
   }
 
   template<class T>
-  static void decode_json(T& val, const string& name, JSONObj *obj);
+  static void decode_json(const string& name, T& val, JSONObj *obj);
 };
 
 template<class T>
@@ -121,14 +117,15 @@ static inline void decode_json_obj(string& val, JSONObj *obj)
   val = obj->get_data();
 }
 
+void decode_json_obj(unsigned long& val, JSONObj *obj);
 void decode_json_obj(long& val, JSONObj *obj);
+void decode_json_obj(unsigned& val, JSONObj *obj);
 void decode_json_obj(int& val, JSONObj *obj);
+void decode_json_obj(bool& val, JSONObj *obj);
 
 template<class T>
 void decode_json_obj(list<T>& l, JSONObj *obj)
 {
-  string s = obj->get_data();
-
   JSONObjIter iter = obj->find_first();
 
   for (; !iter.end(); ++iter) {
@@ -140,7 +137,7 @@ void decode_json_obj(list<T>& l, JSONObj *obj)
 }
 
 template<class T>
-void JSONDecoder::decode_json(T& val, const string& name, JSONObj *obj)
+void JSONDecoder::decode_json(const string& name, T& val, JSONObj *obj)
 {
   JSONObjIter iter = obj->find_first(name);
   if (iter.end()) {

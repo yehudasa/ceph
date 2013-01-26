@@ -270,6 +270,7 @@ enum http_op {
 };
 
 class RGWAccessControlPolicy;
+class JSONObj;
 
 struct RGWAccessKey {
   string id;
@@ -294,6 +295,8 @@ struct RGWAccessKey {
   }
   void dump(Formatter *f) const;
   static void generate_test_instances(list<RGWAccessKey*>& o);
+
+  void decode_json(JSONObj *obj);
 };
 WRITE_CLASS_ENCODER(RGWAccessKey);
 
@@ -317,6 +320,8 @@ struct RGWSubUser {
   }
   void dump(Formatter *f) const;
   static void generate_test_instances(list<RGWSubUser*>& o);
+
+  void decode_json(JSONObj *obj);
 };
 WRITE_CLASS_ENCODER(RGWSubUser);
 
@@ -325,10 +330,10 @@ class RGWUserCaps
   map<string, uint32_t> caps;
 
   int get_cap(const string& cap, string& type, uint32_t *perm);
-  int parse_cap_perm(const string& str, uint32_t *perm);
   int add_cap(const string& cap);
   int remove_cap(const string& cap);
 public:
+  static int parse_cap_perm(const string& str, uint32_t *perm);
   int add_from_string(const string& str);
   int remove_from_string(const string& str);
 
@@ -344,6 +349,8 @@ public:
   }
   int check_cap(const string& cap, uint32_t perm);
   void dump(Formatter *f) const;
+
+  void decode_json(JSONObj *obj);
 };
 WRITE_CLASS_ENCODER(RGWUserCaps);
 
@@ -444,6 +451,8 @@ struct RGWUserInfo
   }
   void dump(Formatter *f) const;
   static void generate_test_instances(list<RGWUserInfo*>& o);
+
+  void decode_json(JSONObj *obj);
 
   void clear() {
     user_id.clear();

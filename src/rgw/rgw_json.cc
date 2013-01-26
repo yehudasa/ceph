@@ -296,6 +296,34 @@ void decode_json_obj(long& val, JSONObj *obj)
  }
 }
 
+void decode_json_obj(unsigned long& val, JSONObj *obj)
+{
+  string s = obj->get_data();
+  const char *start = s.c_str();
+  char *p;
+
+  errno = 0;
+  val = strtoul(start, &p, 10);
+
+  /* Check for various possible errors */
+
+ if ((errno == ERANGE && val == ULONG_MAX) ||
+     (errno != 0 && val == 0)) {
+   throw JSONDecoder::err();
+ }
+
+ if (p == start) {
+   throw JSONDecoder::err();
+ }
+
+ while (*p != '\0') {
+   if (!isspace(*p)) {
+     throw JSONDecoder::err();
+   }
+   p++;
+ }
+}
+
 void decode_json_obj(int& val, JSONObj *obj)
 {
   long l;
@@ -309,4 +337,32 @@ void decode_json_obj(int& val, JSONObj *obj)
   val = (int)l;
 }
 
+void decode_json_obj(unsigned& val, JSONObj *obj)
+{
+  unsigned long l;
+  decode_json_obj(l, obj);
+#if ULONG_MAX > UINT_MAX
+  if (l > UINT_MAX) {
+    throw JSONDecoder::err();
+  }
+#endif
+
+  val = (unsigned)l;
+}
+
+void decode_json_obj(bool& val, JSONObj *obj)
+{
+  string s = obj->get_data();
+  if (strcasecmp(s.c_str(), "true") == 0) {
+    val = true;
+    return;
+  }
+  if (strcasecmp(s.c_str(), "false") == 0) {
+    val = true;
+    return;
+  }
+  int i;
+  decode_json_obj(i, obj);
+  val = (bool)i;
+}
 

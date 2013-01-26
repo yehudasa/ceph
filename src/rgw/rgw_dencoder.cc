@@ -5,6 +5,7 @@
 #include "rgw_acl.h"
 #include "rgw_acl_s3.h"
 #include "rgw_cache.h"
+#include "rgw_json.h"
 
 #include "common/Formatter.h"
 
@@ -412,6 +413,12 @@ void RGWAccessKey::dump(Formatter *f) const
   f->dump_string("subuser", subuser);
 }
 
+void RGWAccessKey::decode_json(JSONObj *obj) {
+  JSONDecoder::decode_json("id", id, obj);
+  JSONDecoder::decode_json("key", key, obj);
+  JSONDecoder::decode_json("subuser", subuser, obj);
+}
+
 void RGWSubUser::generate_test_instances(list<RGWSubUser*>& o)
 {
   RGWSubUser *u = new RGWSubUser;
@@ -425,6 +432,12 @@ void RGWSubUser::dump(Formatter *f) const
 {
   f->dump_string("name", name);
   f->dump_unsigned("perm_mask", perm_mask);
+}
+
+void RGWSubUser::decode_json(JSONObj *obj)
+{
+  JSONDecoder::decode_json("name", name, obj);
+  JSONDecoder::decode_json("perm_mask", perm_mask, obj);
 }
 
 void RGWUserInfo::generate_test_instances(list<RGWUserInfo*>& o)
@@ -467,8 +480,10 @@ void RGWUserInfo::dump(Formatter *f) const
     f->close_section();
     f->close_section();
   }
+  f->close_section();
 
   aiter = swift_keys.begin();
+  f->open_array_section("swift_keys");
   for (; aiter != swift_keys.end(); ++aiter) {
     f->open_object_section("entry");
     f->dump_string("subuser", aiter->first);
@@ -477,7 +492,9 @@ void RGWUserInfo::dump(Formatter *f) const
     f->close_section();
     f->close_section();
   }
+  f->close_section();
   map<string, RGWSubUser>::const_iterator siter = subusers.begin();
+  f->open_array_section("subusers");
   for (; siter != subusers.end(); ++siter) {
     f->open_object_section("entry");
     f->dump_string("id", siter->first);
@@ -486,7 +503,104 @@ void RGWUserInfo::dump(Formatter *f) const
     f->close_section();
     f->close_section();
   }
+  f->close_section();
   f->dump_int("suspended", (int)suspended);
+}
+
+
+struct AccessKeyEntry {
+  RGWAccessKey key;
+
+  void decode_json(JSONObj *obj) {
+    string uid;
+    JSONDecoder::decode_json("user", uid, obj);
+    int pos = uid.find(':');
+    if (pos >= 0)
+      key.subuser = uid.substr(pos + 1);
+    JSONDecoder::decode_json("access_key", key.id, obj);
+    JSONDecoder::decode_json("secret_key", key.key, obj);
+  }
+};
+
+struct SwiftKeyEntry {
+  RGWAccessKey key;
+
+  void decode_json(JSONObj *obj) {
+    string uid;
+    JSONDecoder::decode_json("user", uid, obj);
+    int pos = uid.find(':');
+    if (pos >= 0)
+      key.subuser = uid.substr(pos + 1);
+    JSONDecoder::decode_json("secret_key", key.key, obj);
+  }
+};
+
+static uint32_t str_to_perm(const string& s)
+{
+  if (s.compare("read") == 0)
+    return RGW_PERM_READ;
+  else if (s.compare("write") == 0)
+    return RGW_PERM_WRITE;
+  else if (s.compare("readwrite") == 0)
+    return RGW_PERM_READ | RGW_PERM_WRITE;
+  else if (s.compare("full") == 0)
+    return RGW_PERM_FULL_CONTROL;
+  return 0;
+}
+
+struct SubUserEntry {
+  RGWSubUser subuser;
+
+  void decode_json(JSONObj *obj) {
+    string uid;
+    JSONDecoder::decode_json("id", uid, obj);
+    int pos = uid.find(':');
+    if (pos >= 0)
+      subuser.name = uid.substr(pos + 1);
+    string perm_str;
+    JSONDecoder::decode_json("permissions", perm_str, obj);
+    subuser.perm_mask = str_to_perm(perm_str);
+  }
+};
+
+void RGWUserInfo::decode_json(JSONObj *obj)
+{
+  JSONDecoder::decode_json("user_id", user_id, obj);
+  JSONDecoder::decode_json("display_name", display_name, obj);
+  JSONDecoder::decode_json("email", user_email, obj);
+  bool susp;
+  JSONDecoder::decode_json("suspended", susp, obj);
+  suspended = (__u8)susp;
+  JSONDecoder::decode_json("max_buckets", max_buckets, obj);
+
+  list<AccessKeyEntry> akeys_list;
+  JSONDecoder::decode_json("keys", akeys_list, obj);
+
+  list<AccessKeyEntry>::iterator iter;
+  for (iter = akeys_list.begin(); iter != akeys_list.end(); ++iter) {
+    AccessKeyEntry& e = *iter;
+    access_keys[e.key.id] = e.key;
+  }
+
+  list<SwiftKeyEntry> skeys_list;
+  list<SwiftKeyEntry>::iterator skiter;
+  JSONDecoder::decode_json("swift_keys", skeys_list, obj);
+
+  for (skiter = skeys_list.begin(); skiter != skeys_list.end(); ++skiter) {
+    SwiftKeyEntry& e = *skiter;
+    swift_keys[e.key.subuser] = e.key;
+  }
+
+  list<SubUserEntry> susers_list;
+  list<SubUserEntry>::iterator siter;
+  JSONDecoder::decode_json("subusers", susers_list, obj);
+
+  for (siter = susers_list.begin(); siter != susers_list.end(); ++siter) {
+    SubUserEntry& e = *siter;
+    subusers[e.subuser.name] = e.subuser;
+  }
+
+  JSONDecoder::decode_json("caps", caps, obj);
 }
 
 void rgw_bucket::generate_test_instances(list<rgw_bucket*>& o)
