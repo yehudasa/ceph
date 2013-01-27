@@ -256,6 +256,35 @@ def get_free_partition_index(dev):
     return num
 
 
+def zap(dev):
+    """
+    Destroy the partition table and content of a given disk.
+    """
+    try:
+        log.debug('Zapping partition table on %s', dev)
+
+        # try to wipe out any GPT partition table backups.  sgdisk
+        # isn't too thorough.
+        lba_size = 4096
+        size = 33 * lba_size
+        with file(dev, 'wb') as f:
+            f.seek(-size, os.SEEK_END)
+            f.write(size*'\0')
+
+        subprocess.check_call(
+            args=[
+                'sgdisk',
+                '--zap-all',
+                '--clear',
+                '--mbrtogpt',
+                '--',
+                dev,
+                ],
+            )
+    except subprocess.CalledProcessError as e:
+        raise PrepareError(e)
+
+
 def prepare(
     disk,
     journal,
@@ -275,21 +304,7 @@ def prepare(
     it.
     """
 
-    try:
-        # this kills the crab
-        log.debug('Zapping partition table on %s', disk)
-        subprocess.check_call(
-            args=[
-                'sgdisk',
-                '--zap-all',
-                '--clear',
-                '--mbrtogpt',
-                '--',
-                disk,
-                ],
-            )
-    except subprocess.CalledProcessError as e:
-        raise PrepareError(e)
+    zap(disk)
 
     osd_uuid = str(uuid.uuid4())
 
@@ -448,6 +463,11 @@ def parse_args():
         help='file system type to use (e.g. "ext4")',
         )
     parser.add_argument(
+        '--zap-disk',
+        action='store_true', default=None,
+        help='destroy the partition table (and content) of a disk',
+        )
+    parser.add_argument(
         'disk',
         metavar='DISK',
         help='path to OSD data disk block device',
@@ -478,6 +498,10 @@ def main():
     logging.basicConfig(
         level=loglevel,
         )
+
+    if args.zap_disk is not None:
+        zap(args.disk)
+        return
 
     try:
         if args.cluster_uuid is None:
