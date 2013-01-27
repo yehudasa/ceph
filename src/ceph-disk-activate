@@ -503,20 +503,32 @@ def activate_dir(
             'directory %s does not exist' % path
             )
 
-    try:
-        (osd_id, cluster) = activate(tmp, activate_key_template, init)
-        canonical = '/var/lib/ceph/osd/{cluster}-{id}'.format(
-            cluster,
-            osd_id)
-        if path != canonical:
-            # symlink it from the proper location
+    (osd_id, cluster) = activate(path, activate_key_template, init)
+    canonical = '/var/lib/ceph/osd/{cluster}-{osd_id}'.format(
+        cluster=cluster,
+        osd_id=osd_id)
+    if path != canonical:
+        # symlink it from the proper location
+        create = True
+        if os.path.lexists(canonical):
+            old = os.readlink(canonical)
+            if old != path:
+                log.debug('Removing old symlink %s -> %s', canonical, old)
+                try:
+                    os.unlink(canonical)
+                except:
+                    raise ActivateError('unable to remove old symlink %s', canonical)
+            else:
+                create = False
+        if create:
             log.debug('Creating symlink %s -> %s', canonical, path)
-            os.symlink(path, canonical)
+            try:
+                os.symlink(path, canonical)
+            except:
+                raise ActivateError('unable to create symlink %s -> %s', canonical, path)
 
-        return (osd_id, cluster)
+    return (cluster, osd_id)
 
-    except:
-        raise
 
 def activate(
     path,
