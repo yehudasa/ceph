@@ -1,0 +1,181 @@
+#!/usr/bin/python
+
+#
+# ceph-dir-prepare --dir /data --cluster ...
+#
+#
+#
+#
+
+import argparse
+import logging
+import os
+import os.path
+import subprocess
+import sys
+import tempfile
+import uuid
+
+
+log_name = __name__
+if log_name == '__main__':
+    log_name = os.path.basename(sys.argv[0])
+log = logging.getLogger(log_name)
+
+class PrepareError(Exception):
+    """
+    OSD preparation error
+    """
+
+    def __str__(self):
+        doc = self.__doc__.strip()
+        return ': '.join([doc] + [str(a) for a in self.args])
+
+
+
+
+def get_conf(cluster, variable):
+    try:
+        p = subprocess.Popen(
+            args=[
+                'ceph-conf',
+                '--cluster={cluster}'.format(
+                    cluster=cluster,
+                    ),
+                '--name=osd.',
+                '--lookup',
+                variable,
+                ],
+            stdout=subprocess.PIPE,
+            close_fds=True,
+            )
+    except OSError as e:
+        raise PrepareError('error executing ceph-conf', e)
+    (out, _err) = p.communicate()
+    ret = p.wait()
+    if ret == 1:
+        # config entry not found
+        return None
+    elif ret != 0:
+        raise PrepareError('getting variable from configuration failed')
+    value = out.split('\n', 1)[0]
+    # don't differentiate between "var=" and no var set
+    if not value:
+        return None
+    return value
+
+def get_fsid(cluster):
+    fsid = get_conf(cluster=cluster, variable='fsid')
+    if fsid is None:
+        raise PrepareError('getting cluster uuid from configuration failed')
+    return fsid
+
+def write_one_line(parent, name, text):
+    """
+    Write a file whose sole contents are a single line.
+
+    Adds a newline.
+    """
+    path = os.path.join(parent, name)
+    tmp = '{path}.{pid}.tmp'.format(path=path, pid=os.getpid())
+    with file(tmp, 'wb') as f:
+        f.write(text + '\n')
+        os.fsync(f.fileno())
+    os.rename(tmp, path)
+
+
+CEPH_OSD_ONDISK_MAGIC = 'ceph osd volume v026'
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description='Prepare an existing direcory for a Ceph OSD',
+        )
+    parser.add_argument(
+        '-v', '--verbose',
+        action='store_true', default=None,
+        help='be more verbose',
+        )
+    parser.add_argument(
+        '--cluster',
+        metavar='NAME',
+        help='cluster name to assign this disk to',
+        )
+    parser.add_argument(
+        '--cluster-uuid',
+        metavar='UUID',
+        help='cluster uuid to assign this disk to',
+        )
+    parser.add_argument(
+        '--osd-uuid',
+        metavar='UUID',
+        help='osd uuid to assign to this disk',
+        )
+    parser.add_argument(
+        'dir',
+        metavar='DIR',
+        help='path to OSD data directory',
+        )
+    parser.add_argument(
+        'journal',
+        metavar='JOURNAL',
+        nargs='?',
+        help=('path to OSD journal file or block device;'
+              + ' leave out to store journal in a file inside DIR'),
+        )
+    parser.set_defaults(
+        # we want to hold on to this, for later
+        prog=parser.prog,
+        cluster='ceph',
+        )
+    args = parser.parse_args()
+    return args
+
+
+def main():
+    args = parse_args()
+
+    loglevel = logging.INFO
+    if args.verbose:
+        loglevel = logging.DEBUG
+
+    logging.basicConfig(
+        level=loglevel,
+        )
+
+    try:
+        if args.cluster_uuid is None:
+            args.cluster_uuid = get_fsid(cluster=args.cluster)
+            if args.cluster_uuid is None:
+                raise PrepareError(
+                    'must have fsid in config or pass --cluster--uuid=',
+                    )
+
+        if not os.path.exists(args.dir):
+            raise PrepareError(
+                'directory %s does not exist' % args.dir
+                )
+        
+        path = args.dir
+        if args.osd_uuid is None:
+            args.osd_uuid = str(uuid.uuid4())
+
+        if args.journal is not None:
+            # we're using an external journal; point to it here
+            os.symlink(
+                args.journal, 
+                os.path.join(path, 'journal'),
+                )
+        write_one_line(path, 'ceph_fsid', args.cluster_uuid)
+        write_one_line(path, 'fsid', args.osd_uuid)
+        write_one_line(path, 'magic', CEPH_OSD_ONDISK_MAGIC)
+
+    except PrepareError as e:
+        print >>sys.stderr, '{prog}: {msg}'.format(
+            prog=args.prog,
+            msg=e,
+            )
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()
+
