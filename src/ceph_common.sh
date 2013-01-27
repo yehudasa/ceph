@@ -146,11 +146,13 @@ get_local_name_list() {
 get_name_list() {
     orig=$1
 
+    # extract list of monitors, mdss, osds defined in startup.conf
+    allconf=`$CCONF -c $conf -l mon | egrep -v '^mon$' ; \
+	$CCONF -c $conf -l mds | egrep -v '^mds$' ; \
+	$CCONF -c $conf -l osd | egrep -v '^osd$'`
+
     if [ -z "$orig" ]; then
-        # extract list of monitors, mdss, osds defined in startup.conf
-	what=`$CCONF -c $conf -l mon | egrep -v '^mon$' ; \
-	    $CCONF -c $conf -l mds | egrep -v '^mds$' ; \
-	    $CCONF -c $conf -l osd | egrep -v '^osd$'`
+	what="$allconf $local"
 	return
     fi
 
@@ -158,17 +160,16 @@ get_name_list() {
     for f in $orig; do
 	type=`echo $f | cut -c 1-3`   # e.g. 'mon', if $item is 'mon1'
 	id=`echo $f | cut -c 4- | sed 's/\\.//'`
-	all=`$CCONF -c $conf -l $type | egrep -v "^$type$" || true`
 	case $f in
 	    mon | osd | mds)
-		what="$what $all"
+		what=`echo $allconf $local | grep ^$type || true`
 		;;
 	    *)
-		if echo " " $all " " | egrep -v -q "( $type$id | $type.$id )"; then
-		    echo "$0: $type.$id not found ($conf defines \"$all\")"
+		if echo " " "$allconf" "$local" " " | egrep -v -q "( $type$id | $type.$id )"; then
+		    echo "$0: $type.$id not found ($conf defines \"$all\", /var/lib/ceph defines \"$local\")"
 		    exit 1
 		fi
-		what="$what $f"
+		what="$f"
 		;;
 	esac
     done

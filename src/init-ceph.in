@@ -165,10 +165,8 @@ verify_conf
 command=$1
 [ -n "$*" ] && shift
 
-get_name_list "$@"
-
 get_local_name_list "$@"
-what="$what $local"
+get_name_list "$@"
 
 for name in $what; do
     type=`echo $name | cut -c 1-3`   # e.g. 'mon', if $item is 'mon1'
