@@ -9,6 +9,35 @@ import sys
 import tempfile
 import uuid
 
+CEPH_OSD_ONDISK_MAGIC = 'ceph osd volume v026'
+
+JOURNAL_UUID = '45b0969e-9b03-4f30-b4c6-b4b80ceff106'
+OSD_UUID =     '4fbd7e29-9d25-41b8-afd0-062c0ceff05d'
+TOBE_UUID =    '89c57f98-2fe5-4dc0-89c1-f3ad0ceff2be'
+
+DEFAULT_FS_TYPE = 'xfs'
+
+MOUNT_OPTIONS = dict(
+    btrfs='noatime,user_subvol_rm_allowed',
+    ext4='noatime,user_xattr',
+    xfs='noatime',
+    )
+
+MKFS_ARGS = dict(
+    btrfs=[
+        '-m', 'single',
+        '-l', '32768',
+        '-n', '32768',
+        ],
+    xfs=[
+        # xfs insists on not overwriting previous fs; even if we wipe
+        # partition table, we often recreate it exactly the same way,
+        # so we'll see ghosts of filesystems past
+        '-f',
+        '-i', 'size=2048',
+        ],
+    )
+
 
 log_name = __name__
 if log_name == '__main__':
@@ -50,11 +79,6 @@ def write_one_line(parent, name, text):
         f.write(text + '\n')
         os.fsync(f.fileno())
     os.rename(tmp, path)
-
-
-CEPH_OSD_ONDISK_MAGIC = 'ceph osd volume v026'
-
-JOURNAL_UUID = '45b0969e-9b03-4f30-b4c6-b4b80ceff106'
 
 
 # TODO depend on python2.7
@@ -140,30 +164,6 @@ def get_fsid(cluster):
     return fsid
 
 
-DEFAULT_FS_TYPE = 'xfs'
-
-MOUNT_OPTIONS = dict(
-    btrfs='noatime,user_subvol_rm_allowed',
-    ext4='noatime,user_xattr',
-    xfs='noatime',
-    )
-
-MKFS_ARGS = dict(
-    btrfs=[
-        '-m', 'single',
-        '-l', '32768',
-        '-n', '32768',
-        ],
-    xfs=[
-        # xfs insists on not overwriting previous fs; even if we wipe
-        # partition table, we often recreate it exactly the same way,
-        # so we'll see ghosts of filesystems past
-        '-f',
-        '-i', 'size=2048',
-        ],
-    )
-
-
 def mount(
     dev,
     fstype,
@@ -179,6 +179,7 @@ def mount(
         dir='/var/lib/ceph/tmp',
         )
     try:
+        log.debug('Mounting %s on %s with options %s', dev, path, options)
         subprocess.check_call(
             args=[
                 'mount',
@@ -202,6 +203,7 @@ def unmount(
     path,
     ):
     try:
+        log.debug('Unmounting %s', path)
         subprocess.check_call(
             args=[
                 'umount',
@@ -275,6 +277,7 @@ def prepare(
 
     try:
         # this kills the crab
+        log.debug('Zapping partition table on %s', disk)
         subprocess.check_call(
             args=[
                 'sgdisk',
@@ -320,6 +323,7 @@ def prepare(
                 )
 
         try:
+            log.debug('Creating journal partition num %d size %d on %s', num, journal_size, journal)
             subprocess.check_call(
                 args=[
                     'sgdisk',
@@ -348,6 +352,7 @@ def prepare(
             raise PrepareError(e)
 
     try:
+        log.debug('Creating osd partition on %s', disk)
         subprocess.check_call(
             args=[
                 'sgdisk',
@@ -356,7 +361,7 @@ def prepare(
                 '--partition-guid=1:{osd_uuid}'.format(
                     osd_uuid=osd_uuid,
                     ),
-                '--typecode=1:89c57f98-2fe5-4dc0-89c1-f3ad0ceff2be',
+                '--typecode=1:%s' % TOBE_UUID,
                 '--',
                 disk,
                 ],
@@ -385,6 +390,7 @@ def prepare(
             dev,
             ])
     try:
+        log.debug('Creating %s fs on %s', fstype, dev)
         subprocess.check_call(args=args)
     except subprocess.CalledProcessError as e:
         raise PrepareError(e)
@@ -393,12 +399,12 @@ def prepare(
     try:
         if journal_uuid is not None:
             # we're using an external journal; point to it here
-            os.symlink(
-                '/dev/disk/by-partuuid/{journal_uuid}'.format(
-                    journal_uuid=journal_uuid,
-                    ),
-                os.path.join(path, 'journal'),
+            jdev = '/dev/disk/by-partuuid/{journal_uuid}'.format(
+                journal_uuid=journal_uuid,
                 )
+            log.debug('Adding journal symlink %s/journal -> %s', path, jdev)
+            os.symlink(jdev, os.path.join(path, 'journal'))
+        log.debug('Preparing osd data dir %s', path)
         write_one_line(path, 'ceph_fsid', cluster_uuid)
         write_one_line(path, 'fsid', osd_uuid)
         write_one_line(path, 'magic', CEPH_OSD_ONDISK_MAGIC)
@@ -409,7 +415,7 @@ def prepare(
         subprocess.check_call(
             args=[
                 'sgdisk',
-               '--typecode=1:4fbd7e29-9d25-41b8-afd0-062c0ceff05d',
+                '--typecode=1:%s' % OSD_UUID,
                 '--',
                 disk,
                 ],
@@ -420,7 +426,7 @@ def prepare(
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='Prepare a disk for a Ceph OSD',
+        description='Prepare a directory for a Ceph OSD',
         )
     parser.add_argument(
         '-v', '--verbose',
