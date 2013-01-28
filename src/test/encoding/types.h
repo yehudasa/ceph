@@ -116,6 +116,9 @@ TYPE(mds_table_pending_t)
 #include "mds/MDSMap.h"
 TYPE(MDSMap)
 
+#include "mds/events/ECommitted.h"
+TYPE(ECommitted)
+
 #ifdef WITH_RADOSGW
 
 #include "rgw/rgw_rados.h"
