@@ -119,6 +119,9 @@ TYPE(mds_load_t)
 #include "mds/MDSMap.h"
 TYPE(MDSMap)
 
+#include "mds/SessionMap.h"
+/*TYPE(SessionMap) */ // this requires adding libosdc.la to dencoder
+
 #include "mds/events/ECommitted.h"
 TYPE(ECommitted)
 
