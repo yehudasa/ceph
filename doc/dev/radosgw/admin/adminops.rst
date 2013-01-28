@@ -16,7 +16,7 @@ Syntax
 
 ::
 
-	GET /{admin}/usage HTTP/1.1
+	GET /{admin}/usage?format=json HTTP/1.1 
 	Host: {fqdn}
 
 
@@ -145,18 +145,23 @@ If successful, the response contains the requested information.
 :Description: A container for stats summary aggregated total
 :Type: Container
 
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+TBD.
 
 Trim Usage
 ==========
 
-Remove usage information.
+Remove usage information. With no dates specified, removes all usage 
+information. 
 
 Syntax
 ~~~~~~
 
 ::
 
-	DELETE /{admin}/usage HTTP/1.1
+	DELETE /{admin}/usage?format=json HTTP/1.1
 	Host: {fqdn}
 
 
@@ -177,7 +182,7 @@ Request Parameters
 :Example: ``2012-09-25 16:00:00``
 :Required: No
 
-``start``
+``end``
 
 :Description: Date and (optional) time that specifies the end time of the requested data (none inclusive)
 :Type: String
@@ -191,18 +196,24 @@ Request Parameters
 :Type: Boolean
 :Required: No
 
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+TBD.
 
 Get User Info
 =============
 
-Get user information.
+Get user information. If no user is specified returns the list of all users along with suspension 
+information.
+
 
 Syntax
 ~~~~~~
 
 ::
 
-	GET /{admin}/user HTTP/1.1
+	GET /{admin}/user?format=json HTTP/1.1
 	Host: {fqdn}
 
 
@@ -213,7 +224,7 @@ Request Parameters
 
 :Description: The user for which the information is requested.
 :Type: String
-:Required: Yes
+:Required: No
 
 
 Response Entities
@@ -230,54 +241,67 @@ If successful, the response contains the user information.
 
 :Description: The user id.
 :Type: String
+:Parent: ``user``
 
 ``display_name``
 
 :Description: Display name for the user.
 :Type: String
+:Parent: ``user``
 
 ``suspended``
 
 :Description: True if the user is suspended.
 :Type: Boolean
+:Parent: ``user``
 
 ``max_buckets``
 
 :Description: The maximum number of buckets to be owned by the user.
 :Type: Integer
+:Parent: ``user``
 
 ``subusers``
 
 :Description: Subusers associated with this user account.
 :Type: Container
+:Parent: ``user``
 
 ``keys``
 
 :Description: S3 keys associated with this user account.
 :Type: Container
+:Parent: ``user``
 
 ``swift_keys``
 
 :Description: Swift keys associated with this user account.
 :Type: Container
+:Parent: ``user``
 
 ``caps``
 
 :Description: User capabilities.
 :Type: Container
+:Parent: ``user``
 
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+None.
 
 Create User
 ===========
 
-Create a new user.
+Create a new user. By Default, a S3 key pair will be created
+automatically and returned in the response.
 
 Syntax
 ~~~~~~
 
 ::
 
-	PUT /{admin}/user HTTP/1.1
+	PUT /{admin}/user?format=json HTTP/1.1
 	Host: {fqdn}
 
 
@@ -314,13 +338,34 @@ Request Parameters
 :Example: ``s3``
 :Required: No
 
+``access-key``
+
+:Description: Specify access key.
+:Type: String
+:Example: ``ABCD0EF12GHIJ2K34LMN``
+:Required: No
+
+
 ``secret``
 
-:Description: Specify secret key
+:Description: Specify secret key.
 :Type: String
 :Example: ``0AbCDEFg1h2i34JklM5nop6QrSTUV+WxyzaBC7D8``
 :Required: No
 
+``caps``
+
+:Description: User capabilities.
+:Type: String
+:Example:``usage=read, write; user=rea``
+:Required: No
+
+``gen-secret``
+
+:Description: Generate a new secret key.
+:Type: Boolean
+:Example: True
+:Required: No
 
 Response Entities
 ~~~~~~~~~~~~~~~~~
@@ -372,6 +417,48 @@ If successful, the response contains the user information.
 :Description: User capabilities.
 :Type: Container
 
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+``UserExists``
+
+:Description: Attempt to create existing user.
+:HTTP Status Code: 409 Conflict
+
+``InvalidAccessKey``
+
+:Description: Invalid access key specified.
+:HTTP Status Code: 400 Bad Request
+
+``InvalidKeyType``
+
+:Description: Invalid key type specified.
+:HTTP Status Code: 400 Bad Request
+
+``InvalidSecretKey``
+
+:Description: Invalid secret key specified.
+:HTTP Status Code: 400 Bad Request``InvalidKeyType``
+
+:Description: Invalid key type specified.
+:HTTP Status Code: 400 Bad Request
+
+``KeyExists``
+
+:Description: Provided access key exists.
+:HTTP Status Code: 409 Conflict
+
+``EmailExists``
+
+:Description: Provided email address exists.
+:HTTP Status Code: 409 Conflict
+
+``InvalidCap``
+
+:Description: Attempt to grant invalid admin capability.
+:HTTP Status Code: 400 Bad Request
+
+
 Modify User
 ===========
 
@@ -382,7 +469,7 @@ Syntax
 
 ::
 
-	POST /{admin}/user HTTP/1.1
+	POST /{admin}/user?format=json HTTP/1.1
 	Host: {fqdn}
 
 
@@ -424,6 +511,12 @@ Request Parameters
 :Example: ``s3``
 :Required: No
 
+``caps``
+
+:Description: User capabilities.
+:Type: String
+:Example:``usage=read, write; user=rea``
+:Required: No
 
 Response Entities
 ~~~~~~~~~~~~~~~~~
@@ -475,6 +568,39 @@ If successful, the response contains the user information.
 :Description: User capabilities.
 :Type: Container
 
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+``InvalidAccessKey``
+
+:Description: Invalid access key specified.
+:HTTP Status Code: 400 Bad Request
+
+``InvalidKeyType``
+
+:Description: Invalid key type specified.
+:HTTP Status Code: 400 Bad Request
+
+``InvalidSecretKey``
+
+:Description: Invalid secret key specified.
+:HTTP Status Code: 400 Bad Request
+
+``KeyExists``
+
+:Description: Provided access key exists.
+:HTTP Status Code: 409 Conflict
+
+``EmailExists``
+
+:Description: Provided email address exists.
+:HTTP Status Code: 409 Conflict
+
+``InvalidCap``
+
+:Description: Attempt to grant invalid admin capability.
+:HTTP Status Code: 400 Bad Request
+
 Remove User
 ===========
 
@@ -485,7 +611,7 @@ Syntax
 
 ::
 
-	DELETE /{admin}/user HTTP/1.1
+	DELETE /{admin}/user?format=json HTTP/1.1
 	Host: {fqdn}
 
 
@@ -512,6 +638,11 @@ Response Entities
 
 TBD.
 
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+None.
+
 Create Subuser
 ==============
 
@@ -522,7 +653,7 @@ Syntax
 
 ::
 
-	PUT /{admin}/user/?subuser
+	PUT /{admin}/user?subuser?format=json HTTP/1.1
 	Host {fqdn}
 
 
@@ -551,9 +682,147 @@ Request Parameters
 :Example: True
 :Required: No
 
+``secret``
+:Description: Specify secret key.
+:Type: String
+:Example: ``0AbCDEFg1h2i34JklM5nop6QrSTUV+WxyzaBC7D8``
+:Required: No
+
 ``key-type``
 
-:Description: Key type to be generated, options are: swift, s3 (default)
+:Description: Key type to be generated, options are: swift (default), s3
+:Type: String
+:Example: ``swift``
+:Required: No
+
+``access``
+
+:Description: Set access permissions for sub-user, should be one
+              of read, write, readwrite, full
+:Type: String
+:Example: ``read``
+:Required: No
+
+
+Response Entities
+~~~~~~~~~~~~~~~~~
+
+If successful, the response contains the user information.
+
+``user``
+
+:Description: A container for the user data information.
+:Type: Container
+
+``user_id``
+
+:Description: The user id.
+:Type: String
+
+``display_name``
+
+:Description: Display name for the user.
+:Type: String
+
+``suspended``
+
+:Description: True if the user is suspended.
+:Type: Boolean
+
+``max_buckets``
+
+:Description: The maximum number of buckets to be owned by the user.
+:Type: Integer
+
+``subusers``
+
+:Description: Subusers associated with the user account.
+:Type: Container
+
+``keys``
+
+:Description: S3 keys associated with the user account.
+:Type: Container
+
+``swift_keys``
+
+:Description: Swift keys associated with the user account.
+:Type: Container
+
+``caps``
+
+:Description: User capabilities.
+:Type: Container
+
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+``SubuserExists``
+
+:Description: Specified subuser exists.
+:HTTP Status Code: 409 Conflict
+
+``InvalidKeyType``
+
+:Description: Invalid key type specified.
+:HTTP Status Code: 400 Bad Request
+
+``InvalidSecretKey``
+
+:Description: Invalid secret key specified.
+:HTTP Status Code: 400 Bad Request
+
+``InvalidAccess``
+:Description: Invalid subuser access specified.
+:HTTP Status Code: 400 Bad Request
+
+Modify Subuser
+==============
+
+Modify an existing subuser
+
+Syntax
+~~~~~~
+
+::
+
+	POST /{admin}/user?subuser?format=json HTTP/1.1
+	Host {fqdn}
+
+
+Request Parameters
+~~~~~~~~~~~~~~~~~~
+
+``uid``
+
+:Description: The user ID under which the subuser is to be modified.
+:Type: String
+:Example ``foo_user``
+:Required: Yes
+
+``subuser``
+
+:Description: The subuser ID to be modified.
+:Type: String
+:Example: ``sub_foo``
+:Required: Yes
+
+``gen-secret``
+
+:Description: Generate a new secret key for the subuser.
+:Type: Boolean
+:Example: True
+:Required: No
+
+``secret``
+:Description: Specify secret key.
+:Type: String
+:Example: ``0AbCDEFg1h2i34JklM5nop6QrSTUV+WxyzaBC7D8``
+:Required: No
+
+``key-type``
+
+:Description: Key type to be generated, options are: swift (default), s3 
 :Type: String
 :Example: ``swift``
 :Required: No
@@ -617,110 +886,27 @@ If successful, the response contains the user information.
 :Description: User capabilities.
 :Type: Container
 
-Modify Subuser
-==============
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
 
-Modify an existing subuser
+``SubuserExists``
 
-Syntax
-~~~~~~
+:Description: Specified subuser exists.
+:HTTP Status Code: 409 Conflict
 
-::
+``InvalidKeyType``
 
-	POST /{admin}/user/?subuser
-	Host {fqdn}
+:Description: Invalid key type specified.
+:HTTP Status Code: 400 Bad Request
 
+``InvalidSecretKey``
 
-Request Parameters
-~~~~~~~~~~~~~~~~~~
+:Description: Invalid secret key specified.
+:HTTP Status Code: 400 Bad Request
 
-``uid``
-
-:Description: The user ID under which the subuser is to be modified.
-:Type: String
-:Example ``foo_user``
-:Required: Yes
-
-
-``subuser``
-
-:Description: The subuser ID to be modified.
-:Type: String
-:Example: ``sub_foo``
-:Required: Yes
-
-``gen-secret``
-
-:Description: Generate a new secret key for the subuser.
-:Type: Boolean
-:Example: True
-:Required: No
-
-``key-type``
-
-:Description: Key type to be generated, options are: swift, s3 (default)
-:Type: String
-:Example: ``s3``
-:Required: No
-
-``access``
-
-:Description: Set access permissions for sub-user, should be one
-              of read, write, readwrite, full
-:Type: String
-:Example: ``read``
-:Required: No
-
-
-Response Entities
-~~~~~~~~~~~~~~~~~
-
-If successful, the response contains the user information.
-
-``user``
-
-:Description: A container for the user data information.
-:Type: Container
-
-``user_id``
-
-:Description: The user id.
-:Type: String
-
-``display_name``
-
-:Description: Display name for the user.
-:Type: String
-
-``suspended``
-
-:Description: True if the user is suspended.
-:Type: Boolean
-
-``max_buckets``
-
-:Description: The maximum number of buckets to be owned by the user.
-:Type: Integer
-
-``subusers``
-
-:Description: Subusers associated with this user account.
-:Type: Container
-
-``keys``
-
-:Description: S3 keys associated with this user account.
-:Type: Container
-
-``swift_keys``
-
-:Description: Swift keys associated with this user account.
-:Type: Container
-
-``caps``
-
-:Description: User capabilities.
-:Type: Container
+``InvalidAccess``
+:Description: Invalid subuser access specified.
+:HTTP Status Code: 400 Bad Request
 
 Remove Subuser
 ==============
@@ -732,7 +918,7 @@ Syntax
 
 ::
 
-	DELETE /{admin}/subuser
+	DELETE /{admin}/user?subuser?format=json HTTP/1.1
 	Host {fqdn}
 
 
@@ -817,17 +1003,22 @@ If successful, the response contains the user information.
 :Description: User capabilities.
 :Type: Container
 
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+None.
+
 Create Key
 ==========
 
-Create a new key.
+Create a new key. If a ``subuser`` is specified then by default created keys
+will be swift type.
 
 Syntax
 ~~~~~~
 
 ::
 
-	PUT /{admin}/key
+	PUT /{admin}/user?key?format=json HTTP/1.1
 	Host {fqdn}
 
 
@@ -855,12 +1046,45 @@ Request Parameters
 :Example: ``s3``
 :Required: No
 
+``access-key``
+
+:Description: Specify the access key. 
+:Type: String
+:Example: ``AB01C2D3EF45G6H7IJ8K``
+:Required: No
+
 ``secret``
 
-:Description: Specify the secret key
+:Description: Specify the secret key.
 :Type: String
 :Example: ``0ab/CdeFGhij1klmnopqRSTUv1WxyZabcDEFgHij``
 :Required: No
+
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+``InvalidAccessKey``
+
+:Description: Invalid access key specified.
+:HTTP Status Code: 400 Bad Request
+
+``InvalidKeyType``
+
+:Description: Invalid key type specified.
+:HTTP Status Code: 400 Bad Request
+
+``InvalidSecretKey``
+
+:Description: Invalid secret key specified.
+:HTTP Status Code: 400 Bad Request``InvalidKeyType``
+
+:Description: Invalid key type specified.
+:HTTP Status Code: 400 Bad Request
+
+``KeyExists``
+
+:Description: Provided access key exists.
+:HTTP Status Code: 409 Conflict
 
 Remove Key
 ==========
@@ -872,7 +1096,7 @@ Syntax
 
 ::
 
-	DELETE /{admin}/key
+	DELETE /{admin}/user?key?format=json HTTP/1.1
 	Host {fqdn}
 
 
@@ -881,7 +1105,7 @@ Request Parameters
 
 ``access-key``
 
-:Description: The S3 access key belonging to the S3 keypair to remove.
+:Description: The S3 access key belonging to the S3 key pair to remove.
 :Type: String
 :Example: ``AB01C2D3EF45G6H7IJ8K``
 :Required: Yes
@@ -908,19 +1132,23 @@ Request Parameters
 :Example: ``swift``
 :Required: No
 
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
 
-Get Bucket
-==========
+None.
+
+Get Bucket Info
+===============
 
 Get information for an existing bucket, if no request parameters are
-included lists buckets.
+included lists all buckets.
 
 Syntax
 ~~~~~~
 
 ::
 
-	GET /{admin}/bucket
+	GET /{admin}/bucket?format=json HTTP/1.1
 	Host {fqdn}
 
 
@@ -932,7 +1160,7 @@ Request Parameters
 :Description: The bucket to return info on.
 :Type: String
 :Example: ``foo_bucket``
-:Required: Yes
+:Required: No
 
 
 ``list``
@@ -969,45 +1197,189 @@ Response Entities
 If successful the request returns a buckets container containing
 the desired bucket information.
 
+``stats``
+
+:Description: Per bucket information.
+:Type: Container
+
 ``buckets``
 
 :Description: Contains a list of one or more bucket containers.
 :Type: Container
+
+``bucket``
+
+:Description: Container for single bucket information.
+:Type: Container
+:Parent: ``buckets``
+
+``name``
+
+:Description: The name of the bucket.
+:Type: String
+:Parent: ``bucket``
+
+``pool``
+
+:Description: The pool the bucket is stored in.
+:Type: String
+:Parent: ``bucket``
+
+``id``
+
+:Description: The unique bucket id.
+:Type: String
+:Parent: ``bucket``
+
+``marker``
+
+:Description: Internal bucket tag.
+:Type: String
+:Parent: ``bucket``
+
+``owner``
+
+:Description: The user id of the bucket owner.
+:Type: String
+:Parent: ``bucket``
+
+``usage``
+
+:Description: Storage usage information.
+:Type: Container
+:Parent: ``bucket``
+
+``index``
+
+:Description: Status of bucket index.
+:Type: String
+:Parent: ``bucket``
+
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+``IndexRepairFailed``
+
+:Description: Bucket index repair failed.
+:HTTP Status Code: 409 Conflict
+
+Get User Bucket Info
+====================
+
+Get information for an existing bucket belonging to a specified user.
+If no request parameters are included lists buckets belonging to the
+specified user.
+
+Syntax
+~~~~~~
+
+::
+
+	GET /{admin}/bucket?format=json HTTP/1.1
+	Host {fqdn}
+
+
+Request Parameters
+~~~~~~~~~~~~~~~~~~
+
+``uid``
+
+:Description: The user to retrieve bucket information for.
+:Type: String
+:Example: ``foo_user``
+:Required: Yes
+
+``bucket``
+
+:Description: The bucket to return info on.
+:Type: String
+:Example: ``foo_bucket``
+:Required: No
+
+
+``list``
+
+:Description: Return list of buckets.
+:Type: Boolean
+:Example: True
+:Required: No
+
+``stats``
+
+:Description: Return bucket statistics.
+:Type: Boolean
+:Example: True
+:Required: No
+
+Response Entities
+~~~~~~~~~~~~~~~~~
+
+If successful the request returns a buckets container containing
+the desired bucket information.
 
 ``stats``
 
 :Description: Per bucket information.
 :Type: Container
 
+``buckets``
+
+:Description: Contains a list of one or more bucket containers.
+:Type: Container
+
 ``bucket``
 
+:Description: Container for bucket information.
+:Type: Container
+:Parent: Buckets
+
+``name``
 :Description: The name of the bucket.
 :Type: String
+:Parent: ``bucket``
 
 ``pool``
 
-:Desciption: The pool the bucket is stored in.
+:Description: The pool the bucket is stored in.
 :Type: String
 
 ``id``
 
 :Description: The unique bucket id.
 :Type: String
+:Parent: ``bucket``
 
 ``marker``
 
 :Description:
 :Type: String
+:Parent: ``bucket``
 
 ``owner``
 
 :Description: The user id of the bucket owner.
 :Type: String
+:Parent: ``bucket``
 
 ``usage``
 
 :Description: Storage usage information.
 :Type: Container
+:Parent: ``bucket``
+
+``index``
+
+:Description: Status of bucket index.
+:Type: String
+:Parent: ``bucket``
+
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+``IndexRepairFailed``
+
+:Description: Bucket index repair failed.
+:HTTP Status Code: 409 Conflict
 
 Check Bucket Index
 ==================
@@ -1019,7 +1391,7 @@ Syntax
 
 ::
 
-	GET /{admin}/bucket/?index
+	GET /{admin}/bucket?index?format=json HTTP/1.1
 	Host {fqdn}
 
 
@@ -1043,7 +1415,18 @@ Request Parameters
 Response Entities
 ~~~~~~~~~~~~~~~~~
 
-TBD
+``index``
+
+:Description: Status of bucket index.
+:Type: String
+
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+``IndexRepairFailed``
+
+:Description: Bucket index repair failed.
+:HTTP Status Code: 409 Conflict
 
 Remove Bucket
 =============
@@ -1055,7 +1438,7 @@ Syntax
 
 ::
 
-	DELETE /{admin}/bucket
+	DELETE /{admin}/bucket?format=json HTTP/1.1
 	Host {fqdn}
 
 
@@ -1085,17 +1468,31 @@ Request Parameters
 :Required: No
 
 
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+``BucketNotEmpty``
+
+:Description: Attempted to delete non-empty bucket.
+:HTTP Status Code: 409 Conflict
+
+``ObjectRemovalFailed``
+
+:Description: Unable to remove objects.
+:HTTP Status Code: 409 Conflict
+
 Unlink Bucket
 =============
 
-Unlink a bucket from a specified user.
+Unlink a bucket from a specified user. Primarily useful for changing
+bucket ownership.
 
 Syntax
 ~~~~~~
 
 ::
 
-	DELETE /{admin}/bucket
+	POST /{admin}/bucket?format=json HTTP/1.1
 	Host {fqdn}
 
 
@@ -1111,7 +1508,7 @@ Request Parameters
 
 ``unlink``
 
-:Description: Parameter specifying that the bucket is to
+:Description: Parameter specifying that the bucket is to.
               be unlinked, not removed.
 :Type: Boolean
 :Example: True
@@ -1127,7 +1524,15 @@ Request Parameters
 Response Entities
 ~~~~~~~~~~~~~~~~~
 
-TBD.
+None.
+
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+``BucketUnlinkFailed``
+
+:Description: Unable to unlink bucket from specified user.
+:HTTP Status Code: 409 Conflict
 
 Link Bucket
 ===========
@@ -1139,7 +1544,7 @@ Syntax
 
 ::
 
-	PUT /{admin}/bucket
+	PUT /{admin}/bucket?format=json HTTP/1.1
 	Host {fqdn}
 
 
@@ -1163,19 +1568,72 @@ Request Parameters
 Response Entities
 ~~~~~~~~~~~~~~~~~
 
-TBD.
+``bucket``
+
+:Description: Container for single bucket information.
+:Type: Container
+
+``name``
+
+:Description: The name of the bucket.
+:Type: String
+:Parent: ``bucket``
+
+``pool``
+
+:Description: The pool the bucket is stored in.
+:Type: String
+:Parent: ``bucket``
+
+``id``
+
+:Description: The unique bucket id.
+:Type: String
+:Parent: ``bucket``
+
+``marker``
+
+:Description: Internal bucket tag.
+:Type: String
+:Parent: ``bucket``
+
+``owner``
+
+:Description: The user id of the bucket owner.
+:Type: String
+:Parent: ``bucket``
+
+``usage``
+
+:Description: Storage usage information.
+:Type: Container
+:Parent: ``bucket``
+
+``index``
+
+:Description: Status of bucket index.
+:Type: String
+:Parent: ``bucket``
+
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+``BucketLinkFailed``
+
+:Description: Unable to link bucket to specified user.
+:HTTP Status Code: 409 Conflict
 
 Get Object
 ==========
 
-Get an existing object.
+Get an existing object. NOTE: Does not require owner to be non-suspended.
 
 Syntax
 ~~~~~~
 
 ::
 
-	GET /{admin}/object
+	GET /{admin}/bucket?object?format=json HTTP/1.1
 	Host {fqdn}
 
 Request Parameters
@@ -1195,6 +1653,13 @@ Request Parameters
 :Example: ``foo.txt``
 :Required: Yes
 
+``head``
+
+:Description: Return just the head of the object.
+:Type: Boolean
+:Example: True
+:Required: False
+
 Response Entities
 ~~~~~~~~~~~~~~~~~
 
@@ -1205,17 +1670,26 @@ If successful, returns the desired object.
 :Description: The desired object.
 :Type: Object
 
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+``NoSuchObject``
+
+:Description: Specified object does not exist.
+:HTTP Status Code: 404 Not Found
+
+
 Remove Object
 =============
 
-Remove an existing object.
+Remove an existing object. NOTE: Does not require owner to be non-suspended.
 
 Syntax
 ~~~~~~
 
 ::
 
-	DELETE /{admin}/object
+	DELETE /{admin}/bucket?object?format=json HTTP/1.1
 	Host {fqdn}
 
 Request Parameters
@@ -1238,7 +1712,20 @@ Request Parameters
 Response Entities
 ~~~~~~~~~~~~~~~~~
 
-TBD.
+None.
+
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+``NoSuchObject``
+
+:Description: Specified object does not exist.
+:HTTP Status Code: 404 Not Found
+
+``ObjectRemovalFailed``
+
+:Description: Unable to remove objects.
+:HTTP Status Code: 409 Conflict
 
 Get Cluster Info
 ================
@@ -1250,7 +1737,7 @@ Syntax
 
 ::
 
-	GET /{admin}/cluster
+	GET /{admin}/cluster?format=json HTTP/1.1
 	Host {fqdn}
 
 
@@ -1264,6 +1751,64 @@ If successful, returns cluster pool configuration.
 :Description: Contains current cluster pool configuration.
 :Type: Container
 
+``domain_root``
+
+:Description: root of all buckets.
+:Type: String
+:Parent: ``cluster``
+
+``control_pool``
+
+:Description: 
+:Type: String
+:Parent: ``cluster``
+
+``gc_pool``
+
+:Description: Garbage collection pool.
+:Type: String
+:Parent: ``cluster``
+
+``log_pool``
+
+:Description: Log pool.
+:Type: String
+:Parent: ``cluster``
+
+``intent_log_pool``
+
+:Description: Intent log pool
+:Type: String
+:Parent: ``cluster``
+
+``usage_log_pool``
+
+:Description: Usage log pool
+:Type: String
+:Parent: ``cluster``
+
+``user_keys_pool``
+
+:Description: User key pool
+:Type: String
+:Parent: ``cluster``
+
+``user_email_pool``
+
+:Description: User email pool
+:Type: String
+:Parent: ``cluster``
+
+``user_swift_pool``
+
+:Description: Pool of swift users
+:Type: String
+:Parent: ``cluster``
+
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+TBD.
 
 Add Placement Pool
 ==================
@@ -1275,7 +1820,7 @@ Syntax
 
 ::
 
-	PUT /{admin}/pool
+	PUT /{admin}/pool?format=json HTTP/1.1
 	Host {fqdn}
 
 
@@ -1301,6 +1846,11 @@ Response Entities
 
 TBD.
 
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+TBD.
+
 Remove Placement Pool
 =====================
 
@@ -1311,7 +1861,7 @@ Syntax
 
 ::
 
-	DELETE /{admin}/pool
+	DELETE /{admin}/pool?format=json HTTP/1.1
 	Host {fqdn}
 
 
@@ -1337,6 +1887,11 @@ Response Entities
 
 TBD.
 
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+TBD.
+
 List Available Data Placement Pools
 ===================================
 
@@ -1347,7 +1902,7 @@ Syntax
 
 ::
 
-	GET /{admin}/pool
+	GET /{admin}/pool?format=json HTTP/1.1
 	Host {fqdn}
 
 
@@ -1371,7 +1926,7 @@ Syntax
 
 ::
 
-	GET /{admin}/policy
+	GET /{admin}/bucket?policy?format=json HTTP/1.1
 	Host {fqdn}
 
 
@@ -1402,6 +1957,15 @@ If successful, returns the object or bucket policy
 :Description: Access control policy.
 :Type: Container
 
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+``IncompleteBody``
+
+:Description: Either bucket was not specified for a bucket policy request or bucket 
+              and object were not specified for an object policy request.
+:HTTP Status Code: 400 Bad Request
+
 Add A User Capability
 =====================
 
@@ -1412,7 +1976,7 @@ Syntax
 
 ::
 
-	PUT /{admin}/caps
+	PUT /{admin}/user?caps?format=json HTTP/1.1
 	Host {fqdn}
 
 Request Parameters
@@ -1482,6 +2046,14 @@ If successful, the response contains the user information.
 :Description: User capabilities.
 :Type: Container
 
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+``InvalidCap``
+
+:Description: Attempt to grant invalid admin capability.
+:HTTP Status Code: 400 Bad Request
+
 Remove A User Capability
 ========================
 
@@ -1492,7 +2064,7 @@ Syntax
 
 ::
 
-	DELETE /{admin}/caps
+	DELETE /{admin}/user?caps?format=json HTTP/1.1
 	Host {fqdn}
 
 Request Parameters
@@ -1563,6 +2135,19 @@ If successful, the response contains the user information.
 :Type: Container
 
 
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+``InvalidCap``
+
+:Description: Attempt to remove an invalid admin capability.
+:HTTP Status Code: 400 Bad Request
+
+``NoSuchCap``
+
+:Description: User does not possess specified capability.
+:HTTP Status Code: 404 Not Found
+
 List Expired Garbage Collection Items
 =====================================
 
@@ -1573,7 +2158,7 @@ Syntax
 
 ::
 
-	GET /{admin}/garbage
+	GET /{admin}/garbage?format=json HTTP/1.1
 	Host {fqdn}
 
 Request Parameters
@@ -1607,6 +2192,11 @@ will be returned.
 :Description: The date at which the object expired.
 :Type: String
 
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+TBD.
+
 Manually Processes Garbage Collection Items
 ===========================================
 
@@ -1617,7 +2207,7 @@ Syntax
 
 ::
 
-	DELETE /{admin}/garbage
+	DELETE /{admin}/garbage?format=json HTTP/1.1
 	Host {fqdn}
 
 Request Parameters
@@ -1651,6 +2241,11 @@ will be returned.
 :Description: The date at which the object expired.
 :Type: String
 
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+TBD.
+
 Show Log Objects
 ================
 
@@ -1661,7 +2256,7 @@ Syntax
 
 ::
 
-	GET /{admin}/log
+	GET /{admin}/log?format=json HTTP/1.1
 	Host {fqdn}
 
 Request Parameters
@@ -1693,3 +2288,36 @@ If no object is specified, returns the full list of log objects.
 
 :Description: The contents of the log object.
 :Type: Container
+
+Special Error Responses
+~~~~~~~~~~~~~~~~~~~~~~~
+
+None.
+
+Standard Error Responses
+========================
+
+``AccessDenied``
+
+:Description: Access denied.
+:HTTP Status Code: 403 Forbidden
+
+``InternalError``
+
+:Description: Internal server error.
+:HTTP Status Code: 500 Internal Server Error
+
+``NoSuchUser``
+
+:Description: User does not exist.
+:HTTP Status Code: 404 Not Found
+
+``NoSuchBucket``
+
+:Description: Bucket does not exist.
+:HTTP Status Code: 404 Not Found
+
+``NoSuchKey``
+
+:Description: No such access key.
+:HTTP Status Code: 404 Not Found
