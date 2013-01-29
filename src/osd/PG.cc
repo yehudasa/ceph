@@ -2326,7 +2326,6 @@ void PG::init(int role, vector<int>& newup, vector<int>& newacting, pg_history_t
 void PG::write_info(ObjectStore::Transaction& t)
 {
   // pg state
-  return;
 
   // xattr gets epoch
   bufferlist attrbl;
@@ -2468,7 +2467,7 @@ void PG::append_log(vector<pg_log_entry_t>& logv, eversion_t trim_to, ObjectStor
   dout(10) << "append_log  adding " << keys.size() << " keys" << dendl;
   t.omap_setkeys(coll_t::META_COLL, log_oid, keys);
 
-  trim(t, trim_to);
+  //trim(t, trim_to);
 
   // update the local pg, pg log
   write_info(t);
