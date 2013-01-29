@@ -2326,6 +2326,7 @@ void PG::init(int role, vector<int>& newup, vector<int>& newacting, pg_history_t
 void PG::write_info(ObjectStore::Transaction& t)
 {
   // pg state
+  return;
 
   // xattr gets epoch
   bufferlist attrbl;
