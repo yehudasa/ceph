@@ -148,6 +148,8 @@ OSDService::OSDService(OSD *osd) :
   osd(osd),
   whoami(osd->whoami), store(osd->store), clog(osd->clog),
   pg_recovery_stats(osd->pg_recovery_stats),
+  infos_oid(sobject_t("infos", CEPH_NOSNAP)),
+  biginfos_oid(sobject_t("biginfos", CEPH_NOSNAP)),
   cluster_messenger(osd->cluster_messenger),
   client_messenger(osd->client_messenger),
   logger(osd->logger),
@@ -1593,6 +1595,16 @@ void OSD::load_pgs()
   }
   dout(10) << "load_pgs done" << dendl;
 
+  // make sure info objects exist
+  if (!store->exists(coll_t::META_COLL, service.infos_oid) ||
+      !store->exists(coll_t::META_COLL, service.biginfos_oid)) {
+    dout(10) << "load_pgs creating/touching infos, biginfos objects" << dendl;
+    ObjectStore::Transaction t;
+    t.touch(coll_t::META_COLL, service.infos_oid);
+    t.touch(coll_t::META_COLL, service.biginfos_oid);
+    store->apply_transaction(t);
+  }
+  
   build_past_intervals_parallel();
 }
 
