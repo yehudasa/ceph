@@ -2326,28 +2326,33 @@ void PG::init(int role, vector<int>& newup, vector<int>& newacting, pg_history_t
 void PG::write_info(ObjectStore::Transaction& t)
 {
   // pg state
-  bufferlist infobl;
-  __u8 struct_v = 6;
-  ::encode(struct_v, infobl);
-  ::encode(get_osdmap()->get_epoch(), infobl);
 
-  // store purged_snaps separately...
+  // xattr gets epoch
+  bufferlist attrbl;
+  __u8 struct_v = 7;
+  ::encode(struct_v, attrbl);
+  ::encode(get_osdmap()->get_epoch(), attrbl);
+  t.collection_setattr(coll, "info", attrbl);
+
+  // info.  store purged_snaps separately.
   interval_set<snapid_t> purged_snaps;
+  map<string,bufferlist> v;
+  string k = stringify(info.pgid);
   purged_snaps.swap(info.purged_snaps);
-  ::encode(info, infobl);
+  ::encode(info, v[k]);
   purged_snaps.swap(info.purged_snaps);
 
-  t.collection_setattr(coll, "info", infobl);
+  t.omap_setkeys(coll_t::META_COLL, osd->infos_oid, v);
  
   if (dirty_big_info) {
     // potentially big stuff
-    bufferlist bigbl;
+    v.clear();
+    bufferlist& bigbl = v[k];
     ::encode(past_intervals, bigbl);
     ::encode(snap_collections, bigbl);
     ::encode(info.purged_snaps, bigbl);
     dout(20) << "write_info bigbl " << bigbl.length() << dendl;
-    t.truncate(coll_t::META_COLL, biginfo_oid, 0);
-    t.write(coll_t::META_COLL, biginfo_oid, 0, bigbl.length(), bigbl);
+    t.omap_setkeys(coll_t::META_COLL, osd->biginfos_oid, v);
   }
 
   dirty_info = false;
@@ -2812,13 +2817,36 @@ void PG::read_state(ObjectStore *store, bufferlist &bl)
     p = bl.begin();
     ::decode(struct_v, p);
   } else {
+    // ate
     epoch_t epoch;
     ::decode(epoch, p);
-    ::decode(info, p);
-    bl.clear();
-    store->read(coll_t::META_COLL, biginfo_oid, 0, 0, bl);
-    p = bl.begin();
-    ::decode(past_intervals, p);
+    if (struct_v <= 5)  {
+      // last version we stored in xattr
+      ::decode(info, p);
+      bl.clear();
+      store->read(coll_t::META_COLL, biginfo_oid, 0, 0, bl);
+      p = bl.begin();
+      ::decode(past_intervals, p);
+    } else {
+      // get info out of leveldb
+      string k = stringify(info.pgid);
+      set<string> keys;
+      keys.insert(k);
+      map<string,bufferlist> values;
+      store->omap_get_values(coll_t::META_COLL, osd->infos_oid, keys, &values);
+      assert(values.size() == 1);
+      bl = values[k];
+      p = bl.begin();
+      ::decode(info, p);
+
+      // biginfo
+      values.clear();
+      store->omap_get_values(coll_t::META_COLL, osd->biginfos_oid, keys, &values);
+      assert(values.size() == 1);
+      bl = values[k];
+      p = bl.begin();
+      ::decode(past_intervals, p);
+    }
   }
 
   if (struct_v < 3) {
@@ -2838,35 +2866,7 @@ void PG::read_state(ObjectStore *store, bufferlist &bl)
       ::decode(info.purged_snaps, p);
   }
 
-  try {
-    read_log(store);
-  }
-  catch (const buffer::error &e) {
-    string cr_log_coll_name(get_corrupt_pg_log_name());
-    dout(0) << "Got exception '" << e.what() << "' while reading log. "
-            << "Moving corrupted log file to '" << cr_log_coll_name
-	    << "' for later " << "analysis." << dendl;
-
-    ondisklog.zero();
-
-    // clear log index
-    log.head = log.tail = info.last_update;
-
-    // reset info
-    info.log_tail = info.last_update;
-
-    // Move the corrupt log to a new place and create a new zero-length log entry.
-    ObjectStore::Transaction t;
-    coll_t cr_log_coll(cr_log_coll_name);
-    t.create_collection(cr_log_coll);
-    t.collection_move(cr_log_coll, coll_t::META_COLL, log_oid);
-    t.touch(coll_t::META_COLL, log_oid);
-    write_info(t);
-    store->apply_transaction(t);
-
-    info.last_backfill = hobject_t();
-    info.stats.stats.clear();
-  }
+  read_log(store);
 
   // log any weirdness
   log_weirdness();
