@@ -2465,7 +2465,7 @@ void PG::append_log(vector<pg_log_entry_t>& logv, eversion_t trim_to, ObjectStor
   }
 
   dout(10) << "append_log  adding " << keys.size() << " keys" << dendl;
-  t.omap_setkeys(coll_t::META_COLL, log_oid, keys);
+  //t.omap_setkeys(coll_t::META_COLL, log_oid, keys);
 
   //trim(t, trim_to);
 
