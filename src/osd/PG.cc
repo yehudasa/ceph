@@ -2332,7 +2332,7 @@ void PG::write_info(ObjectStore::Transaction& t)
   __u8 struct_v = 7;
   ::encode(struct_v, attrbl);
   ::encode(get_osdmap()->get_epoch(), attrbl);
-  t.collection_setattr(coll, "info", attrbl);
+  //t.collection_setattr(coll, "info", attrbl);
 
   // info.  store purged_snaps separately.
   interval_set<snapid_t> purged_snaps;
@@ -2342,7 +2342,7 @@ void PG::write_info(ObjectStore::Transaction& t)
   ::encode(info, v[k]);
   purged_snaps.swap(info.purged_snaps);
 
-  t.omap_setkeys(coll_t::META_COLL, osd->infos_oid, v);
+  //t.omap_setkeys(coll_t::META_COLL, osd->infos_oid, v);
  
   if (dirty_big_info) {
     // potentially big stuff
@@ -2352,7 +2352,7 @@ void PG::write_info(ObjectStore::Transaction& t)
     ::encode(snap_collections, bigbl);
     ::encode(info.purged_snaps, bigbl);
     dout(20) << "write_info bigbl " << bigbl.length() << dendl;
-    t.omap_setkeys(coll_t::META_COLL, osd->biginfos_oid, v);
+    //t.omap_setkeys(coll_t::META_COLL, osd->biginfos_oid, v);
   }
 
   dirty_info = false;
