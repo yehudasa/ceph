@@ -2597,13 +2597,32 @@ class C_MDS_openc_finish : public Context {
   CDentry *dn;
   CInode *newi;
   snapid_t follows;
+  Context *fin;
 public:
-  C_MDS_openc_finish(MDS *m, MDRequest *r, CDentry *d, CInode *ni, snapid_t f) :
-    mds(m), mdr(r), dn(d), newi(ni), follows(f) {}
+  C_MDS_openc_finish(MDS *m, MDRequest *r, CDentry *d, CInode *ni, snapid_t f, Context *fi) :
+    mds(m), mdr(r), dn(d), newi(ni), follows(f), fin(fi) {}
   void finish(int r) {
     assert(r == 0);
 
     dn->pop_projected_linkage();
+
+    // inode linked up, store the backtrace on the data object 'parent' xattr
+    newi->store_parent(newi->inode.layout.fl_pg_pool, fin);
+  }
+};
+
+class C_MDS_openc_store_parent_finish : public Context {
+  EUpdate *le;
+  MDS *mds;
+  MDRequest *mdr;
+  CDentry *dn;
+  CInode *newi;
+  snapid_t follows;
+public:
+  C_MDS_openc_store_parent_finish(EUpdate *l, MDS *m, MDRequest *r, CDentry *d, CInode *ni, snapid_t f) :
+    le(l), mds(m), mdr(r), dn(d), newi(ni), follows(f) {}
+  void finish(int r) {
+    assert(r == 0);
 
     // dirty inode, dn, dir
     newi->inode.version--;   // a bit hacky, see C_MDS_mknod_finish
@@ -2732,7 +2751,7 @@ void Server::handle_client_openc(MDRequest *mdr)
   CInode *in = prepare_new_inode(mdr, dn->get_dir(), inodeno_t(req->head.ino),
 				 req->head.args.open.mode | S_IFREG, &layout);
   assert(in);
-  
+
   // it's a file.
   dn->push_projected_linkage(in);
 
@@ -2767,17 +2786,17 @@ void Server::handle_client_openc(MDRequest *mdr)
   LogSegment *ls = mds->mdlog->get_current_segment();
   ls->open_files.push_back(&in->item_open_file);
 
-  C_MDS_openc_finish *fin = new C_MDS_openc_finish(mds, mdr, dn, in, follows);
-
   if (mdr->client_request->get_connection()->has_feature(CEPH_FEATURE_REPLY_CREATE_INODE)) {
     dout(10) << "adding ino to reply to indicate inode was created" << dendl;
     // add the file created flag onto the reply if create_flags features is supported
     ::encode(in->inode.ino, mdr->reply_extra_bl);
   }
 
-  journal_and_reply(mdr, in, dn, le, fin);
+  // last step before journal: create backtrace and store on object
+  Context *fin = new C_MDS_openc_store_parent_finish(le, mds, mdr, dn, in, follows);
+  Context *journal_fin = new C_MDS_openc_finish(mds, mdr, dn, in, follows, fin);
+  journal_and_reply(mdr, in, dn, le, journal_fin);
 }
-
 
 
 void Server::handle_client_readdir(MDRequest *mdr)

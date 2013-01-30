@@ -184,7 +184,7 @@ void LogSegment::try_to_expire(MDS *mds, C_GatherBuilder &gather_bld)
     CInode *in = *p;
     dout(10) << "try_to_expire waiting for dir parent pointer update on " << *in << dendl;
     assert(in->state_test(CInode::STATE_DIRTYPARENT));
-    in->store_parent(gather_bld.new_sub());
+    in->store_parent(mds->mdsmap->get_metadata_pool(), gather_bld.new_sub());
   }
 
   // slave updates
