@@ -217,20 +217,20 @@ static int get_prev_idata_op(cls_method_context_t hctx,
 static int read_many(cls_method_context_t hctx, const set<string> &keys,
     map<string, bufferlist> * out) {
   int r = 0;
-  CLS_ERR("reading from a map of size %ld, first key encoded is %s",
-      keys.size(), key_data(*keys.begin()).encoded().c_str());
+  CLS_ERR("reading from a map of size %d, first key encoded is %s",
+      (int)keys.size(), key_data(*keys.begin()).encoded().c_str());
   r = cls_cxx_map_get_vals(hctx, key_data(*keys.begin()).encoded().c_str(),
       "", LONG_MAX, out);
   if (r < 0) {
     CLS_ERR("getting omap vals failed with error %d", r);
   }
 
-  CLS_ERR("got map of size %ld ", out->size());
+  CLS_ERR("got map of size %d ", (int)out->size());
   if (out->size() > 1) {
     out->erase(out->upper_bound(key_data(*keys.rbegin()).encoded().c_str()),
       out->end());
   }
-  CLS_ERR("returning map of size %ld", out->size());
+  CLS_ERR("returning map of size %d", (int)out->size());
   return r;
 }
 

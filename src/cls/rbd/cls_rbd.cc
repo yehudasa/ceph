@@ -1998,8 +1998,8 @@ int rbd_assign_bid(cls_method_context_t hctx, bufferlist *in, bufferlist *out)
     return rc;
 
   if (rc && rc < (int)sizeof(info)) {
-    CLS_ERR("bad rbd_info object, read %d bytes, expected %ld", rc,
-	    sizeof(info));
+    CLS_ERR("bad rbd_info object, read %d bytes, expected %d", rc,
+	    (int)sizeof(info));
     return -EIO;
   }
 
