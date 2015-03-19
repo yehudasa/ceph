@@ -1,0 +1,17 @@
+{ "domain_root": ".skinny-1.rgw",
+  "control_pool": ".skinny-1.rgw.control",
+  "gc_pool": ".skinny-1.rgw.gc",
+  "log_pool": ".skinny-1.log",
+  "intent_log_pool": ".skinny-1.intent-log",
+  "usage_log_pool": ".skinny-1.usage",
+  "user_keys_pool": ".skinny-1.users",
+  "user_email_pool": ".skinny-1.users.email",
+  "user_swift_pool": ".skinny-1.users.swift",
+  "user_uid_pool": ".skinny-1.users.uid",
+  "system_key": { "access_key": "X2IYPSTY1072DDY1SJMC",
+      "secret_key": "YIMHICpPvT+MhLTbSsiBJ1jQF15IFvJA8tgwJEcm"},
+  "placement_pools": [
+  { "key": "default-placement",
+             "val": { "index_pool": ".skinny-1.rgw.buckets.index",
+              "data_pool": ".skinny-1.rgw.buckets"}},
+  ]}

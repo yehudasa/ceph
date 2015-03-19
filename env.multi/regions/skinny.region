@@ -1,0 +1,22 @@
+{ "name": "skinny",
+  "api_name": "slim",
+  "is_master": "false",
+  "endpoints": [
+        "http:\/\/skinny:80\/"],
+  "master_zone": "skinny-1",
+  "zones": [
+        { "name": "skinny-1",
+          "endpoints": [
+                "http:\/\/skinny:80\/"],
+          "log_meta": "true",
+          "log_data": "true"},
+        { "name": "skinny-2",
+          "endpoints": [
+                "http:\/\/skinny:83\/"],
+          "log_meta": "false",
+          "log_data": "false"}
+          ],
+  "placement_targets": [
+        { "name": "default-placement",
+          "tags": []}],
+  "default_placement": "default-placement"}

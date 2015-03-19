@@ -1,0 +1,14 @@
+{ "name": "swab",
+  "api_name": "shady",
+  "is_master": "true",
+  "endpoints": [
+        "http:\/\/skinny:82\/"],
+  "master_zone": "swab-1",
+  "zones": [
+        { "name": "swab-1",
+          "endpoints": [
+                "http:\/\/skinny:82\/"],
+          "log_meta": "true",
+          "log_data": "true"}],
+  "placement_targets": [],
+  "default_placement": ""}

@@ -1,0 +1,13 @@
+{ "domain_root": ".rgw",
+  "control_pool": ".rgw.control",
+  "gc_pool": ".rgw.gc",
+  "log_pool": ".log",
+  "intent_log_pool": ".intent-log",
+  "usage_log_pool": ".usage",
+  "user_keys_pool": ".users",
+  "user_email_pool": ".users.email",
+  "user_swift_pool": ".users.swift",
+  "user_uid_pool ": ".users.uid",
+  "system_key": { "user": "swab-1",
+      "access_key": "Y2IYPSTY1072DDY1SJMC",
+      "secret_key": "ZIMHICpPvT+MhLTbSsiBJ1jQF15IFvJA8tgwJEcm"}}
