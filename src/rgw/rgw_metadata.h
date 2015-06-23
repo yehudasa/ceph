@@ -180,6 +180,9 @@ class RGWMetadataManager {
   int post_modify(RGWMetadataHandler *handler, const string& section, const string& key, RGWMetadataLogData& log_data,
                  RGWObjVersionTracker *objv_tracker, int ret);
 
+  int store_in_heap(RGWMetadataHandler *handler, const string& key, bufferlist& bl,
+                    RGWObjVersionTracker *objv_tracker, time_t mtime,
+                    map<string, bufferlist> *pattrs);
 public:
   RGWMetadataManager(CephContext *_cct, RGWRados *_store);
   ~RGWMetadataManager();

@@ -560,6 +560,34 @@ int RGWMetadataManager::post_modify(RGWMetadataHandler *handler, const string& s
   return 0;
 }
 
+int RGWMetadataManager::store_in_heap(RGWMetadataHandler *handler, const string& key, bufferlist& bl,
+                                      RGWObjVersionTracker *objv_tracker, time_t mtime,
+				      map<string, bufferlist> *pattrs)
+{
+  if (!objv_tracker) {
+    return -EINVAL;
+  }
+
+  rgw_bucket heap_bucket(store->zone.metadata_heap);
+
+  RGWObjVersionTracker otracker;
+  otracker.write_version = objv_tracker->write_version;
+  string& tag = objv_tracker->write_version.tag;
+  char buf[tag.size() + 32];
+  snprintf(buf, sizeof(buf), "%s:%lld", tag.c_str(), (long long)objv_tracker->write_version.ver);
+  string immutable_key = string(".meta:") + handler->get_type() + ":" + key + ":" + buf;
+  int ret = rgw_put_system_obj(store, heap_bucket, immutable_key,
+                               bl.c_str(), bl.length(), false,
+                               &otracker, mtime, pattrs);
+  if (ret < 0) {
+    ldout(store->ctx(), 0) << "ERROR: rgw_put_system_obj(immutable_key=" << immutable_key << ") returned ret=" << ret << dendl;
+    return ret;
+  }
+
+  return 0;
+}
+
+
 int RGWMetadataManager::put_entry(RGWMetadataHandler *handler, const string& key, bufferlist& bl, bool exclusive,
                                   RGWObjVersionTracker *objv_tracker, time_t mtime, map<string, bufferlist> *pattrs)
 {
@@ -574,9 +602,16 @@ int RGWMetadataManager::put_entry(RGWMetadataHandler *handler, const string& key
 
   handler->get_pool_and_oid(store, key, bucket, oid);
 
+  ret = store_in_heap(handler, key, bl, objv_tracker, mtime, pattrs);
+  if (ret < 0) {
+    ldout(store->ctx(), 0) << "ERROR: " << __func__ << ": store_in_heap() key=" << key << " returned ret=" << ret << dendl;
+    goto done;
+  }
+
   ret = rgw_put_system_obj(store, bucket, oid,
                            bl.c_str(), bl.length(), exclusive,
                            objv_tracker, mtime, pattrs);
+done:
   /* cascading ret into post_modify() */
 
   ret = post_modify(handler, section, key, log_data, objv_tracker, ret);
