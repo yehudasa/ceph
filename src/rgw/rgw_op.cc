@@ -2108,7 +2108,7 @@ void RGWPutMetadata::execute()
       if (is_object_op) {
         /* for the objects all existing meta attrs have to be removed */
         rmattrs[name] = iter->second;
-      } else {
+      } else { /* bucket op */
         /* for the buckets all existing meta attrs are preserved,
            except those that are listed in rmattr_names. */
         if (rmattr_names.find(name) != rmattr_names.end()) {
@@ -2116,7 +2116,6 @@ void RGWPutMetadata::execute()
           if (aiter != attrs.end()) {
             attrs.erase(aiter);
           }
-          rmattrs[name] = iter->second;
         }
       }
     } else if (attrs.find(name) == attrs.end()) {
@@ -2143,7 +2142,7 @@ void RGWPutMetadata::execute()
   if (is_object_op) {
     ret = store->set_attrs(s->obj_ctx, obj, attrs, &rmattrs);
   } else {
-    ret = rgw_bucket_set_attrs(store, s->bucket_info, attrs, &rmattrs, &s->bucket_info.objv_tracker);
+    ret = rgw_bucket_set_attrs(store, s->bucket_info, attrs, &s->bucket_info.objv_tracker);
   }
 }
 
@@ -2563,12 +2562,14 @@ void RGWPutACLs::execute()
   new_policy.encode(bl);
   obj = rgw_obj(s->bucket, s->object);
   map<string, bufferlist> attrs;
-  attrs[RGW_ATTR_ACL] = bl;
   store->set_atomic(s->obj_ctx, obj);
   if (!s->object.empty()) {
+    attrs[RGW_ATTR_ACL] = bl;
     ret = store->set_attrs(s->obj_ctx, obj, attrs, NULL);
   } else {
-    ret = rgw_bucket_set_attrs(store, s->bucket_info, attrs, NULL, &s->bucket_info.objv_tracker);
+    attrs = s->bucket_attrs;
+    attrs[RGW_ATTR_ACL] = bl;
+    ret = rgw_bucket_set_attrs(store, s->bucket_info, attrs, &s->bucket_info.objv_tracker);
   }
 }
 
@@ -2615,9 +2616,9 @@ void RGWPutCORS::execute()
     store->set_atomic(s->obj_ctx, obj);
     ret = store->set_attr(s->obj_ctx, obj, RGW_ATTR_CORS, cors_bl);
   } else {
-    map<string, bufferlist> attrs;
+    map<string, bufferlist> attrs = s->bucket_attrs;
     attrs[RGW_ATTR_CORS] = cors_bl;
-    ret = rgw_bucket_set_attrs(store, s->bucket_info, attrs, NULL, &s->bucket_info.objv_tracker);
+    ret = rgw_bucket_set_attrs(store, s->bucket_info, attrs, &s->bucket_info.objv_tracker);
   }
 }
 
@@ -2674,7 +2675,7 @@ void RGWDeleteCORS::execute()
   if (is_object_op) {
     ret = store->set_attrs(s->obj_ctx, obj, attrs, &rmattrs);
   } else {
-    ret = rgw_bucket_set_attrs(store, s->bucket_info, attrs, &rmattrs, &s->bucket_info.objv_tracker);
+    ret = rgw_bucket_set_attrs(store, s->bucket_info, attrs, &s->bucket_info.objv_tracker);
   }
 }
 
