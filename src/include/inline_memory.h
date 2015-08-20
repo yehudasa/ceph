@@ -20,6 +20,14 @@
 
 typedef unsigned uint128_t __attribute__ ((mode (TI)));
 
+#endif
+
+#if defined(__GNUC__)
+
+typedef struct __attribute__((__packed__)) { uint16_t val; } packed_uint16_t;
+typedef struct __attribute__((__packed__)) { uint32_t val; } packed_uint32_t;
+typedef struct __attribute__((__packed__)) { uint64_t val; } packed_uint64_t;
+
 // optimize for the common case, which is very small copies
 static inline void maybe_inline_memcpy(char *dest, const char *src, size_t l,
 				       size_t inline_len)
@@ -34,17 +42,17 @@ void maybe_inline_memcpy(char *dest, const char *src, size_t l,
   }
   switch (l) {
   case 8:
-    *((uint64_t*)(dest)) = *((uint64_t*)(src));
+    ((packed_uint64_t*)dest)->val = ((packed_uint64_t*)src)->val;
     return;
   case 4:
-    *((uint32_t*)(dest)) = *((uint32_t*)(src));
+    ((packed_uint32_t*)dest)->val = ((packed_uint32_t*)src)->val;
     return;
   case 3:
-    *((uint16_t*)(dest)) = *((uint16_t*)(src));
+    ((packed_uint16_t*)dest)->val = ((packed_uint16_t*)src)->val;
     *((uint8_t*)(dest+2)) = *((uint8_t*)(src+2));
     return;
   case 2:
-    *((uint16_t*)(dest)) = *((uint16_t*)(src));
+    ((packed_uint16_t*)dest)->val = ((packed_uint16_t*)src)->val;
     return;
   case 1:
     *((uint8_t*)(dest)) = *((uint8_t*)(src));
