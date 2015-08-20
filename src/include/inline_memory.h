@@ -121,7 +121,7 @@ bool mem_is_zero(const char *data, size_t len)
 
 // on other architectures, default to something simple.
 
-#define maybe_inline_memcpy memcpy
+#define maybe_inline_memcpy(d, s, l, x) memcpy(d, s, l)
 
 static inline bool mem_is_zero(const char *data, size_t len) {
   const char *end = data + len;
