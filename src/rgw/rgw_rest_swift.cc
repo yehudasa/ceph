@@ -539,6 +539,12 @@ int RGWPutObj_ObjStore_SWIFT::get_params()
       return -EINVAL;
     }
 
+    uint64_t total_size;
+    for (vector<rgw_slo_entry>::iterator iter = slo_info->entries.begin(); iter != slo_info->entries.end(); ++iter) {
+      total_size += iter->size_bytes;
+    }
+    slo_info->total_size = total_size;
+
     ofs = slo_info->raw_data_len;
   }
 

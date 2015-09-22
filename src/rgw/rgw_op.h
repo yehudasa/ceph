@@ -171,6 +171,7 @@ public:
   void execute();
   int read_user_manifest_part(rgw_bucket& bucket, RGWObjEnt& ent, RGWAccessControlPolicy *bucket_policy, off_t start_ofs, off_t end_ofs);
   int handle_user_manifest(const char *prefix);
+  int handle_slo_manifest(bufferlist& bl);
 
   int get_data_cb(bufferlist& bl, off_t ofs, off_t len);
 
@@ -441,7 +442,10 @@ WRITE_CLASS_ENCODER(rgw_slo_entry)
 
 struct RGWSLOInfo {
   vector<rgw_slo_entry> entries;
-  char *raw_data; /* in memory only */
+  uint64_t total_size;
+
+  /* in memory only */
+  char *raw_data;
   int raw_data_len;
 
   RGWSLOInfo() : raw_data(NULL), raw_data_len(0) {}
@@ -452,12 +456,14 @@ struct RGWSLOInfo {
   void encode(bufferlist& bl) const {
     ENCODE_START(1, 1, bl);
     ::encode(entries, bl);
+    ::encode(total_size, bl);
     ENCODE_FINISH(bl);
   }
 
   void decode(bufferlist::iterator& bl) {
      DECODE_START(1, bl);
      ::decode(entries, bl);
+     ::decode(total_size, bl);
      DECODE_FINISH(bl);
   }
 };
