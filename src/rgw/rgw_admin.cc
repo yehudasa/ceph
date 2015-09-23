@@ -2012,6 +2012,11 @@ int main(int argc, char **argv)
 	  cerr << "Error setting current period " << period_id << ":" << cpp_strerror(-ret) << std::endl;
 	  return ret;
 	}
+	ret = realm.notify_zone();
+	if (ret < 0) {
+	  cerr << "Realm notify failed with " << cpp_strerror(-ret) << std::endl;
+	  return ret;
+	}
       }
       break;
     case OPT_PERIOD_LIST:
