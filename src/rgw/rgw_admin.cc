@@ -3104,41 +3104,6 @@ int main(int argc, char **argv)
       cout << std::endl;
     }
     return 0;
-
-  case OPT_PERIOD_PUSH:
-    {
-      RGWEnv env;
-      req_info info(g_ceph_context, &env);
-      info.method = "POST";
-      info.request_uri = "/admin/realm/period";
-
-      map<string, string> &params = info.args.get_params();
-      if (!period_id.empty())
-        params["period_id"] = period_id;
-      if (!period_epoch.empty())
-        params["epoch"] = period_epoch;
-
-      // load the period
-      RGWPeriod period(period_id);
-      int ret = period.init(g_ceph_context, store);
-      if (ret < 0) {
-        cerr << "period init failed: " << cpp_strerror(-ret) << std::endl;
-        return ret;
-      }
-      // json format into a bufferlist
-      JSONFormatter jf(false);
-      encode_json("period", period, &jf);
-      bufferlist bl;
-      jf.flush(bl);
-
-      JSONParser p;
-      ret = send_to_remote_gateway(url, info, bl, p);
-      if (ret < 0) {
-        cerr << "request failed: " << cpp_strerror(-ret) << std::endl;
-        return ret;
-      }
-    }
-    return 0;
   case OPT_PERIOD_PULL:
     {
       RGWEnv env;
