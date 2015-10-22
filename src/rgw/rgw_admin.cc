@@ -176,6 +176,7 @@ void _usage()
   cerr << "   --parent=<id>             parent period id\n";
   cerr << "   --period=<id>             period id\n";
   cerr << "   --epoch=<number>          period epoch\n";
+  cerr << "   --commit                  commit the period during 'period update'\n";
   cerr << "   --master                  set as master\n";
   cerr << "   --master-url              master url\n";
   cerr << "   --master-zonegroup=<id>   master zonegroup id\n";
@@ -1458,6 +1459,7 @@ int main(int argc, char **argv)
   int read_only_int;
   bool read_only = false;
   int is_read_only_set = false;
+  int commit = false;
   int staging = false;
   int key_type = KEY_TYPE_UNDEFINED;
   rgw_bucket bucket;
@@ -1600,6 +1602,8 @@ int main(int argc, char **argv)
     } else if (ceph_argparse_binary_flag(args, i, &system, NULL, "--system", (char*)NULL)) {
       system_specified = true;
     } else if (ceph_argparse_binary_flag(args, i, &staging, NULL, "--staging", (char*)NULL)) {
+      // do nothing
+    } else if (ceph_argparse_binary_flag(args, i, &commit, NULL, "--commit", (char*)NULL)) {
       // do nothing
     } else if (ceph_argparse_witharg(args, i, &tmp, errs, "-a", "--auth-uid", (char*)NULL)) {
       if (!errs.str().empty()) {
@@ -1863,7 +1867,7 @@ int main(int argc, char **argv)
 			 opt_cmd == OPT_PERIOD_PREPARE || opt_cmd == OPT_PERIOD_ACTIVATE ||
 			 opt_cmd == OPT_PERIOD_DELETE || opt_cmd == OPT_PERIOD_GET ||
 			 opt_cmd == OPT_PERIOD_GET_CURRENT || opt_cmd == OPT_PERIOD_LIST ||
-			 opt_cmd == OPT_PERIOD_UPDATE ||
+			 (opt_cmd == OPT_PERIOD_UPDATE && !commit) ||
 			 opt_cmd == OPT_REALM_DELETE || opt_cmd == OPT_REALM_GET || opt_cmd == OPT_REALM_LIST ||
 			 opt_cmd == OPT_REALM_LIST_PERIODS ||
 			 opt_cmd == OPT_REALM_GET_DEFAULT || opt_cmd == OPT_REALM_REMOVE ||
@@ -2045,7 +2049,21 @@ int main(int argc, char **argv)
 	}
         period.fork();
         period.update();
-        period.store_info(false);
+        ret = period.store_info(false);
+        if (ret < 0) {
+          cerr << "failed to store period: " << cpp_strerror(-ret) << std::endl;
+          return ret;
+        }
+        if (commit) {
+          ret = commit_period(realm, period, remote, url, access_key, secret_key);
+          if (ret < 0) {
+            cerr << "failed to commit period: " << cpp_strerror(-ret) << std::endl;
+            return ret;
+          }
+        }
+        encode_json("period", period, formatter);
+        formatter->flush(cout);
+        cout << std::endl;
       }
       break;
     case OPT_REALM_CREATE:
