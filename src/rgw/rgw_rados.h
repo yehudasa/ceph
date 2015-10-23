@@ -1234,6 +1234,7 @@ class RGWRealm : public RGWSystemMetaObj
   map<string, RGWZoneGroup> zonegroups;
   string current_period;
 
+protected:
   int create_control();
   int delete_control();
 public:
@@ -1278,6 +1279,8 @@ public:
 
   string get_control_oid();
   int notify_zone();
+
+  friend class RGWRealmWatcher;
 };
 WRITE_CLASS_ENCODER(RGWRealm)
 

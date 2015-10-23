@@ -207,7 +207,16 @@ int RGWRealmWatcher::watch_start()
   // register a watch on the realm's control object
   auto oid = realm.get_control_oid();
   r = pool_ctx.watch2(oid, &watch_handle, this);
-  if (r) {
+  if (r == -ENOENT) {
+    r = realm.create_control();
+    if (r < 0 && r != -EEXIST) {
+      lderr(cct) << "Failed to create control object " << oid << " with " << cpp_strerror(-r) << dendl;
+      pool_ctx.close();
+      return r;
+    }
+    r = pool_ctx.watch2(oid, &watch_handle, this);
+  }
+  if (r < 0) {
     lderr(cct) << "Failed to watch " << oid
         << " with " << cpp_strerror(-r) << dendl;
     pool_ctx.close();
