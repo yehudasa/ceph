@@ -115,7 +115,7 @@ void RGWOp_Period_Post::execute()
   }
 
   // if it's not period commit, nobody is allowed to push to the master zone
-  if (period.get_master_zone() == store->zone.get_id()) {
+  if (period.get_master_zone() == store->zone_id()) {
     ldout(cct, 10) << "master zone rejecting period id="
         << period.get_id() << " epoch=" << period.get_epoch() << dendl;
     http_ret = -EINVAL; // XXX: error code

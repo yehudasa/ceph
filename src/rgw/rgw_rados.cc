@@ -1132,8 +1132,8 @@ void RGWPeriod::update(const RGWZoneGroupMap& map)
 int RGWPeriod::commit(RGWRealm& realm, const RGWPeriod& current_period)
 {
   // gateway must be in the master zone to commit
-  if (master_zone != store->zone.get_id()) {
-    lderr(cct) << "period commit sent to zone " << store->zone.get_id()
+  if (master_zone != store->zone_id()) {
+    lderr(cct) << "period commit sent to zone " << store->zone_id()
         << ", not period's master zone " << master_zone << dendl;
     return -EINVAL;
   }
