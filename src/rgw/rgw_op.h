@@ -543,6 +543,7 @@ protected:
   obj_version ep_objv;
   bool has_cors;
   RGWCORSConfiguration cors_config;
+  string swift_ver_location;
 
   bufferlist in_data;
 
@@ -773,6 +774,7 @@ protected:
   RGWAccessControlPolicy policy;
   RGWCORSConfiguration cors_config;
   string placement_rule;
+  string swift_ver_location;
 
 public:
   RGWPutMetadataBucket()
