@@ -913,6 +913,19 @@ int librados::IoCtxImpl::aio_stat(const object_t& oid, AioCompletionImpl *c,
   return 0;
 }
 
+int librados::IoCtxImpl::aio_stat2(const object_t& oid, AioCompletionImpl *c,
+				  uint64_t *psize, ceph::real_time *pmtime)
+{
+  Context *onack = new C_aio_Ack(c);
+
+  c->io = this;
+  c->tid = objecter->stat(oid, oloc,
+			  snap_seq, psize, pmtime, 0,
+			  onack, &c->objver);
+
+  return 0;
+}
+
 int librados::IoCtxImpl::aio_cancel(AioCompletionImpl *c)
 {
   return objecter->op_cancel(c->tid, -ECANCELED);
@@ -1120,6 +1133,24 @@ int librados::IoCtxImpl::stat(const object_t& oid, uint64_t *psize, time_t *pmti
   }
 
   return r;
+}
+
+int librados::IoCtxImpl::stat2(const object_t& oid, uint64_t *psize, real_time *pmtime)
+{
+  uint64_t size;
+
+  if (!psize)
+    psize = &size;
+
+  ::ObjectOperation rd;
+  prepare_assert_ops(&rd);
+  rd.stat(psize, pmtime, NULL);
+  int r = operate_read(oid, &rd, NULL);
+  if (r < 0) {
+    return r;
+  }
+
+  return 0;
 }
 
 int librados::IoCtxImpl::getxattr(const object_t& oid,
