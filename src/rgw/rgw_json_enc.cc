@@ -638,6 +638,7 @@ void RGWBucketInfo::dump(Formatter *f) const
     encode_json("website_conf", website_conf, f);
   }
   encode_json("swift_versioning", swift_versioning, f);
+  encode_json("swift_ver_location", swift_ver_location, f);
 }
 
 void RGWBucketInfo::decode_json(JSONObj *obj) {
@@ -663,6 +664,7 @@ void RGWBucketInfo::decode_json(JSONObj *obj) {
     JSONDecoder::decode_json("website_conf", website_conf, obj);
   }
   JSONDecoder::decode_json("swift_versioning", swift_versioning, obj);
+  JSONDecoder::decode_json("swift_ver_location", swift_ver_location, obj);
 }
 
 void rgw_obj_key::dump(Formatter *f) const

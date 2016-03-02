@@ -874,12 +874,12 @@ struct RGWBucketInfo
      ::encode((uint32_t)index_type, bl);
      ::encode(swift_versioning, bl);
      if (swift_versioning) {
-       ::encode(swift_versioning, bl);
+       ::encode(swift_ver_location, bl);
      }
      ENCODE_FINISH(bl);
   }
   void decode(bufferlist::iterator& bl) {
-    DECODE_START_LEGACY_COMPAT_LEN_32(15, 4, 4, bl);
+    DECODE_START_LEGACY_COMPAT_LEN_32(16, 4, 4, bl);
      ::decode(bucket, bl);
      if (struct_v >= 2) {
        string s;
@@ -924,12 +924,13 @@ struct RGWBucketInfo
      } else {
        index_type = RGWBIType_Normal;
      }
+     swift_versioning = false;
+     swift_ver_location.clear();
      if (struct_v >= 16) {
        ::decode(swift_versioning, bl);
-       ::decode(swift_ver_location, bl);
-     } else {
-       swift_versioning = false;
-       swift_ver_location.clear();
+       if (swift_versioning) {
+         ::decode(swift_ver_location, bl);
+       }
      }
      DECODE_FINISH(bl);
   }
