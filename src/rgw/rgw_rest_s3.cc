@@ -152,7 +152,8 @@ int RGWGetObj_ObjStore_S3::send_response_data(bufferlist& bl, off_t bl_ofs,
     JSONFormatter jf;
     jf.open_object_section("obj_metadata");
     encode_json("attrs", attrs, &jf);
-    encode_json("mtime", lastmod, &jf);
+    utime_t ut(lastmod);
+    encode_json("mtime", ut, &jf);
     jf.close_section();
     stringstream ss;
     jf.flush(ss);
@@ -162,8 +163,9 @@ int RGWGetObj_ObjStore_S3::send_response_data(bufferlist& bl, off_t bl_ofs,
     total_len += metadata_bl.length();
   }
 
-  if (s->system_request && lastmod) {
+  if (s->system_request && !real_clock::is_zero(lastmod)) {
     /* we end up dumping mtime in two different methods, a bit redundant */
+#warning dump higher resolution lastmod
     dump_epoch_header(s, "Rgwx-Mtime", lastmod);
     uint64_t pg_ver;
     int r = decode_attr_bl_single_value(attrs, RGW_ATTR_PG_VER, &pg_ver, (uint64_t)0);
@@ -364,7 +366,6 @@ void RGWListBucket_ObjStore_S3::send_versioned_response()
 
     vector<RGWObjEnt>::iterator iter;
     for (iter = objs.begin(); iter != objs.end(); ++iter) {
-      time_t mtime = iter->mtime.sec();
       const char *section_name = (iter->is_delete_marker() ? "DeleteMarker"
 				  : "Version");
       s->formatter->open_object_section(section_name);
@@ -390,7 +391,7 @@ void RGWListBucket_ObjStore_S3::send_versioned_response()
       }
       s->formatter->dump_string("VersionId", version_id);
       s->formatter->dump_bool("IsLatest", iter->is_current());
-      dump_time(s, "LastModified", &mtime);
+      dump_time(s, "LastModified", &iter->mtime);
       if (!iter->is_delete_marker()) {
 	s->formatter->dump_format("ETag", "\"%s\"", iter->etag.c_str());
 	s->formatter->dump_int("Size", iter->size);
@@ -464,8 +465,7 @@ void RGWListBucket_ObjStore_S3::send_response()
       } else {
 	s->formatter->dump_string("Key", iter->key.name);
       }
-      time_t mtime = iter->mtime.sec();
-      dump_time(s, "LastModified", &mtime);
+      dump_time(s, "LastModified", &iter->mtime);
       s->formatter->dump_format("ETag", "\"%s\"", iter->etag.c_str());
       s->formatter->dump_int("Size", iter->size);
       s->formatter->dump_string("StorageClass", "STANDARD");
@@ -916,7 +916,8 @@ void RGWPutObj_ObjStore_S3::send_response()
     dump_etag(s, etag.c_str());
     dump_content_length(s, 0);
   }
-  if (s->system_request && mtime) {
+  if (s->system_request && !real_clock::is_zero(mtime)) {
+#warning dump higher resolution mtime
     dump_epoch_header(s, "Rgwx-Mtime", mtime);
   }
   dump_errno(s);
@@ -1418,7 +1419,7 @@ int RGWPostObj_ObjStore_S3::get_policy()
       rgw_user uid(project_id);
       /* try to store user if it not already exists */
       if (rgw_get_user_info_by_uid(store, uid, user_info) < 0) {
-        int ret = rgw_store_user_info(store, user_info, NULL, NULL, 0, true);
+        int ret = rgw_store_user_info(store, user_info, NULL, NULL, real_time(), true);
         if (ret < 0) {
           dout(10) << "NOTICE: failed to store new user's info: ret="
 		   << ret << dendl;
@@ -1685,11 +1686,12 @@ int RGWDeleteObj_ObjStore_S3::get_params()
     string if_unmod_decoded;
     url_decode(if_unmod_str, if_unmod_decoded);
     uint64_t epoch;
-    if (utime_t::parse_date(if_unmod_decoded, &epoch, NULL) < 0) {
+    uint64_t nsec;
+    if (utime_t::parse_date(if_unmod_decoded, &epoch, &nsec) < 0) {
       ldout(s->cct, 10) << "failed to parse time: " << if_unmod_decoded << dendl;
       return -EINVAL;
     }
-    unmod_since = epoch;
+    unmod_since = utime_t(epoch, nsec).to_real_time();
   }
 
   return 0;
@@ -2194,16 +2196,9 @@ void RGWListMultipart_ObjStore_S3::send_response()
     for (; iter != parts.end(); ++iter) {
       RGWUploadPartInfo& info = iter->second;
 
-      time_t sec = info.modified.sec();
-      struct tm tmp;
-      gmtime_r(&sec, &tmp);
-      char buf[TIME_BUF_SIZE];
-
       s->formatter->open_object_section("Part");
 
-      if (strftime(buf, sizeof(buf), "%Y-%m-%dT%T.000Z", &tmp) > 0) {
-	s->formatter->dump_string("LastModified", buf);
-      }
+      dump_time(s, "LastModified", &info.modified);
 
       s->formatter->dump_unsigned("PartNumber", info.num);
       s->formatter->dump_string("ETag", info.etag);
@@ -2259,8 +2254,7 @@ void RGWListBucketMultiparts_ObjStore_S3::send_response()
       dump_owner(s, s->user->user_id, s->user->display_name, "Initiator");
       dump_owner(s, s->user->user_id, s->user->display_name);
       s->formatter->dump_string("StorageClass", "STANDARD");
-      time_t mtime = iter->obj.mtime.sec();
-      dump_time(s, "Initiated", &mtime);
+      dump_time(s, "Initiated", &iter->obj.mtime);
       s->formatter->close_section();
     }
     if (!common_prefixes.empty()) {
@@ -2846,7 +2840,7 @@ int RGW_Auth_S3::authorize(RGWRados *store, struct req_state *s)
         rgw_user uid(project_id);
         /* try to store user if it not already exists */
         if (rgw_get_user_info_by_uid(store, uid, *(s->user)) < 0) {
-          int ret = rgw_store_user_info(store, *(s->user), NULL, NULL, 0, true);
+          int ret = rgw_store_user_info(store, *(s->user), NULL, NULL, real_time(), true);
           if (ret < 0)
             dout(10) << "NOTICE: failed to store new user's info: ret="
 		     << ret << dendl;

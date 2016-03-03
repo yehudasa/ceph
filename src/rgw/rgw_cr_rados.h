@@ -713,7 +713,7 @@ class RGWAsyncRemoveObj : public RGWAsyncRadosRequest {
   string marker_version_id;
 
   bool del_if_older;
-  utime_t timestamp;
+  ceph::real_time timestamp;
 
 protected:
   int _send_request();
@@ -728,7 +728,7 @@ public:
                          uint64_t _versioned_epoch,
                          bool _delete_marker,
                          bool _if_older,
-                         utime_t& _timestamp) : RGWAsyncRadosRequest(cn), store(_store),
+                         real_time& _timestamp) : RGWAsyncRadosRequest(cn), store(_store),
                                                       source_zone(_source_zone),
                                                       bucket_info(_bucket_info),
                                                       key(_key),
@@ -760,7 +760,7 @@ class RGWRemoveObjCR : public RGWSimpleCoroutine {
   string owner_display_name;
 
   bool del_if_older;
-  utime_t timestamp;
+  real_time timestamp;
 
   RGWAsyncRemoveObj *req;
 
@@ -774,7 +774,7 @@ public:
                       string *_owner,
                       string *_owner_display_name,
                       bool _delete_marker,
-                      utime_t *_timestamp) : RGWSimpleCoroutine(_store->ctx()), cct(_store->ctx()),
+                      real_time *_timestamp) : RGWSimpleCoroutine(_store->ctx()), cct(_store->ctx()),
                                        async_rados(_async_rados), store(_store),
                                        source_zone(_source_zone),
                                        bucket_info(_bucket_info),

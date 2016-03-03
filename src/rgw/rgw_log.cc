@@ -134,7 +134,8 @@ public:
     entry.epoch = round_timestamp.sec();
     bool account;
     rgw_user_bucket ub(entry.owner, entry.bucket);
-    usage_map[ub].insert(round_timestamp, entry, &account);
+    real_time rt = round_timestamp.to_real_time();
+    usage_map[ub].insert(rt, entry, &account);
     if (account)
       num_entries++;
     bool need_flush = (num_entries > cct->_conf->rgw_usage_log_flush_threshold);

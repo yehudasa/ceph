@@ -1430,7 +1430,7 @@ void RGWSetBucketVersioning::execute()
     s->bucket_info.flags |= (BUCKET_VERSIONED | BUCKET_VERSIONS_SUSPENDED);
   }
 
-  op_ret = store->put_bucket_instance_info(s->bucket_info, false, 0,
+  op_ret = store->put_bucket_instance_info(s->bucket_info, false, real_time(),
 					  &s->bucket_attrs);
   if (op_ret < 0) {
     ldout(s->cct, 0) << "NOTICE: put_bucket_info on bucket=" << s->bucket.name
@@ -1482,7 +1482,7 @@ void RGWSetBucketWebsite::execute()
   s->bucket_info.has_website = true;
   s->bucket_info.website_conf = website_conf;
 
-  op_ret = store->put_bucket_instance_info(s->bucket_info, false, 0, &s->bucket_attrs);
+  op_ret = store->put_bucket_instance_info(s->bucket_info, false, real_time(), &s->bucket_attrs);
   if (op_ret < 0) {
     ldout(s->cct, 0) << "NOTICE: put_bucket_info on bucket=" << s->bucket.name << " returned err=" << op_ret << dendl;
     return;
@@ -1507,7 +1507,7 @@ void RGWDeleteBucketWebsite::execute()
   s->bucket_info.has_website = false;
   s->bucket_info.website_conf = RGWBucketWebsiteConf();
 
-  op_ret = store->put_bucket_instance_info(s->bucket_info, false, 0, &s->bucket_attrs);
+  op_ret = store->put_bucket_instance_info(s->bucket_info, false, real_time(), &s->bucket_attrs);
   if (op_ret < 0) {
     ldout(s->cct, 0) << "NOTICE: put_bucket_info on bucket=" << s->bucket.name << " returned err=" << op_ret << dendl;
     return;
@@ -1750,7 +1750,7 @@ void RGWCreateBucket::execute()
 
   RGWBucketInfo master_info;
   rgw_bucket *pmaster_bucket;
-  time_t creation_time;
+  real_time creation_time;
 
   if (!store->is_meta_master()) {
     JSONParser jp;
@@ -1768,7 +1768,6 @@ void RGWCreateBucket::execute()
     pobjv = &objv;
   } else {
     pmaster_bucket = NULL;
-    creation_time = 0;
   }
 
   string zonegroup_id;
@@ -1944,8 +1943,8 @@ class RGWPutObjProcessor_Multipart : public RGWPutObjProcessor_Atomic
 
 protected:
   int prepare(RGWRados *store, string *oid_rand);
-  int do_complete(string& etag, time_t *mtime, time_t set_mtime,
-                  map<string, bufferlist>& attrs, time_t delete_at,
+  int do_complete(string& etag, real_time *mtime, real_time set_mtime,
+                  map<string, bufferlist>& attrs, real_time delete_at,
                   const char *if_match = NULL, const char *if_nomatch = NULL);
 
 public:
@@ -2018,8 +2017,8 @@ static bool is_v2_upload_id(const string& upload_id)
          (strncmp(uid, MULTIPART_UPLOAD_ID_PREFIX_LEGACY, sizeof(MULTIPART_UPLOAD_ID_PREFIX_LEGACY) - 1) == 0);
 }
 
-int RGWPutObjProcessor_Multipart::do_complete(string& etag, time_t *mtime, time_t set_mtime,
-                                              map<string, bufferlist>& attrs, time_t delete_at,
+int RGWPutObjProcessor_Multipart::do_complete(string& etag, real_time *mtime, real_time set_mtime,
+                                              map<string, bufferlist>& attrs, real_time delete_at,
                                               const char *if_match, const char *if_nomatch)
 {
   complete_writing_data();
@@ -2057,7 +2056,7 @@ int RGWPutObjProcessor_Multipart::do_complete(string& etag, time_t *mtime, time_
   info.num = atoi(part_num.c_str());
   info.etag = etag;
   info.size = s->obj_size;
-  info.modified = ceph_clock_now(store->ctx());
+  info.modified = real_clock::now();
   info.manifest = manifest;
   ::encode(info, bl);
 
@@ -2327,7 +2326,7 @@ void RGWPutObj::execute()
     attrs[RGW_ATTR_SLO_UINDICATOR] = slo_userindicator_bl;
   }
 
-  op_ret = processor->complete(etag, &mtime, 0, attrs, delete_at, if_match,
+  op_ret = processor->complete(etag, &mtime, real_time(), attrs, delete_at, if_match,
 			       if_nomatch);
 
 done:
@@ -2449,7 +2448,7 @@ void RGWPostObj::execute()
     attrs[RGW_ATTR_CONTENT_TYPE] = ct_bl;
   }
 
-  op_ret = processor->complete(etag, NULL, 0, attrs, delete_at);
+  op_ret = processor->complete(etag, NULL, real_time(), attrs, delete_at);
 
 done:
   dispose_processor(processor);
@@ -2610,7 +2609,7 @@ void RGWPutMetadataAccount::execute()
 
   /* XXX tenant needed? */
   op_ret = rgw_store_user_info(store, *(s->user), &orig_uinfo,
-                               &acct_op_tracker, 0, false, &attrs);
+                               &acct_op_tracker, real_time(), false, &attrs);
   if (op_ret < 0) {
     return;
   }
@@ -3444,7 +3443,7 @@ void RGWSetRequestPayment::execute()
     return;
 
   s->bucket_info.requester_pays = requester_pays;
-  op_ret = store->put_bucket_instance_info(s->bucket_info, false, 0,
+  op_ret = store->put_bucket_instance_info(s->bucket_info, false, real_time(),
 					   &s->bucket_attrs);
   if (op_ret < 0) {
     ldout(s->cct, 0) << "NOTICE: put_bucket_info on bucket=" << s->bucket.name
