@@ -4716,7 +4716,11 @@ extern "C" int rados_write_op_operate(rados_write_op_t write_op,
   object_t obj(oid);
   ::ObjectOperation *oo = (::ObjectOperation *) write_op;
   librados::IoCtxImpl *ctx = (librados::IoCtxImpl *)io;
-  int retval = ctx->operate(obj, oo, mtime, translate_flags(flags));
+  real_time rt;
+  if (mtime) {
+    rt = real_clock::from_time_t(*mtime);
+  }
+  int retval = ctx->operate(obj, oo, (mtime ? &rt : NULL), translate_flags(flags));
   tracepoint(librados, rados_write_op_operate_exit, retval);
   return retval;
 }

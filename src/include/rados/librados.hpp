@@ -356,13 +356,21 @@ namespace librados
   class CEPH_RADOS_API ObjectWriteOperation : public ObjectOperation
   {
   protected:
-    time_t *pmtime;
+    ceph::real_time rt;
+    ceph::real_time *pmtime;
   public:
     ObjectWriteOperation() : pmtime(NULL) {}
     ~ObjectWriteOperation() {}
 
     void mtime(time_t *pt) {
-      pmtime = pt;
+      if (pt) {
+        rt = ceph::real_clock::from_time_t(*pt);
+        pmtime = &rt;;
+      }
+    }
+
+    void mtime2(ceph::real_time *prt) {
+      pmtime = prt;
     }
 
     void create(bool exclusive);
