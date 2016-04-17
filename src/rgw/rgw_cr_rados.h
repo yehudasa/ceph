@@ -6,10 +6,8 @@
 #include "common/Throttle.h"
 
 class RGWAsyncRadosRequest : public RefCountedObject {
-  RGWCoroutine *caller;
   RGWAioCompletionNotifier *notifier;
 
-  void *user_info;
   int retcode;
 
   bool done;
@@ -19,15 +17,15 @@ class RGWAsyncRadosRequest : public RefCountedObject {
 protected:
   virtual int _send_request() = 0;
 public:
-  RGWAsyncRadosRequest(RGWCoroutine *_caller, RGWAioCompletionNotifier *_cn) : caller(_caller), notifier(_cn),
-                                                                               done(false), lock("RGWAsyncRadosRequest::lock") {
-    caller->get();
+  RGWAsyncRadosRequest(RGWCoroutine *caller, RGWAioCompletionNotifier *_cn) : notifier(_cn), retcode(0), done(false), lock("RGWAsyncRadosRequest::lock") {
+    notifier->get();
   }
   virtual ~RGWAsyncRadosRequest() {
-    caller->put();
+    notifier->put();
   }
 
   void send_request() {
+    get();
     retcode = _send_request();
     {
       Mutex::Locker l(lock);
@@ -35,6 +33,7 @@ public:
         notifier->cb();
       }
     }
+    put();
   }
 
   int get_ret_status() { return retcode; }
