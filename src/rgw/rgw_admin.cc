@@ -2041,6 +2041,7 @@ int main(int argc, char **argv)
 
   int sync_stats = false;
   int reset_regions = false;
+  int bypass_gc = false;
 
   int extra_info = false;
 
@@ -2252,7 +2253,8 @@ int main(int argc, char **argv)
      // do nothing
     } else if (ceph_argparse_binary_flag(args, i, &extra_info, NULL, "--extra-info", (char*)NULL)) {
      // do nothing
-    } else if (ceph_argparse_binary_flag(args, i, &reset_regions, NULL, "--reset-regions", (char*)NULL)) {
+    } else if (ceph_argparse_binary_flag(args, i, &bypass_gc, NULL, "--bypass-gc", (char*)NULL)) {
+     // do nothing
     } else if (ceph_argparse_witharg(args, i, &val, "--caps", (char*)NULL)) {
       caps = val;
     } else if (ceph_argparse_witharg(args, i, &val, "-i", "--infile", (char*)NULL)) {
@@ -3692,6 +3694,7 @@ int main(int argc, char **argv)
   bucket_op.set_check_objects(check_objects);
   bucket_op.set_delete_children(delete_child_objects);
   bucket_op.set_fix_index(fix);
+  bucket_op.set_max_aio(max_concurrent_ios);
 
   // required to gather errors from operations
   std::string err_msg;
@@ -4638,7 +4641,7 @@ next:
   }
 
   if (opt_cmd == OPT_BUCKET_RM) {
-    RGWBucketAdminOp::remove_bucket(store, bucket_op);
+    RGWBucketAdminOp::remove_bucket(store, bucket_op, bypass_gc);
   }
 
   if (opt_cmd == OPT_GC_LIST) {
