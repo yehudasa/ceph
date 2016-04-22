@@ -118,7 +118,7 @@ class RGWCluster:
         mstop(self.cluster_id)
 
     def start_rgw(self):
-        mrgw(self.cluster_id, self.port, '--debug-rgw=20 --debug-ms=1')
+        mrgw(self.cluster_id, self.port, '--debug-rgw=20 --debug-ms=1 --rgw-thread-pool-size=500')
 
     def stop_rgw(self):
         mstop(self.cluster_id, 'radosgw')
@@ -426,8 +426,9 @@ class RGWRealm:
 
         log(10, 'starting bucket checkpoint for target_zone=', target_zone.zone_name, ' source_zone=', source_zone.zone_name, ' bucket_name=', bucket_name)
 
+        log_status = self.bucket_source_log_status(source_zone, bucket_name)
+
         while True:
-            log_status = self.bucket_source_log_status(source_zone, bucket_name)
             sync_status = self.bucket_sync_status(target_zone, source_zone, bucket_name)
 
             log(20, 'log_status=', log_status)
