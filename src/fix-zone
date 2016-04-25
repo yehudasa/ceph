@@ -1,0 +1,64 @@
+#!/bin/sh
+
+set -x
+
+RADOS=rados
+RADOSGW_ADMIN=radosgw-admin
+
+fixed_file=default-zone-fixed.json
+
+declare -a pool_names=("domain_root" "control_pool" "gc_pool" "log_pool" "intent_log_pool" \
+                "usage_log_pool" "user_keys_pool" "user_email_pool" "user_swift_pool" \
+                "user_uid_pool" "index_pool" "data_pool" "data_extra_pool")
+
+filter_json() {
+out_file=$1
+line=$2
+## now loop through the above array
+key=`echo $line | awk '{print $1}' | sed 's/"//g' | sed 's/://g'`
+# echo "key=$key"
+for i in "${pool_names[@]}"
+do
+   if [ "$key" == "$i" ]; then
+     val=`echo $line | awk '{print $2}' | sed 's/"//g' | sed 's/://g' | sed 's/,//g' `
+     echo \"$key\": \"${val}_\", >> $out_file
+     return
+   fi
+   # or do whatever with individual element of the array
+done
+echo $line >> $out_file
+}
+
+echo "Backing up .rgw.root pool"
+$RADOS mkpool .rgw.root.backup
+$RADOS cppool .rgw.root .rgw.root.backup
+
+echo "Exercise initialization code"
+$RADOSGW_ADMIN user info --uid=foo # exercise init code
+
+echo "Get default zonegroup"
+$RADOSGW_ADMIN zonegroup get --rgw-zonegroup=default | sed 's/"id":.*/"id": "default",/g' | sed 's/"master_zone.*/"master_zone": "default",/g' > default-zg.json
+
+echo "Get default zone"
+$RADOSGW_ADMIN zone get --zone-id=default > default-zone.json
+
+cat default-zone.json
+
+echo "Creating new root pool"
+$RADOS rmpool .rgw.root .rgw.root --yes-i-really-really-mean-it
+$RADOS mkpool .rgw.root
+
+$RADOSGW_ADMIN realm create --rgw-realm=myrealm
+
+$RADOSGW_ADMIN zonegroup set --rgw-zonegroup=default < default-zg.json
+
+echo "Patching zone pool names"
+rm -f $fixed_file
+while read line; do
+  filter_json $fixed_file "$line"
+done < default-zone.json
+
+$RADOSGW_ADMIN zone set --rgw-zone=default < $fixed_file
+
+$RADOSGW_ADMIN zonegroup default --rgw-zonegroup=default
+$RADOSGW_ADMIN zone default --rgw-zone=default
