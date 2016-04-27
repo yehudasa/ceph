@@ -487,7 +487,7 @@ int rgw_remove_bucket(RGWRados *store, rgw_bucket& bucket, bool delete_children)
 
     while (!objs.empty()) {
       std::vector<RGWObjEnt>::iterator it = objs.begin();
-      for (it = objs.begin(); it != objs.end(); ++it) {
+      for (; it != objs.end(); ++it) {
         ret = rgw_remove_object(store, info, bucket, (*it).key);
         if (ret < 0)
           return ret;
@@ -579,12 +579,18 @@ int rgw_remove_bucket_bypass_gc(RGWRados *store, rgw_bucket& bucket, int concurr
 
   while (!objs.empty()) {
     std::vector<RGWObjEnt>::iterator it = objs.begin();
-    for (it = objs.begin(); it != objs.end(); ++it) {
+    for (; it != objs.end(); ++it) {
       RGWObjState *astate = NULL;
       rgw_obj obj(bucket, (*it).key.name);
       ret = store->get_obj_state(&obj_ctx, obj, &astate, NULL);
-      if (ret < 0)
+      if (ret == -ENOENT) {
+        dout(1) << "WARNING: cannot find obj state for obj " << obj.get_object() << dendl;
+        continue;
+      }
+      if (ret < 0) {
+        lderr(store->ctx()) << "ERROR: get obj state returned with error " << ret << dendl;
         return ret;
+      }
 
       if (astate->has_manifest) {
         rgw_obj head_obj;
