@@ -182,6 +182,8 @@
      --caps=<caps>             list of caps (e.g., "usage=read, write; user=read"
      --yes-i-really-mean-it    required for certain operations
      --reset-regions           reset regionmap when regionmap update
+     --bypass-gc               when specified with bucket deletion, would trigger
+                               object deletions by not involving GC
   
   <date> := "YYYY-MM-DD[ hh:mm:ss]"
   
