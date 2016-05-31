@@ -951,6 +951,7 @@ struct RGWZone {
   bool log_meta;
   bool log_data;
   bool read_only;
+  set<string> data_sync_from;
 
 /**
  * Represents the number of shards for the bucket index object, a value of zero
@@ -964,7 +965,7 @@ struct RGWZone {
   RGWZone() : log_meta(false), log_data(false), read_only(false), bucket_index_max_shards(0) {}
 
   void encode(bufferlist& bl) const {
-    ENCODE_START(4, 1, bl);
+    ENCODE_START(5, 1, bl);
     ::encode(name, bl);
     ::encode(endpoints, bl);
     ::encode(log_meta, bl);
@@ -972,6 +973,7 @@ struct RGWZone {
     ::encode(bucket_index_max_shards, bl);
     ::encode(id, bl);
     ::encode(read_only, bl);
+    ::encode(data_sync_from, bl);
     ENCODE_FINISH(bl);
   }
 
@@ -992,6 +994,9 @@ struct RGWZone {
     if (struct_v >= 4) {
       ::decode(id, bl);
       ::decode(read_only, bl);
+    }
+    if (struct_v >= 5) {
+      ::decode(data_sync_from, bl);
     }
     DECODE_FINISH(bl);
   }

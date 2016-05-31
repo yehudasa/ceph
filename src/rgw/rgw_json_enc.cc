@@ -862,6 +862,7 @@ void RGWZone::dump(Formatter *f) const
   encode_json("log_data", log_data, f);
   encode_json("bucket_index_max_shards", bucket_index_max_shards, f);
   encode_json("read_only", read_only, f);
+  encode_json("data_sync_from", data_sync_from, f);
 }
 
 void RGWZone::decode_json(JSONObj *obj)
@@ -876,6 +877,7 @@ void RGWZone::decode_json(JSONObj *obj)
   JSONDecoder::decode_json("log_data", log_data, obj);
   JSONDecoder::decode_json("bucket_index_max_shards", bucket_index_max_shards, obj);
   JSONDecoder::decode_json("read_only", read_only, obj);
+  JSONDecoder::decode_json("data_sync_from", data_sync_from, obj);
 }
 
 void RGWZoneGroupPlacementTarget::dump(Formatter *f) const
