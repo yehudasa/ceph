@@ -2368,6 +2368,7 @@ int RGWBucketShardIncrementalSyncCR::operate()
       return set_cr_error(retcode);
     }
 
+    drain_all_but(1);
     lease_cr->go_down();
     /* wait for all operations to complete */
     drain_all();
