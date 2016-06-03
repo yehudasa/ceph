@@ -639,7 +639,7 @@ public:
       if (retcode < 0) {
         set_status("failed to write sync status");
         ldout(cct, 0) << "ERROR: failed to write sync status, retcode=" << retcode << dendl;
-        yield lease_cr->go_down();
+        rgw_cr_drain_drop_lease(lease_cr);
         return set_cr_error(retcode);
       }
       /* fetch current position in logs */
@@ -814,8 +814,7 @@ public:
       }
       if (get_ret_status() < 0) {
         ldout(cct, 0) << "ERROR: failed to fetch metadata sections" << dendl;
-        yield lease_cr->go_down();
-        drain_all();
+        rgw_cr_drain_drop_lease(lease_cr);
 	return set_cr_error(get_ret_status());
       }
       rearrange_sections();
@@ -829,8 +828,7 @@ public:
 	}
         if (get_ret_status() < 0) {
           ldout(cct, 0) << "ERROR: failed to fetch metadata section: " << *sections_iter << dendl;
-          yield lease_cr->go_down();
-          drain_all();
+          rgw_cr_drain_drop_lease(lease_cr);
           return set_cr_error(get_ret_status());
         }
         iter = result.begin();
@@ -1419,8 +1417,7 @@ public:
         yield call(new RGWRadosGetOmapKeysCR(sync_env->store, pool, oid, marker, &entries, max_entries));
         if (retcode < 0) {
           ldout(sync_env->cct, 0) << "ERROR: " << __func__ << "(): RGWRadosGetOmapKeysCR() returned ret=" << retcode << dendl;
-          yield lease_cr->go_down();
-          drain_all();
+          rgw_cr_drain_drop_lease(lease_cr);
           return retcode;
         }
         iter = entries.begin();
@@ -1554,8 +1551,7 @@ public:
 	}
         if (retcode < 0) {
           ldout(sync_env->cct, 10) << *this << ": failed to fetch more log entries, retcode=" << retcode << dendl;
-          yield lease_cr->go_down();
-          drain_all();
+          rgw_cr_drain_drop_lease(lease_cr);
           return retcode;
         }
         *reset_backoff = true; /* if we got to this point, all systems function */

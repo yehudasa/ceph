@@ -977,8 +977,7 @@ public:
         yield call(new RGWRadosGetOmapKeysCR(sync_env->store, pool, oid, sync_marker.marker, &entries, max_entries));
         if (retcode < 0) {
           ldout(sync_env->cct, 0) << "ERROR: " << __func__ << "(): RGWRadosGetOmapKeysCR() returned ret=" << retcode << dendl;
-          lease_cr->go_down();
-          drain_all();
+          rgw_cr_drain_drop_lease(lease_cr);
           return set_cr_error(retcode);
         }
         iter = entries.begin();
@@ -991,8 +990,7 @@ public:
             // fetch remote and write locally
             yield spawn(new RGWDataSyncSingleEntryCR(sync_env, iter->first, iter->first, marker_tracker), false);
             if (retcode < 0) {
-              lease_cr->go_down();
-              drain_all();
+              rgw_cr_drain_drop_lease(lease_cr);
               return set_cr_error(retcode);
             }
           }
@@ -1000,8 +998,7 @@ public:
         }
       } while ((int)entries.size() == max_entries);
 
-      lease_cr->go_down();
-      drain_all();
+      rgw_cr_drain_drop_lease(lease_cr);
 
       yield {
         /* update marker to reflect we're done with full sync */
@@ -1014,7 +1011,6 @@ public:
       }
       if (retcode < 0) {
         ldout(sync_env->cct, 0) << "ERROR: failed to set sync marker: retcode=" << retcode << dendl;
-        lease_cr->go_down();
         return set_cr_error(retcode);
       }
     }
@@ -1052,8 +1048,7 @@ public:
         yield call(new RGWReadRemoteDataLogShardInfoCR(sync_env, shard_id, &shard_info));
         if (retcode < 0) {
           ldout(sync_env->cct, 0) << "ERROR: failed to fetch remote data log info: ret=" << retcode << dendl;
-          lease_cr->go_down();
-          drain_all();
+          rgw_cr_drain_drop_lease(lease_cr);
           return set_cr_error(retcode);
         }
         datalog_marker = shard_info.marker;
@@ -1064,8 +1059,7 @@ public:
           yield call(new RGWReadRemoteDataLogShardCR(sync_env, shard_id, &sync_marker.marker, &log_entries, &truncated));
           if (retcode < 0) {
             ldout(sync_env->cct, 0) << "ERROR: failed to read remote data log info: ret=" << retcode << dendl;
-            lease_cr->go_down();
-            drain_all();
+            rgw_cr_drain_drop_lease(lease_cr);
             return set_cr_error(retcode);
           }
           for (log_iter = log_entries.begin(); log_iter != log_entries.end(); ++log_iter) {
@@ -1085,8 +1079,7 @@ public:
                 spawned_keys.insert(log_iter->entry.key);
                 spawn(new RGWDataSyncSingleEntryCR(sync_env, log_iter->entry.key, log_iter->log_id, marker_tracker), false);
                 if (retcode < 0) {
-                  lease_cr->go_down();
-                  drain_all();
+                  rgw_cr_drain_drop_lease(lease_cr);
                   return set_cr_error(retcode);
                 }
               }
@@ -2120,8 +2113,7 @@ int RGWBucketShardFullSyncCR::operate()
                                           list_marker, &list_result));
       if (retcode < 0 && retcode != -ENOENT) {
         set_status("failed bucket listing, going down");
-        yield lease_cr->go_down();
-        drain_all();
+        rgw_cr_drain_drop_lease(lease_cr);
         return set_cr_error(retcode);
       }
       entries_iter = list_result.entries.begin();
@@ -2264,8 +2256,7 @@ int RGWBucketShardIncrementalSyncCR::operate()
                                          inc_marker.position, &list_result));
       if (retcode < 0 && retcode != -ENOENT) {
         /* wait for all operations to complete */
-        lease_cr->go_down();
-        drain_all();
+        rgw_cr_drain_drop_lease(lease_cr);
         return set_cr_error(retcode);
       }
       entries_iter = list_result.begin();
@@ -2363,14 +2354,12 @@ int RGWBucketShardIncrementalSyncCR::operate()
     }
     if (retcode < 0) {
       ldout(sync_env->cct, 0) << "ERROR: marker_tracker->flush() returned retcode=" << retcode << dendl;
-      lease_cr->go_down();
-      drain_all();
+      rgw_cr_drain_drop_lease(lease_cr);
       return set_cr_error(retcode);
     }
 
-    lease_cr->go_down();
     /* wait for all operations to complete */
-    drain_all();
+    rgw_cr_drain_drop_lease(lease_cr);
 
     return set_cr_done();
   }
