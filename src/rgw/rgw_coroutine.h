@@ -197,6 +197,7 @@ class RGWCoroutine : public RefCountedObject, public boost::asio::coroutine {
 
 protected:
   bool _yield_ret;
+  int _yield_state;
   boost::asio::coroutine drain_cr;
 
   CephContext *cct;
@@ -242,7 +243,7 @@ protected:
   }
 
 public:
-  RGWCoroutine(CephContext *_cct) : status(_cct), _yield_ret(false), cct(_cct), stack(NULL), retcode(0), state(RGWCoroutine_Run) {}
+  RGWCoroutine(CephContext *_cct) : status(_cct), _yield_ret(false), _yield_state(0), cct(_cct), stack(NULL), retcode(0), state(RGWCoroutine_Run) {}
   virtual ~RGWCoroutine();
 
   virtual int operate() = 0;
@@ -305,6 +306,36 @@ do {                            \
 #define drain_all_but(n) \
   drain_cr = boost::asio::coroutine(); \
   yield_until_true(drain_children(n))
+
+/*
+ * the problem is that we can't have two yields in one macro, so
+ * we end up with this
+ */
+#define drain_and_call(n, func) \
+do { \
+  _yield_state = 0; \
+  do { \
+    yield { \
+      switch (_yield_state) { \
+        case 0: \
+          _yield_ret = drain_children(n); \
+          break; \
+        case 1: \
+          func(); \
+          _yield_ret = true; \
+          break; \
+        case 2: \
+          _yield_ret = drain_children(0); \
+          break; \
+        default: \
+          assert(0); \
+      } \
+    } \
+    if (_yield_ret) { \
+      _yield_state++; \
+    } \
+  } while (_yield_state <= 2); \
+} while(0)
 
 template <class T>
 class RGWConsumerCR : public RGWCoroutine {

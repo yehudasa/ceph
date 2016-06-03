@@ -882,6 +882,11 @@ public:
   }
 };
 
+#define rgw_cr_drain_drop_lease(lease_cr) \
+  do { \
+    drain_and_call(1, [&](void) { lease_cr->go_down(); }); \
+  } while(0)
+
 class RGWRadosTimelogAddCR : public RGWSimpleCoroutine {
   RGWRados *store;
   list<cls_log_entry> entries;
