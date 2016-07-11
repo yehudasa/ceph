@@ -3203,6 +3203,7 @@ void RGWRados::finalize()
   }
   delete binfo_cache;
   delete obj_tombstone_cache;
+  delete sync_modules_manager;
 }
 
 /** 
@@ -3225,6 +3226,11 @@ int RGWRados::init_rados()
       return ret;
     }
   }
+
+  sync_modules_manager = new RGWSyncModulesManager();
+
+  RGWSyncModuleRef default_module(new RGWDefaultSyncModule());
+  sync_modules_manager->register_module("default", default_module);
 
   auto crs = std::unique_ptr<RGWCoroutinesManagerRegistry>{
     new RGWCoroutinesManagerRegistry(cct)};
