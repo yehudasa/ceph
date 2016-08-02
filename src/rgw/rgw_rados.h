@@ -983,6 +983,7 @@ struct RGWZone {
   bool log_meta;
   bool log_data;
   bool read_only;
+  string tier_type;
 
 /**
  * Represents the number of shards for the bucket index object, a value of zero
@@ -996,7 +997,7 @@ struct RGWZone {
   RGWZone() : log_meta(false), log_data(false), read_only(false), bucket_index_max_shards(0) {}
 
   void encode(bufferlist& bl) const {
-    ENCODE_START(4, 1, bl);
+    ENCODE_START(5, 1, bl);
     ::encode(name, bl);
     ::encode(endpoints, bl);
     ::encode(log_meta, bl);
@@ -1004,11 +1005,12 @@ struct RGWZone {
     ::encode(bucket_index_max_shards, bl);
     ::encode(id, bl);
     ::encode(read_only, bl);
+    ::encode(tier_type, bl);
     ENCODE_FINISH(bl);
   }
 
   void decode(bufferlist::iterator& bl) {
-    DECODE_START(4, bl);
+    DECODE_START(5, bl);
     ::decode(name, bl);
     if (struct_v < 4) {
       id = name;
@@ -1024,6 +1026,9 @@ struct RGWZone {
     if (struct_v >= 4) {
       ::decode(id, bl);
       ::decode(read_only, bl);
+    }
+    if (struct_v >= 5) {
+      ::decode(tier_type, bl);
     }
     DECODE_FINISH(bl);
   }
@@ -1940,7 +1945,7 @@ public:
   map<string, RGWRESTConn *> zonegroup_conn_map;
 
   map<string, string> zone_id_by_name;
-  map<string, string> zone_name_by_id;
+  map<string, RGWZone> zone_by_id;
 
   RGWRESTConn *get_zone_conn_by_id(const string& id) {
     auto citer = zone_conn_map.find(id);
