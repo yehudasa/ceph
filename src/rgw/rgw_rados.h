@@ -1888,6 +1888,7 @@ protected:
   RGWCoroutinesManagerRegistry *cr_registry;
 
   RGWSyncModulesManager *sync_modules_manager{nullptr};
+  RGWSyncModuleInstanceRef sync_module;
 
   RGWZoneGroup zonegroup;
   RGWZone zone_public_config; /* external zone params, e.g., entrypoints, log flags, etc. */  
@@ -2032,6 +2033,9 @@ public:
 
   RGWSyncModulesManager *get_sync_modules_manager() {
     return sync_modules_manager;
+  }
+  RGWSyncModuleInstanceRef& get_sync_module() {
+    return sync_module;
   }
   int get_required_alignment(rgw_bucket& bucket, uint64_t *alignment);
   int get_max_chunk_size(rgw_bucket& bucket, uint64_t *max_chunk_size);
