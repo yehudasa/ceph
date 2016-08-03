@@ -60,6 +60,7 @@ librgw_la_SOURCES = \
 	rgw/rgw_realm_watcher.cc \
 	rgw/rgw_sync.cc \
 	rgw/rgw_data_sync.cc \
+	rgw/rgw_sync_module.cc \
 	rgw/rgw_object_expirer_core.cc \
 	rgw/rgw_op.cc \
 	rgw/rgw_os_lib.cc \
