@@ -1457,7 +1457,7 @@ public:
   }
 };
 
-int RGWDefaultSyncModule::create_instance(map<string, string>& config, RGWSyncModuleInstanceRef *instance)
+int RGWDefaultSyncModule::create_instance(CephContext *cct, map<string, string>& config, RGWSyncModuleInstanceRef *instance)
 {
   instance->reset(new RGWDefaultSyncModuleInstance());
   return 0;

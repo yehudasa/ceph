@@ -61,6 +61,7 @@ librgw_la_SOURCES = \
 	rgw/rgw_sync.cc \
 	rgw/rgw_data_sync.cc \
 	rgw/rgw_sync_module.cc \
+	rgw/rgw_sync_module_es.cc \
 	rgw/rgw_sync_module_log.cc \
 	rgw/rgw_object_expirer_core.cc \
 	rgw/rgw_op.cc \
