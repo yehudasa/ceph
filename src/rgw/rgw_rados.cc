@@ -7018,7 +7018,8 @@ int RGWRados::copy_obj(RGWObjectCtx& obj_ctx,
 
   RGWObjManifest manifest;
   RGWObjState *astate = NULL;
-  ret = get_obj_state(&obj_ctx, src_obj, &astate, NULL);
+
+  ret = get_obj_state(&obj_ctx, src_obj, &astate);
   if (ret < 0) {
     return ret;
   }
@@ -7130,6 +7131,12 @@ int RGWRados::copy_obj(RGWObjectCtx& obj_ctx,
       }
 
       ref_objs.push_back(loc);
+    }
+
+    /* Only the first level copy operation need to update manifest */
+    if (!manifest.get_copied_obj()) {
+      manifest.set_src_instance(astate->obj.get_instance());
+      manifest.set_copied_obj(true);
     }
 
     pmanifest = &manifest;

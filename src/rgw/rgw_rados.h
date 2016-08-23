@@ -254,6 +254,14 @@ protected:
                              as object might have been copied across buckets */
   map<uint64_t, RGWObjManifestRule> rules;
 
+  /* If this object is copied from another versioned object, @src_instance 
+   * is used to store src's version_id. 
+   * 
+   * @copied_obj is used to indicate whether @src_instance is valid.
+   * */
+  string src_instance; 
+  bool copied_obj;
+
   void convert_to_explicit();
   int append_explicit(RGWObjManifest& m);
   void append_rules(RGWObjManifest& m, map<uint64_t, RGWObjManifestRule>::iterator& iter, string *override_prefix);
@@ -265,7 +273,7 @@ protected:
 public:
 
   RGWObjManifest() : explicit_objs(false), obj_size(0), head_size(0), max_head_size(0),
-                     begin_iter(this), end_iter(this) {}
+                     copied_obj(false), begin_iter(this), end_iter(this) {}
   RGWObjManifest(const RGWObjManifest& rhs) {
     *this = rhs;
   }
@@ -279,6 +287,8 @@ public:
     prefix = rhs.prefix;
     tail_bucket = rhs.tail_bucket;
     rules = rhs.rules;
+    src_instance = rhs.src_instance;
+    copied_obj = rhs.copied_obj;
 
     begin_iter.set_manifest(this);
     end_iter.set_manifest(this);
@@ -316,7 +326,7 @@ public:
   }
 
   void encode(bufferlist& bl) const {
-    ENCODE_START(4, 3, bl);
+    ENCODE_START(5, 3, bl);
     ::encode(obj_size, bl);
     ::encode(objs, bl);
     ::encode(explicit_objs, bl);
@@ -326,11 +336,13 @@ public:
     ::encode(prefix, bl);
     ::encode(rules, bl);
     ::encode(tail_bucket, bl);
+    ::encode(src_instance, bl);
+    ::encode(copied_obj, bl);
     ENCODE_FINISH(bl);
   }
 
   void decode(bufferlist::iterator& bl) {
-    DECODE_START_LEGACY_COMPAT_LEN_32(4, 2, 2, bl);
+    DECODE_START_LEGACY_COMPAT_LEN_32(5, 2, 2, bl);
     ::decode(obj_size, bl);
     ::decode(objs, bl);
     if (struct_v >= 3) {
@@ -352,6 +364,11 @@ public:
 
     if (struct_v >= 4) {
       ::decode(tail_bucket, bl);
+    }
+
+    if (struct_v >= 5) {
+      ::decode(src_instance, bl);
+      ::decode(copied_obj, bl);
     }
 
     update_iterators();
@@ -409,6 +426,22 @@ public:
 
   const string& get_prefix() {
     return prefix;
+  }
+
+  void set_src_instance(const string& _si) {
+    src_instance = _si;
+  }
+
+  const string& get_src_instance() {
+    return src_instance;
+  }
+
+  void set_copied_obj(bool _co) {
+    copied_obj = _co;
+  }
+
+  bool get_copied_obj() {
+    return copied_obj;
   }
 
   void set_head_size(uint64_t _s) {
