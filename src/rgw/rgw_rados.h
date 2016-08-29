@@ -2010,6 +2010,10 @@ public:
     return ret;
   }
 
+  RGWRealm& get_realm() {
+    return realm;
+  }
+
   RGWZoneParams& get_zone_params() { return zone_params; }
   RGWZoneGroup& get_zonegroup() {
     return zonegroup;
