@@ -129,7 +129,8 @@ int RGWRESTConn::get_obj(const rgw_user& uid, req_info *info /* optional */, rgw
                          const real_time *mod_ptr, const real_time *unmod_ptr,
                          uint32_t mod_zone_id, uint64_t mod_pg_ver,
                          bool prepend_metadata, bool get_op, bool rgwx_stat,
-                         RGWGetDataCB *cb, RGWRESTStreamRWRequest **req)
+                         RGWGetDataCB *cb, RGWRESTStreamRWRequest **req,
+                         RGWHTTPManager *mgr)
 {
   string url;
   int ret = get_url(url);
@@ -139,7 +140,7 @@ int RGWRESTConn::get_obj(const rgw_user& uid, req_info *info /* optional */, rgw
   param_vec_t params;
   populate_params(params, &uid, self_zone_group);
   if (prepend_metadata) {
-    params.push_back(param_pair_t(RGW_SYS_PARAM_PREFIX "prepend-metadata", self_zone_group));
+    params.push_back(param_pair_t(RGW_SYS_PARAM_PREFIX "prepend-metadata", "true"));
   }
   if (rgwx_stat) {
     params.push_back(param_pair_t(RGW_SYS_PARAM_PREFIX "stat", "true"));
@@ -178,7 +179,7 @@ int RGWRESTConn::get_obj(const rgw_user& uid, req_info *info /* optional */, rgw
     set_header(mod_pg_ver, extra_headers, "HTTP_DEST_PG_VER");
   }
 
-  return (*req)->get_obj(key, extra_headers, obj);
+  return (*req)->get_obj(key, extra_headers, obj, mgr);
 }
 
 int RGWRESTConn::complete_request(RGWRESTStreamRWRequest *req, string& etag, real_time *mtime,

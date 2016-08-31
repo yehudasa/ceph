@@ -166,7 +166,7 @@ size_t RGWHTTPClient::receive_http_data(void * const ptr,
   if (!req_data->registered) {
     return len;
   }
-  
+
   int ret = req_data->client->receive_data(ptr, size * nmemb);
   if (ret < 0) {
     dout(0) << "WARNING: client->receive_data() returned ret=" << ret << dendl;
@@ -336,11 +336,16 @@ int RGWHTTPClient::init_request(const char *method, const char *url, rgw_http_re
   }
   curl_easy_setopt(easy_handle, CURLOPT_READFUNCTION, send_http_data);
   curl_easy_setopt(easy_handle, CURLOPT_READDATA, (void *)req_data);
-  curl_easy_setopt(easy_handle, CURLOPT_UPLOAD, 1L); 
+  string m(method);
+  if (m != "GET" && m != "HEAD") {
+    curl_easy_setopt(easy_handle, CURLOPT_UPLOAD, 1L); 
+  }
   if (has_send_len) {
     curl_easy_setopt(easy_handle, CURLOPT_INFILESIZE, (void *)send_len); 
   }
   curl_easy_setopt(easy_handle, CURLOPT_PRIVATE, (void *)req_data);
+  curl_easy_setopt(easy_handle, CURLOPT_VERBOSE, 1L);
+
 
   return 0;
 }
@@ -721,14 +726,14 @@ int RGWHTTPManager::process_requests(bool wait_for_data, bool *done)
   int still_running;
   int mstatus;
 
-  do {
-    if (wait_for_data) {
-      int ret = do_curl_wait(cct, (CURLM *)multi_handle, -1);
-      if (ret < 0) {
-        return ret;
-      }
+  if (wait_for_data) {
+    int ret = do_curl_wait(cct, (CURLM *)multi_handle, -1);
+    if (ret < 0) {
+      return ret;
     }
+  }
 
+  do {
     mstatus = curl_multi_perform((CURLM *)multi_handle, &still_running);
     switch (mstatus) {
       case CURLM_OK:
@@ -855,11 +860,11 @@ void *RGWHTTPManager::reqs_thread_entry()
     int msgs_left;
     CURLMsg *msg;
     while ((msg = curl_multi_info_read((CURLM *)multi_handle, &msgs_left))) {
+      rgw_http_req_data *req_data;
+      CURL *e = msg->easy_handle;
+      curl_easy_getinfo(e, CURLINFO_PRIVATE, (void **)&req_data);
       if (msg->msg == CURLMSG_DONE) {
 	int result = msg->data.result;
-	CURL *e = msg->easy_handle;
-	rgw_http_req_data *req_data;
-	curl_easy_getinfo(e, CURLINFO_PRIVATE, (void **)&req_data);
 	curl_multi_remove_handle((CURLM *)multi_handle, e);
 
 	long http_status;

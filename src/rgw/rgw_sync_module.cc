@@ -7,6 +7,7 @@
 
 #include "rgw_sync_module_log.h"
 #include "rgw_sync_module_es.h"
+#include "rgw_sync_module_s3export.h"
 
 #define dout_subsys ceph_subsys_rgw
 
@@ -62,4 +63,7 @@ void rgw_register_sync_modules(RGWSyncModulesManager *modules_manager)
 
   RGWSyncModuleRef es_module(new RGWElasticSyncModule());
   modules_manager->register_module("elasticsearch", es_module);
+
+  RGWSyncModuleRef s3export_module(new RGWS3ExportSyncModule());
+  modules_manager->register_module("s3export", s3export_module);
 }
