@@ -7067,34 +7067,6 @@ set_err_state:
 }
 
 
-int RGWRados::copy_obj_to_remote_dest(RGWObjState *astate,
-                                      map<string, bufferlist>& src_attrs,
-                                      RGWRados::Object::Read& read_op,
-                                      const rgw_user& user_id,
-                                      rgw_obj& dest_obj,
-                                      real_time *mtime)
-{
-  string etag;
-
-  RGWRESTStreamWriteRequest *out_stream_req;
-
-  int ret = rest_master_conn->put_obj_init(user_id, dest_obj, astate->size, src_attrs, &out_stream_req);
-  if (ret < 0) {
-    delete out_stream_req;
-    return ret;
-  }
-
-  ret = read_op.iterate(0, astate->size - 1, out_stream_req->get_out_cb());
-  if (ret < 0)
-    return ret;
-
-  ret = rest_master_conn->complete_request(out_stream_req, etag, mtime);
-  if (ret < 0)
-    return ret;
-
-  return 0;
-}
-
 /**
  * Copy an object.
  * dest_obj: the object to copy into
@@ -7152,9 +7124,13 @@ int RGWRados::copy_obj(RGWObjectCtx& obj_ctx,
   shadow_obj.init_ns(dest_obj.bucket, shadow_oid, shadow_ns);
 
   remote_dest = !get_zonegroup().equals(dest_bucket_info.zonegroup);
+  if (remote_dest) {
+    ldout(cct, 0) << "ERROR: can't copy object to remote dest" << dendl;
+    return -EINVAL;
+  }
   remote_src = !get_zonegroup().equals(src_bucket_info.zonegroup);
 
-  if (remote_src && remote_dest) {
+  if (remote_src) {
     ldout(cct, 0) << "ERROR: can't copy object when both src and dest buckets are remote" << dendl;
     return -EINVAL;
   }
@@ -7208,10 +7184,6 @@ int RGWRados::copy_obj(RGWObjectCtx& obj_ctx,
 
   vector<rgw_obj> ref_objs;
 
-  if (remote_dest) {
-    /* dest is in a different zonegroup, copy it there */
-    return copy_obj_to_remote_dest(astate, attrs, read_op, user_id, dest_obj, mtime);
-  }
   uint64_t max_chunk_size;
 
   ret = get_max_chunk_size(dest_obj.bucket, &max_chunk_size);

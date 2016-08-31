@@ -2553,12 +2553,6 @@ public:
                                RGWBucketInfo& bucket_info,      /* in */
                                rgw_obj& obj,                    /* in */
                                bool& restored);                 /* out */
-  int copy_obj_to_remote_dest(RGWObjState *astate,
-                              map<string, bufferlist>& src_attrs,
-                              RGWRados::Object::Read& read_op,
-                              const rgw_user& user_id,
-                              rgw_obj& dest_obj,
-                              ceph::real_time *mtime);
 
   enum AttrsMod {
     ATTRSMOD_NONE    = 0,
