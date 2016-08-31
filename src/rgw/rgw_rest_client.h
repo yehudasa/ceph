@@ -68,13 +68,16 @@ class RGWRESTStreamWriteRequest : public RGWRESTSimpleRequest {
   list<bufferlist> pending_send;
   RGWGetDataCB *cb;
   RGWHTTPManager http_manager;
+  uint64_t send_size;
+  uint64_t total_sent;
 public:
   int add_output_data(bufferlist& bl);
   int send_data(void *ptr, size_t len);
 
   RGWRESTStreamWriteRequest(CephContext *_cct, const string& _url, param_vec_t *_headers,
 		param_vec_t *_params) : RGWRESTSimpleRequest(_cct, _url, _headers, _params),
-                lock("RGWRESTStreamWriteRequest"), cb(NULL), http_manager(_cct) {}
+                lock("RGWRESTStreamWriteRequest"), cb(NULL), http_manager(_cct),
+                send_size(0), total_sent(0) {}
   ~RGWRESTStreamWriteRequest();
   int put_obj_init(RGWAccessKey& key, rgw_obj& obj, uint64_t obj_size, map<string, bufferlist>& attrs);
   int complete(string& etag, real_time *mtime);

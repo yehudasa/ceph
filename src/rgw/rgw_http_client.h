@@ -218,13 +218,13 @@ class RGWHTTPManager {
   CephContext *cct;
   RGWCompletionManager *completion_mgr;
   void *multi_handle;
-  bool is_threaded;
   atomic_t going_down;
   atomic_t is_stopped;
 
   RWLock reqs_lock;
   map<uint64_t, rgw_http_req_data *> reqs;
   list<rgw_http_req_data *> unregistered_reqs;
+  list<rgw_http_req_data *> unpaused_reqs;
   map<uint64_t, rgw_http_req_data *> complete_reqs;
   int64_t num_reqs;
   int64_t max_threaded_req;
@@ -239,6 +239,9 @@ class RGWHTTPManager {
   void finish_request(rgw_http_req_data *req_data, int r);
   void _finish_request(rgw_http_req_data *req_data, int r);
   int link_request(rgw_http_req_data *req_data);
+
+  void _unpause_request(rgw_http_req_data *req_data);
+  void data_available(rgw_http_req_data *req_data);
 
   void manage_pending_requests();
 
@@ -260,16 +263,12 @@ public:
   RGWHTTPManager(CephContext *_cct, RGWCompletionManager *completion_mgr = NULL);
   ~RGWHTTPManager();
 
-  int set_threaded();
+  int start();
   void stop();
 
   int add_request(RGWHTTPClient *client, const char *method, const char *url);
   int remove_request(RGWHTTPClient *client);
-
-  /* only for non threaded case */
-  int process_requests(bool wait_for_data, bool *done);
-
-  int complete_requests();
+  void data_available(RGWHTTPClient *client); /* data available for write */
 };
 
 #endif

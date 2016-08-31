@@ -138,7 +138,7 @@ class RGWPeriodPusher::CRThread {
       push_all(new PushAllCR(cct, &http, std::move(period), std::move(conns))),
       thread([this] { coroutines.run(push_all.get()); })
   {
-    http.set_threaded();
+    http.start();
   }
   ~CRThread()
   {

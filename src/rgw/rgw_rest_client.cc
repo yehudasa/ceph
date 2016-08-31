@@ -351,8 +351,8 @@ int RGWRESTStreamWriteRequest::add_output_data(bufferlist& bl)
   pending_send.push_back(bl);
   lock.Unlock();
 
-  bool done;
-  return http_manager.process_requests(false, &done);
+  http_manager.data_available(this);
+  return 0;
 }
 
 static void grants_by_type_add_one_grant(map<int, string>& grants_by_type, int perm, ACLGrant& grant)
@@ -427,6 +427,11 @@ static void add_grants_headers(map<int, string>& grants, map<string, string, lts
 
 int RGWRESTStreamWriteRequest::put_obj_init(RGWAccessKey& key, rgw_obj& obj, uint64_t obj_size, map<string, bufferlist>& attrs)
 {
+  int ret = http_manager.start();
+  if (ret < 0) {
+    ldout(cct, 0) << "ERROR: http_manager.start() returned ret=" << ret << dendl;
+    return ret;
+  }
   string resource = obj.bucket.name + "/" + obj.get_object();
   string new_url = url;
   if (new_url[new_url.size() - 1] != '/')
@@ -468,7 +473,7 @@ int RGWRESTStreamWriteRequest::put_obj_init(RGWAccessKey& key, rgw_obj& obj, uin
     }
   }
   RGWAccessControlPolicy policy;
-  int ret = rgw_policy_from_attrset(cct, attrs, &policy);
+  ret = rgw_policy_from_attrset(cct, attrs, &policy);
   if (ret < 0) {
     ldout(cct, 0) << "ERROR: couldn't get policy ret=" << ret << dendl;
     return ret;
@@ -498,6 +503,7 @@ int RGWRESTStreamWriteRequest::put_obj_init(RGWAccessKey& key, rgw_obj& obj, uin
 
   cb = new RGWRESTStreamOutCB(this);
 
+  send_size = obj_size;
   set_send_length(obj_size);
 
   int r = http_manager.add_request(this, new_info.method, new_url.c_str());
@@ -513,9 +519,17 @@ int RGWRESTStreamWriteRequest::send_data(void *ptr, size_t len)
 
   dout(20) << "RGWRESTStreamWriteRequest::send_data()" << dendl;
   lock.Lock();
-  if (pending_send.empty() || status < 0) {
+  if (status < 0) {
     lock.Unlock();
     return status;
+  }
+  if (pending_send.empty()) {
+    if (total_sent < send_size) {
+      lock.Unlock();
+      return -EAGAIN; /* pause send until we have more data */
+    }
+    lock.Unlock();
+    return 0;
   }
 
   list<bufferlist>::iterator iter = pending_send.begin();
@@ -548,6 +562,8 @@ int RGWRESTStreamWriteRequest::send_data(void *ptr, size_t len)
     iter = next_iter;
   }
   lock.Unlock();
+
+  total_sent += sent;
 
   return sent;
 }
@@ -596,9 +612,7 @@ static int parse_rgwx_mtime(CephContext *cct, const string& s, ceph::real_time *
 
 int RGWRESTStreamWriteRequest::complete(string& etag, real_time *mtime)
 {
-  int ret = http_manager.complete_requests();
-  if (ret < 0)
-    return ret;
+  http_manager.stop();
 
   set_str_from_headers(out_headers, "ETAG", etag);
 
@@ -606,7 +620,7 @@ int RGWRESTStreamWriteRequest::complete(string& etag, real_time *mtime)
     string mtime_str;
     set_str_from_headers(out_headers, "RGWX_MTIME", mtime_str);
 
-    ret = parse_rgwx_mtime(cct, mtime_str, mtime);
+    int ret = parse_rgwx_mtime(cct, mtime_str, mtime);
     if (ret < 0) {
       return ret;
     }
@@ -684,6 +698,12 @@ int RGWRESTStreamRWRequest::get_resource(RGWAccessKey& key, map<string, string>&
   RGWHTTPManager *pmanager = &http_manager;
   if (mgr) {
     pmanager = mgr;
+  } else {
+    int ret = http_manager.start();
+    if (ret < 0) {
+      ldout(cct, 0) << "ERROR: http_manager.start() returned ret=" << ret << dendl;
+      return ret;
+    }
   }
 
   int r = pmanager->add_request(this, new_info.method, new_url.c_str());
@@ -691,9 +711,7 @@ int RGWRESTStreamRWRequest::get_resource(RGWAccessKey& key, map<string, string>&
     return r;
 
   if (!mgr) {
-    r = pmanager->complete_requests();
-    if (r < 0)
-      return r;
+    http_manager.stop();
   }
 
   return 0;
