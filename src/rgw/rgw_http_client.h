@@ -9,11 +9,13 @@
 #include "include/atomic.h"
 #include "rgw_common.h"
 #include "rgw_string.h"
+#include "rgw_async_completion.h"
 
 using param_pair_t = pair<string, string>;
 using param_vec_t = vector<param_pair_t>;
 
 struct rgw_http_req_data;
+struct rgw_async_completion;
 
 class RGWHTTPClient
 {
@@ -27,7 +29,7 @@ class RGWHTTPClient
 
   rgw_http_req_data *req_data;
 
-  void *user_info;
+  rgw_async_completion completion_info;
 
   string last_method;
   string last_url;
@@ -91,17 +93,16 @@ public:
       has_send_len(false),
       http_status(HTTP_STATUS_NOSTATUS),
       req_data(nullptr),
-      user_info(nullptr),
       verify_ssl(true),
       cct(cct) {
   }
 
-  void set_user_info(void *info) {
-    user_info = info;
+  void set_io_completion(const rgw_async_completion& _completion_info) {
+    completion_info = _completion_info;
   }
 
-  void *get_user_info() {
-    return user_info;
+  const rgw_async_completion& get_completion_info() {
+    return completion_info;
   }
 
   void append_header(const string& name, const string& val) {
@@ -212,14 +213,11 @@ protected:
 typedef RGWHTTPTransceiver RGWPostHTTPData;
 
 
-class RGWCompletionManager;
-
 class RGWHTTPManager {
   CephContext *cct;
-  RGWCompletionManager *completion_mgr;
   void *multi_handle;
   atomic_t going_down;
-  atomic_t is_stopped;
+  atomic_t is_stopped{1};
 
   RWLock reqs_lock;
   map<uint64_t, rgw_http_req_data *> reqs;
@@ -260,7 +258,7 @@ class RGWHTTPManager {
   int signal_thread();
 
 public:
-  RGWHTTPManager(CephContext *_cct, RGWCompletionManager *completion_mgr = NULL);
+  RGWHTTPManager(CephContext *_cct);
   ~RGWHTTPManager();
 
   int start();

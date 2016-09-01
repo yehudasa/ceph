@@ -162,11 +162,8 @@ public:
 		      param_vec_t *extra_headers,
 		      RGWHTTPManager *_mgr);
 
-  void set_user_info(void *user_info) {
-    req.set_user_info(user_info);
-  }
-  void *get_user_info() {
-    return req.get_user_info();
+  void set_io_completion(const rgw_async_completion& ci) {
+    req.set_io_completion(ci);
   }
 
   template <class T>
@@ -279,11 +276,8 @@ public:
 		      param_vec_t *extra_headers,
 		      RGWHTTPManager *_mgr);
 
-  void set_user_info(void *user_info) {
-    req.set_user_info(user_info);
-  }
-  void *get_user_info() {
-    return req.get_user_info();
+  void set_io_completion(const rgw_async_completion& ci) {
+    req.set_io_completion(ci);
   }
 
   template <class T>

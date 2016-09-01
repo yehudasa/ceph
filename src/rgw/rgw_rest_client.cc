@@ -438,7 +438,11 @@ int RGWRESTStreamRWRequest::get_resource(RGWAccessKey& key, map<string, string>&
     return r;
 
   if (!mgr) {
+    int ret = wait();
     http_manager.stop();
+    if (ret < 0) {
+      return ret;
+    }
   }
 
   return 0;

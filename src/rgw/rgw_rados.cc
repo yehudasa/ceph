@@ -2737,7 +2737,7 @@ class RGWMetaNotifierManager : public RGWCoroutinesManager {
 
 public:
   RGWMetaNotifierManager(RGWRados *_store) : RGWCoroutinesManager(_store->ctx(), _store->get_cr_registry()), store(_store),
-                                             http_manager(store->ctx(), completion_mgr) {
+                                             http_manager(store->ctx()) {
     http_manager.start();
   }
 
@@ -2764,7 +2764,7 @@ class RGWDataNotifierManager : public RGWCoroutinesManager {
 
 public:
   RGWDataNotifierManager(RGWRados *_store) : RGWCoroutinesManager(_store->ctx(), _store->get_cr_registry()), store(_store),
-                                             http_manager(store->ctx(), completion_mgr) {
+                                             http_manager(store->ctx()) {
     http_manager.start();
   }
 

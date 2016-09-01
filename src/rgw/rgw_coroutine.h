@@ -27,108 +27,6 @@ class RGWCoroutinesStack;
 class RGWCoroutinesManager;
 class RGWAioCompletionNotifier;
 
-class RGWCompletionManager : public RefCountedObject {
-  CephContext *cct;
-  list<void *> complete_reqs;
-  set<RGWAioCompletionNotifier *> cns;
-
-  Mutex lock;
-  Cond cond;
-
-  SafeTimer timer;
-
-  atomic_t going_down;
-
-  map<void *, void *> waiters;
-
-  class WaitContext : public Context {
-    RGWCompletionManager *manager;
-    void *opaque;
-  public:
-    WaitContext(RGWCompletionManager *_cm, void *_opaque) : manager(_cm), opaque(_opaque) {}
-    void finish(int r) {
-      manager->_wakeup(opaque);
-    }
-  };
-
-  friend class WaitContext;
-
-protected:
-  void _wakeup(void *opaque);
-  void _complete(RGWAioCompletionNotifier *cn, void *user_info);
-public:
-  RGWCompletionManager(CephContext *_cct);
-  ~RGWCompletionManager();
-
-  void complete(RGWAioCompletionNotifier *cn, void *user_info);
-  int get_next(void **user_info);
-  bool try_get_next(void **user_info);
-
-  void go_down();
-
-  /*
-   * wait for interval length to complete user_info
-   */
-  void wait_interval(void *opaque, const utime_t& interval, void *user_info);
-  void wakeup(void *opaque);
-
-  void register_completion_notifier(RGWAioCompletionNotifier *cn);
-  void unregister_completion_notifier(RGWAioCompletionNotifier *cn);
-};
-
-/* a single use librados aio completion notifier that hooks into the RGWCompletionManager */
-class RGWAioCompletionNotifier : public RefCountedObject {
-  librados::AioCompletion *c;
-  RGWCompletionManager *completion_mgr;
-  void *user_data;
-  Mutex lock;
-  bool registered;
-
-public:
-  RGWAioCompletionNotifier(RGWCompletionManager *_mgr, void *_user_data);
-  ~RGWAioCompletionNotifier() {
-    c->release();
-    lock.Lock();
-    bool need_unregister = registered;
-    if (registered) {
-      completion_mgr->get();
-    }
-    registered = false;
-    lock.Unlock();
-    if (need_unregister) {
-      completion_mgr->unregister_completion_notifier(this);
-      completion_mgr->put();
-    }
-  }
-
-  librados::AioCompletion *completion() {
-    return c;
-  }
-
-  void unregister() {
-    Mutex::Locker l(lock);
-    if (!registered) {
-      return;
-    }
-    registered = false;
-  }
-
-  void cb() {
-    lock.Lock();
-    if (!registered) {
-      lock.Unlock();
-      put();
-      return;
-    }
-    completion_mgr->get();
-    registered = false;
-    lock.Unlock();
-    completion_mgr->complete(this, user_data);
-    completion_mgr->put();
-    put();
-  }
-};
-
 struct RGWCoroutinesEnv {
   uint64_t run_context;
   RGWCoroutinesManager *manager;
@@ -450,6 +348,7 @@ public:
 
   RGWAioCompletionNotifier *create_completion_notifier();
   RGWCompletionManager *get_completion_mgr();
+  rgw_async_completion get_async_completion() { return rgw_async_completion{get_completion_mgr(), (void *)this}; }
 
   void set_blocked_by(RGWCoroutinesStack *s) {
     blocked_by_stack.insert(s);

@@ -134,7 +134,7 @@ class RGWPeriodPusher::CRThread {
   CRThread(CephContext* cct, RGWPeriod&& period,
            std::map<std::string, RGWRESTConn>&& conns)
     : coroutines(cct, NULL),
-      http(cct, coroutines.get_completion_mgr()),
+      http(cct),
       push_all(new PushAllCR(cct, &http, std::move(period), std::move(conns))),
       thread([this] { coroutines.run(push_all.get()); })
   {

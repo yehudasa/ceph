@@ -33,7 +33,7 @@ public:
     auto op = boost::intrusive_ptr<RGWRESTReadResource>(
         new RGWRESTReadResource(conn, path, params, NULL, http_manager));
 
-    op->set_user_info((void *)stack);
+    op->set_io_completion(stack->get_async_completion());
 
     int ret = op->aio_read();
     if (ret < 0) {
@@ -97,7 +97,7 @@ public:
     auto op = boost::intrusive_ptr<RGWRESTSendResource>(
         new RGWRESTSendResource(conn, method, path, params, NULL, http_manager));
 
-    op->set_user_info((void *)stack);
+    op->set_io_completion(stack->get_async_completion());
 
     JSONFormatter jf;
     encode_json("data", input, &jf);
@@ -194,7 +194,7 @@ public:
     auto op = boost::intrusive_ptr<RGWRESTDeleteResource>(
         new RGWRESTDeleteResource(conn, path, params, nullptr, http_manager));
 
-    op->set_user_info((void *)stack);
+    op->set_io_completion(stack->get_async_completion());
 
     bufferlist bl;
 

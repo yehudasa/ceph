@@ -25,7 +25,7 @@ struct rgw_http_req_data : public RefCountedObject {
   int ret;
   atomic_t done;
   RGWHTTPClient *client;
-  void *user_info;
+  rgw_async_completion completion_info;
   bool registered;
   bool paused; /* data write paused */
   RGWHTTPManager *mgr;
@@ -35,7 +35,8 @@ struct rgw_http_req_data : public RefCountedObject {
   Cond cond;
 
   rgw_http_req_data() : easy_handle(NULL), h(NULL), id(-1), ret(0),
-                        client(nullptr), user_info(nullptr), registered(false),
+                        client(nullptr),
+                        registered(false),
                         paused(false),
                         mgr(NULL), lock("rgw_http_req_data::lock") {
     memset(error_buf, 0, sizeof(error_buf));
@@ -528,8 +529,7 @@ void *RGWHTTPManager::ReqsThread::entry()
 /*
  * RGWHTTPManager has two modes of operation: threaded and non-threaded.
  */
-RGWHTTPManager::RGWHTTPManager(CephContext *_cct, RGWCompletionManager *_cm) : cct(_cct),
-                                                    completion_mgr(_cm),
+RGWHTTPManager::RGWHTTPManager(CephContext *_cct) : cct(_cct),
                                                     reqs_lock("RGWHTTPManager::reqs_lock"), num_reqs(0), max_threaded_req(0),
                                                     reqs_thread(NULL)
 {
@@ -573,8 +573,9 @@ void RGWHTTPManager::_complete_request(rgw_http_req_data *req_data)
     Mutex::Locker l(req_data->lock);
     req_data->mgr = nullptr;
   }
-  if (completion_mgr) {
-    completion_mgr->complete(NULL, req_data->user_info);
+  if (req_data->completion_info.manager) {
+    auto& info = req_data->completion_info;
+    info.manager->complete(NULL, info.handle);
   }
 
   req_data->put();
@@ -704,6 +705,7 @@ void RGWHTTPManager::complete_request(rgw_http_req_data *req_data)
 
 int RGWHTTPManager::add_request(RGWHTTPClient *client, const char *method, const char *url)
 {
+  assert(is_stopped.read() == 0);
   rgw_http_req_data *req_data = new rgw_http_req_data;
 
   int ret = client->init_request(method, url, req_data);
@@ -715,7 +717,7 @@ int RGWHTTPManager::add_request(RGWHTTPClient *client, const char *method, const
 
   req_data->mgr = this;
   req_data->client = client;
-  req_data->user_info = client->get_user_info();
+  req_data->completion_info = client->get_completion_info();
 
   register_request(req_data);
 
@@ -758,6 +760,8 @@ int RGWHTTPManager::start()
 
   reqs_thread = new ReqsThread(this);
   reqs_thread->create("http_manager");
+
+  is_stopped.set(0);
   return 0;
 }
 
@@ -859,10 +863,6 @@ void *RGWHTTPManager::reqs_thread_entry()
 
   reqs.clear();
 
-  if (completion_mgr) {
-    completion_mgr->go_down();
-  }
-  
   return 0;
 }
 

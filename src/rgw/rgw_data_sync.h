@@ -219,7 +219,7 @@ public:
   RGWRemoteDataLog(RGWRados *_store, RGWAsyncRadosProcessor *async_rados)
     : RGWCoroutinesManager(_store->ctx(), _store->get_cr_registry()),
       store(_store), async_rados(async_rados),
-      http_manager(store->ctx(), completion_mgr),
+      http_manager(store->ctx()),
       lock("RGWRemoteDataLog::lock"), data_sync_cr(NULL),
       initialized(false) {}
   int init(const string& _source_zone, RGWRESTConn *_conn, RGWSyncErrorLogger *_error_logger, RGWSyncModuleInstanceRef& module);
@@ -477,7 +477,7 @@ public:
                              const rgw_bucket& bucket) : store(_store),
                                                                                      cr_mgr(_store->ctx(), _store->get_cr_registry()),
                                                                                      async_rados(NULL),
-                                                                                     http_manager(store->ctx(), cr_mgr.get_completion_mgr()),
+                                                                                     http_manager(store->ctx()),
                                                                                      source_zone(_source_zone),
                                                                                      conn(NULL), error_logger(NULL),
                                                                                      bucket(bucket),

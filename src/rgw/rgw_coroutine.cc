@@ -8,7 +8,6 @@
 
 #define dout_subsys ceph_subsys_rgw
 
-
 RGWCompletionManager::RGWCompletionManager(CephContext *_cct) : cct(_cct), lock("RGWCompletionManager::lock"),
                                             timer(cct, lock)
 {
@@ -22,10 +21,10 @@ RGWCompletionManager::~RGWCompletionManager()
   timer.shutdown();
 }
 
-void RGWCompletionManager::complete(RGWAioCompletionNotifier *cn, void *user_info)
+void RGWCompletionManager::complete(RGWAioCompletionNotifier *cn, void *completion_handle)
 {
   Mutex::Locker l(lock);
-  _complete(cn, user_info);
+  _complete(cn, completion_handle);
 }
 
 void RGWCompletionManager::register_completion_notifier(RGWAioCompletionNotifier *cn)
@@ -46,17 +45,17 @@ void RGWCompletionManager::unregister_completion_notifier(RGWAioCompletionNotifi
   }
 }
 
-void RGWCompletionManager::_complete(RGWAioCompletionNotifier *cn, void *user_info)
+void RGWCompletionManager::_complete(RGWAioCompletionNotifier *cn, void *completion_handle)
 {
   if (cn) {
     cns.erase(cn);
     cn->put();
   }
-  complete_reqs.push_back(user_info);
+  complete_reqs.push_back(completion_handle);
   cond.Signal();
 }
 
-int RGWCompletionManager::get_next(void **user_info)
+int RGWCompletionManager::get_next(void **completion_handle)
 {
   Mutex::Locker l(lock);
   while (complete_reqs.empty()) {
@@ -65,18 +64,18 @@ int RGWCompletionManager::get_next(void **user_info)
       return -ECANCELED;
     }
   }
-  *user_info = complete_reqs.front();
+  *completion_handle = complete_reqs.front();
   complete_reqs.pop_front();
   return 0;
 }
 
-bool RGWCompletionManager::try_get_next(void **user_info)
+bool RGWCompletionManager::try_get_next(void **completion_handle)
 {
   Mutex::Locker l(lock);
   if (complete_reqs.empty()) {
     return false;
   }
-  *user_info = complete_reqs.front();
+  *completion_handle = complete_reqs.front();
   complete_reqs.pop_front();
   return true;
 }
@@ -91,11 +90,11 @@ void RGWCompletionManager::go_down()
   cond.Signal();
 }
 
-void RGWCompletionManager::wait_interval(void *opaque, const utime_t& interval, void *user_info)
+void RGWCompletionManager::wait_interval(void *opaque, const utime_t& interval, void *completion_handle)
 {
   Mutex::Locker l(lock);
   assert(waiters.find(opaque) == waiters.end());
-  waiters[opaque] = user_info;
+  waiters[opaque] = completion_handle;
   timer.add_event_after(interval, new WaitContext(this, opaque));
 }
 
