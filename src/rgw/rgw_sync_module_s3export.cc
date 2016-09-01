@@ -24,7 +24,7 @@ class RGWStreamRemoteObjCR : public RGWCoroutine {
     RGWStreamRemoteObjCR_CB(RGWStreamRemoteObjCR *_cr) : cr(_cr) {}
     int handle_data(bufferlist& bl, off_t bl_ofs, off_t bl_len) {
       cr->append_in_data(bl);
-      cr->set_io_blocked(false);
+      // cr->set_sleeping(false);
 dout(0) << __FILE__ << ":" << __LINE__ << ": bl_ofs=" << bl_ofs << " bl_len=" << bl_len << dendl;
       return bl_len;
     }
@@ -48,6 +48,7 @@ public:
   int operate() {
     reenter(this) {
       yield {
+dout(0) << __FILE__ << ":" << __LINE__ << dendl;
         int ret = conn->get_obj(string() /* user_id */, nullptr, obj,
                                 nullptr, nullptr,
                                 0, 0,
@@ -55,21 +56,26 @@ public:
                                 &cb, &stream_req,
                                 http_manager);
         if (ret < 0) {
+dout(0) << __FILE__ << ":" << __LINE__ << dendl;
           return set_cr_error(ret);
         }
-        set_io_blocked(true);
+        // set_sleeping(true);
+dout(0) << __FILE__ << ":" << __LINE__ << dendl;
+        return io_block(0);
       }
-#if 0
+
       yield {
+dout(0) << __FILE__ << ":" << __LINE__ << dendl;
         string etag;
         map<string, string> attrs;
         int ret = conn->complete_request(stream_req, etag, nullptr, nullptr, attrs);
         if (ret < 0) {
+dout(0) << __FILE__ << ":" << __LINE__ << dendl;
           return set_cr_error(ret);
         }
       }
-#endif
 
+dout(0) << __FILE__ << ":" << __LINE__ << dendl;
       return set_cr_done();
     }
 
