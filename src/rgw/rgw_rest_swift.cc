@@ -703,7 +703,7 @@ int RGWPutObj_ObjStore_SWIFT::get_params()
       suffix++;
       if (*suffix) {
 	string suffix_str(suffix);
-	const char *mime = rgw_find_mime_by_ext(suffix_str);
+	const char *mime = rgw_find_mime_by_ext(s->cct, suffix_str);
 	if (mime) {
 	  s->generic_attrs[RGW_ATTR_CONTENT_TYPE] = mime;
 	}

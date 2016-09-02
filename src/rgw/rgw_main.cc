@@ -54,6 +54,8 @@
 #include "rgw_process.h"
 #include "rgw_frontend.h"
 
+#include "rgw_global.h"
+
 #include <map>
 #include <string>
 #include <vector>
@@ -288,9 +290,11 @@ int main(int argc, const char **argv)
   // claim the reference and release it after subsequent destructors have fired
   boost::intrusive_ptr<CephContext> cct(g_ceph_context, false);
 
-  int r = rgw_tools_init(g_ceph_context);
+  string error;
+
+  int r = rgw_init_global_info(g_ceph_context, &error);
   if (r < 0) {
-    derr << "ERROR: unable to initialize rgw tools" << dendl;
+    derr << "ERROR: unable to initialize: " << error << dendl;
     return -r;
   }
 
@@ -480,7 +484,6 @@ int main(int argc, const char **argv)
 
   RGWStoreManager::close_storage(store);
 
-  rgw_tools_cleanup();
   rgw_shutdown_resolver();
   curl_global_cleanup();
 
@@ -489,6 +492,8 @@ int main(int argc, const char **argv)
   dout(1) << "final shutdown" << dendl;
 
   signal_fd_finalize();
+
+  rgw_destroy_global_info(g_ceph_context);
 
   return 0;
 }

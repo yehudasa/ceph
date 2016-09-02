@@ -35,6 +35,7 @@ set(rgw_a_srcs
   rgw_formats.cc
   rgw_frontend.cc
   rgw_gc.cc
+  rgw_global.cc
   rgw_http_client.cc
   rgw_json_enc.cc
   rgw_keystone.cc

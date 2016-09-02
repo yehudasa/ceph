@@ -23,7 +23,7 @@ int rgw_get_system_obj(RGWRados *rgwstore, RGWObjectCtx& obj_ctx, rgw_bucket& bu
                        rgw_cache_entry_info *cache_info = NULL);
 
 int rgw_tools_init(CephContext *cct);
-void rgw_tools_cleanup();
-const char *rgw_find_mime_by_ext(string& ext);
+void rgw_tools_cleanup(CephContext *cct);
+const char *rgw_find_mime_by_ext(CephContext *cct, string& ext);
 
 #endif

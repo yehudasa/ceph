@@ -11,12 +11,11 @@
 #include "rgw_common.h"
 #include "rgw_rados.h"
 #include "rgw_tools.h"
+#include "rgw_global.h"
 
 #define dout_subsys ceph_subsys_rgw
 
 #define READ_CHUNK_LEN (512 * 1024)
-
-static map<string, string> ext_mime_map;
 
 int rgw_put_system_obj(RGWRados *rgwstore, rgw_bucket& bucket, string& oid, const char *data, size_t size, bool exclusive,
                        RGWObjVersionTracker *objv_tracker, real_time set_mtime, map<string, bufferlist> *pattrs)
@@ -78,7 +77,7 @@ int rgw_get_system_obj(RGWRados *rgwstore, RGWObjectCtx& obj_ctx, rgw_bucket& bu
   return 0;
 }
 
-void parse_mime_map_line(const char *start, const char *end)
+static void parse_mime_map_line(CephContext *cct, const char *start, const char *end)
 {
   char line[end - start + 1];
   strncpy(line, start, end - start);
@@ -97,20 +96,20 @@ void parse_mime_map_line(const char *start, const char *end)
   do {
     ext = strsep(&l, DELIMS);
     if (ext && *ext) {
-      ext_mime_map[ext] = mime;
+      rgw_gi(cct)->ext_mime_map[ext] = mime;
     }
   } while (ext);
 }
 
 
-void parse_mime_map(const char *buf)
+static void parse_mime_map(CephContext *cct, const char *buf)
 {
   const char *start = buf, *end = buf;
   while (*end) {
     while (*end && *end != '\n') {
       end++;
     }
-    parse_mime_map_line(start, end);
+    parse_mime_map_line(cct, start, end);
     end++;
     start = end;
   }
@@ -154,7 +153,7 @@ static int ext_mime_map_init(CephContext *cct, const char *ext_map)
   }
   buf[st.st_size] = '\0';
 
-  parse_mime_map(buf);
+  parse_mime_map(cct, buf);
   ret = 0;
 done:
   free(buf);
@@ -162,10 +161,10 @@ done:
   return ret;
 }
 
-const char *rgw_find_mime_by_ext(string& ext)
+const char *rgw_find_mime_by_ext(CephContext *cct, string& ext)
 {
-  map<string, string>::iterator iter = ext_mime_map.find(ext);
-  if (iter == ext_mime_map.end())
+  map<string, string>::iterator iter = rgw_gi(cct)->ext_mime_map.find(ext);
+  if (iter == rgw_gi(cct)->ext_mime_map.end())
     return NULL;
 
   return iter->second.c_str();
@@ -180,7 +179,7 @@ int rgw_tools_init(CephContext *cct)
   return 0;
 }
 
-void rgw_tools_cleanup()
+void rgw_tools_cleanup(CephContext *cct)
 {
-  ext_mime_map.clear();
+  rgw_gi(cct)->ext_mime_map.clear();
 }
