@@ -157,13 +157,13 @@ int RGWRESTConn::get_obj(const rgw_user& uid, req_info *info /* optional */, rgw
     set_header(mod_pg_ver, extra_headers, "HTTP_DEST_PG_VER");
   }
 
-  return (*req)->get_obj(key, extra_headers, obj, mgr);
+  return (*req)->send_request(key, extra_headers, obj, mgr);
 }
 
 int RGWRESTConn::complete_request(RGWRESTStreamRWRequest *req, string& etag, real_time *mtime,
                                   uint64_t *psize, map<string, string>& attrs)
 {
-  int ret = req->complete(etag, mtime, psize, attrs);
+  int ret = req->complete_request(etag, mtime, psize, attrs);
   delete req;
 
   return ret;
@@ -197,15 +197,15 @@ int RGWRESTConn::get_resource(const string& resource,
     headers.insert(extra_headers->begin(), extra_headers->end());
   }
 
-  ret = req.get_resource(key, headers, resource, mgr);
+  ret = req.send_request(key, headers, resource, mgr);
   if (ret < 0) {
-    ldout(cct, 5) << __func__ << ": get_resource() resource=" << resource << " returned ret=" << ret << dendl;
+    ldout(cct, 5) << __func__ << ": send_request() resource=" << resource << " returned ret=" << ret << dendl;
     return ret;
   }
 
   string etag;
   map<string, string> attrs;
-  return req.complete(etag, NULL, NULL, attrs);
+  return req.complete_request(etag, NULL, NULL, attrs);
 }
 
 RGWRESTReadResource::RGWRESTReadResource(RGWRESTConn *_conn,
@@ -244,22 +244,22 @@ void RGWRESTReadResource::init_common(param_vec_t *extra_headers)
 
 int RGWRESTReadResource::read()
 {
-  int ret = req.get_resource(conn->get_key(), headers, resource, mgr);
+  int ret = req.send_request(conn->get_key(), headers, resource, mgr);
   if (ret < 0) {
-    ldout(cct, 5) << __func__ << ": get_resource() resource=" << resource << " returned ret=" << ret << dendl;
+    ldout(cct, 5) << __func__ << ": send_request() resource=" << resource << " returned ret=" << ret << dendl;
     return ret;
   }
 
   string etag;
   map<string, string> attrs;
-  return req.complete(etag, NULL, NULL, attrs);
+  return req.complete_request(etag, NULL, NULL, attrs);
 }
 
 int RGWRESTReadResource::aio_read()
 {
-  int ret = req.get_resource(conn->get_key(), headers, resource, mgr);
+  int ret = req.send_request(conn->get_key(), headers, resource, mgr);
   if (ret < 0) {
-    ldout(cct, 5) << __func__ << ": get_resource() resource=" << resource << " returned ret=" << ret << dendl;
+    ldout(cct, 5) << __func__ << ": send_request() resource=" << resource << " returned ret=" << ret << dendl;
     return ret;
   }
 
@@ -305,23 +305,23 @@ void RGWRESTSendResource::init_common(param_vec_t *extra_headers)
 int RGWRESTSendResource::send(bufferlist& outbl)
 {
   req.set_outbl(outbl);
-  int ret = req.get_resource(conn->get_key(), headers, resource, mgr);
+  int ret = req.send_request(conn->get_key(), headers, resource, mgr);
   if (ret < 0) {
-    ldout(cct, 5) << __func__ << ": get_resource() resource=" << resource << " returned ret=" << ret << dendl;
+    ldout(cct, 5) << __func__ << ": send_request() resource=" << resource << " returned ret=" << ret << dendl;
     return ret;
   }
 
   string etag;
   map<string, string> attrs;
-  return req.complete(etag, NULL, NULL, attrs);
+  return req.complete_request(etag, NULL, NULL, attrs);
 }
 
 int RGWRESTSendResource::aio_send(bufferlist& outbl)
 {
   req.set_outbl(outbl);
-  int ret = req.get_resource(conn->get_key(), headers, resource, mgr);
+  int ret = req.send_request(conn->get_key(), headers, resource, mgr);
   if (ret < 0) {
-    ldout(cct, 5) << __func__ << ": get_resource() resource=" << resource << " returned ret=" << ret << dendl;
+    ldout(cct, 5) << __func__ << ": send_request() resource=" << resource << " returned ret=" << ret << dendl;
     return ret;
   }
 

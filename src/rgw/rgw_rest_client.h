@@ -85,9 +85,9 @@ public:
                 chunk_ofs(0), ofs(0), http_manager(_cct), method(_method), write_ofs(0) {
   }
   virtual ~RGWRESTStreamRWRequest() {}
-  int get_obj(RGWAccessKey& key, map<string, string>& extra_headers, rgw_obj& obj, RGWHTTPManager *mgr = NULL);
-  int get_resource(RGWAccessKey& key, map<string, string>& extra_headers, const string& resource, RGWHTTPManager *mgr = NULL);
-  int complete(string& etag, real_time *mtime, uint64_t *psize, map<string, string>& attrs);
+  int send_request(RGWAccessKey& key, map<string, string>& extra_headers, rgw_obj& obj, RGWHTTPManager *mgr = NULL);
+  int send_request(RGWAccessKey& key, map<string, string>& extra_headers, const string& resource, RGWHTTPManager *mgr = NULL);
+  int complete_request(string& etag, real_time *mtime, uint64_t *psize, map<string, string>& attrs);
 
   void set_outbl(bufferlist& _outbl) {
     outbl.swap(_outbl);
