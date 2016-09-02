@@ -468,7 +468,8 @@ CephContext::CephContext(uint32_t module_type_, int init_flags_)
     _plugin_registry(NULL),
     _lockdep_obs(NULL),
     crush_location(this),
-    _cct_perf(NULL)
+    _cct_perf(NULL),
+    priv(nullptr)
 {
   ceph_spin_init(&_service_thread_lock);
   ceph_spin_init(&_associated_objs_lock);

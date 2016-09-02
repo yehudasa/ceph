@@ -262,6 +262,9 @@ private:
   ceph_spinlock_t _cct_perf_lock;
 
   friend class CephContextObs;
+
+public:
+  void *priv;
 };
 
 #endif
