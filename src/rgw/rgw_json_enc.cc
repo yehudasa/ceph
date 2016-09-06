@@ -88,7 +88,6 @@ void RGWObjManifest::dump(Formatter *f) const
   ::encode_json("tail_bucket", tail_bucket, f);
   ::encode_json("rules", rules, f);
   ::encode_json("src_instance", src_instance, f);
-  ::encode_json("copied_obj", copied_obj, f);
 }
 
 void rgw_log_entry::dump(Formatter *f) const

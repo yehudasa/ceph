@@ -191,7 +191,7 @@ void RGWObjManifest::get_implicit_location(uint64_t cur_part_id, uint64_t cur_st
   
   // this object is copied from a versioned object. we must overwrite instance
   // to get the right shadow object location
-  if (copied_obj) {
+  if (copied_object()) {
     location->set_instance(src_instance);
   }
 }
