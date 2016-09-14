@@ -1,5 +1,4 @@
 // -*- mode:C++; tab-width:8; c-basic-offset:2; indent-tabs-mode:t -*-
-// vim: ts=8 sw=2 smarttab
 
 #include <errno.h>
 #include <limits.h>
@@ -22,6 +21,8 @@
 
 #include "rgw_client_io.h"
 #include "rgw_resolve.h"
+
+#include "rgw_global.h"
 
 #include <numeric>
 
@@ -1768,7 +1769,7 @@ int RGWREST::preprocess(struct req_state *s, RGWClientIO* cio)
 	&& !in_hosted_domain_s3website) {
       string cname;
       bool found;
-      int r = rgw_resolver->resolve_cname(info.host, cname, &found);
+      int r = rgw_gi(s->cct)->rgw_resolver->resolve_cname(info.host, cname, &found);
       if (r < 0) {
 	ldout(s->cct, 0)
 	  << "WARNING: rgw_resolver->resolve_cname() returned r=" << r

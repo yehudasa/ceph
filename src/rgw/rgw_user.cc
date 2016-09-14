@@ -1,4 +1,3 @@
-// -*- mode:C++; tab-width:8; c-basic-offset:2; indent-tabs-mode:t -*-
 // vim: ts=8 sw=2 smarttab
 
 #include <errno.h>
@@ -23,12 +22,13 @@
 
 #include "rgw_bucket.h"
 
+#include "rgw_global.h"
+
 #define dout_subsys ceph_subsys_rgw
 
 using namespace std;
 
 
-static RGWMetadataHandler *user_meta_handler = NULL;
 
 
 /**
@@ -155,7 +155,7 @@ int rgw_store_user_info(RGWRados *store,
   string key;
   info.user_id.to_str(key);
 
-  ret = store->meta_mgr->put_entry(user_meta_handler, key, data_bl, exclusive, &ot, mtime, pattrs);
+  ret = store->meta_mgr->put_entry(rgw_gi(store->ctx())->user_meta_handler, key, data_bl, exclusive, &ot, mtime, pattrs);
   if (ret < 0)
     return ret;
 
@@ -366,7 +366,7 @@ int rgw_remove_uid_index(RGWRados *store, rgw_user& uid)
     return ret;
 
   string oid = uid.to_str();
-  ret = store->meta_mgr->remove_entry(user_meta_handler, oid, &objv_tracker);
+  ret = store->meta_mgr->remove_entry(rgw_gi(store->ctx())->user_meta_handler, oid, &objv_tracker);
   if (ret < 0)
     return ret;
 
@@ -468,7 +468,7 @@ int rgw_delete_user(RGWRados *store, RGWUserInfo& info, RGWObjVersionTracker& ob
   
   rgw_obj uid_obj(store->get_zone_params().user_uid_pool, key);
   ldout(store->ctx(), 10) << "removing user index: " << info.user_id << dendl;
-  ret = store->meta_mgr->remove_entry(user_meta_handler, key, &objv_tracker);
+  ret = store->meta_mgr->remove_entry(rgw_gi(store->ctx())->user_meta_handler, key, &objv_tracker);
   if (ret < 0 && ret != -ENOENT && ret  != -ECANCELED) {
     ldout(store->ctx(), 0) << "ERROR: could not remove " << info.user_id << ":" << uid_obj << ", should be fixed (err=" << ret << ")" << dendl;
     return ret;
@@ -2748,6 +2748,8 @@ void rgw_user_init(RGWRados *store)
 {
   uinfo_cache.init(store);
 
-  user_meta_handler = new RGWUserMetadataHandler;
-  store->meta_mgr->register_handler(user_meta_handler);
+  RGWUserMetadataHandler *handler = new RGWUserMetadataHandler;
+
+  rgw_gi(store->ctx())->user_meta_handler = handler;
+  store->meta_mgr->register_handler(handler);
 }

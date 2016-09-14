@@ -1,6 +1,7 @@
 #include "rgw_global.h"
 
 #include "rgw_tools.h"
+#include "rgw_resolve.h"
 
 int rgw_init_global_info(CephContext *cct, string *error)
 {
@@ -12,6 +13,8 @@ int rgw_init_global_info(CephContext *cct, string *error)
     return -r;
   }
 
+  rgw_init_resolver(cct);
+
   return 0;
 
 }
@@ -19,6 +22,7 @@ int rgw_init_global_info(CephContext *cct, string *error)
 void rgw_destroy_global_info(CephContext *cct)
 {
   rgw_tools_cleanup(cct);
+  rgw_shutdown_resolver(cct);
   delete (rgw_global_info *)cct->priv;
 }
 

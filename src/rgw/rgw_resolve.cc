@@ -16,6 +16,8 @@
 #include "rgw_resolve.h"
 #include "common/dns_resolve.h"
 
+#include "rgw_global.h"
+
 #define dout_subsys ceph_subsys_rgw
 
 
@@ -30,15 +32,14 @@ int RGWResolver::resolve_cname(const string& hostname, string& cname, bool *foun
   return resolver->resolve_cname(g_ceph_context, hostname, &cname, found);
 }
 
-RGWResolver *rgw_resolver;
 
 
-void rgw_init_resolver()
+void rgw_init_resolver(CephContext *cct)
 {
-  rgw_resolver = new RGWResolver();
+  rgw_gi(cct)->rgw_resolver = new RGWResolver();
 }
 
-void rgw_shutdown_resolver()
+void rgw_shutdown_resolver(CephContext *cct)
 {
-  delete rgw_resolver;
+  delete rgw_gi(cct)->rgw_resolver;
 }

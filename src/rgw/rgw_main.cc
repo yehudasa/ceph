@@ -298,8 +298,6 @@ int main(int argc, const char **argv)
     return -r;
   }
 
-  rgw_init_resolver();
-  
   curl_global_init(CURL_GLOBAL_ALL);
   
   FCGX_Init();
@@ -330,7 +328,7 @@ int main(int argc, const char **argv)
   mutex.Unlock();
 
   rgw_user_init(store);
-  rgw_bucket_init(store->meta_mgr);
+  rgw_bucket_init(g_ceph_context, store->meta_mgr);
   rgw_log_usage_init(g_ceph_context, store);
 
   RGWREST rest;
@@ -484,7 +482,6 @@ int main(int argc, const char **argv)
 
   RGWStoreManager::close_storage(store);
 
-  rgw_shutdown_resolver();
   curl_global_cleanup();
 
   rgw_perf_stop(g_ceph_context);

@@ -20,8 +20,7 @@ public:
 };
 
 
-extern void rgw_init_resolver(void);
-extern void rgw_shutdown_resolver(void);
-extern RGWResolver *rgw_resolver;
+extern void rgw_init_resolver(CephContext *cct);
+extern void rgw_shutdown_resolver(CephContext *cct);
 
 #endif

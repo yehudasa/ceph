@@ -152,7 +152,7 @@ void RGWRealmReloader::reload()
   ldout(cct, 1) << " - user subsystem init" << dendl;
   rgw_user_init(store);
   ldout(cct, 1) << " - user subsystem init" << dendl;
-  rgw_bucket_init(store->meta_mgr);
+  rgw_bucket_init(cct, store->meta_mgr);
   ldout(cct, 1) << " - usage subsystem init" << dendl;
   rgw_log_usage_init(cct, store);
 

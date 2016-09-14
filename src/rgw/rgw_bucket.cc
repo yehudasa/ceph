@@ -23,6 +23,8 @@
 // until everything is moved from rgw_common
 #include "rgw_common.h"
 
+#include "rgw_global.h"
+
 #include "cls/user/cls_user_types.h"
 
 #define dout_subsys ceph_subsys_rgw
@@ -30,9 +32,6 @@
 #define BUCKET_TAG_TIMEOUT 30
 
 using namespace std;
-
-static RGWMetadataHandler *bucket_meta_handler = NULL;
-static RGWMetadataHandler *bucket_instance_meta_handler = NULL;
 
 // define as static when RGWBucket implementation compete
 void rgw_get_buckets_obj(const rgw_user& user_id, string& buckets_obj_id)
@@ -282,17 +281,17 @@ int rgw_unlink_bucket(RGWRados *store, const rgw_user& user_id, const string& te
 int rgw_bucket_store_info(RGWRados *store, const string& bucket_name, bufferlist& bl, bool exclusive,
                           map<string, bufferlist> *pattrs, RGWObjVersionTracker *objv_tracker,
                           real_time mtime) {
-  return store->meta_mgr->put_entry(bucket_meta_handler, bucket_name, bl, exclusive, objv_tracker, mtime, pattrs);
+  return store->meta_mgr->put_entry(rgw_gi(store->ctx())->bucket_meta_handler, bucket_name, bl, exclusive, objv_tracker, mtime, pattrs);
 }
 
 int rgw_bucket_instance_store_info(RGWRados *store, string& entry, bufferlist& bl, bool exclusive,
                           map<string, bufferlist> *pattrs, RGWObjVersionTracker *objv_tracker,
                           real_time mtime) {
-  return store->meta_mgr->put_entry(bucket_instance_meta_handler, entry, bl, exclusive, objv_tracker, mtime, pattrs);
+  return store->meta_mgr->put_entry(rgw_gi(store->ctx())->bucket_instance_meta_handler, entry, bl, exclusive, objv_tracker, mtime, pattrs);
 }
 
 int rgw_bucket_instance_remove_entry(RGWRados *store, string& entry, RGWObjVersionTracker *objv_tracker) {
-  return store->meta_mgr->remove_entry(bucket_instance_meta_handler, entry, objv_tracker);
+  return store->meta_mgr->remove_entry(rgw_gi(store->ctx())->bucket_instance_meta_handler, entry, objv_tracker);
 }
 
 // 'tenant/' is used in bucket instance keys for sync to avoid parsing ambiguity
@@ -759,7 +758,7 @@ int rgw_bucket_delete_bucket_obj(RGWRados *store,
   string key;
 
   rgw_make_bucket_entry_name(tenant_name, bucket_name, key);
-  return store->meta_mgr->remove_entry(bucket_meta_handler, key, &objv_tracker);
+  return store->meta_mgr->remove_entry(rgw_gi(store->ctx())->bucket_meta_handler, key, &objv_tracker);
 }
 
 static void set_err_msg(std::string *sink, std::string msg)
@@ -2261,10 +2260,10 @@ public:
   }
 };
 
-void rgw_bucket_init(RGWMetadataManager *mm)
+void rgw_bucket_init(CephContext *cct, RGWMetadataManager *mm)
 {
-  bucket_meta_handler = new RGWBucketMetadataHandler;
-  mm->register_handler(bucket_meta_handler);
-  bucket_instance_meta_handler = new RGWBucketInstanceMetadataHandler;
-  mm->register_handler(bucket_instance_meta_handler);
+  rgw_gi(cct)->bucket_meta_handler = new RGWBucketMetadataHandler;
+  mm->register_handler(rgw_gi(cct)->bucket_meta_handler);
+  rgw_gi(cct)->bucket_instance_meta_handler = new RGWBucketInstanceMetadataHandler;
+  mm->register_handler(rgw_gi(cct)->bucket_instance_meta_handler);
 }
