@@ -317,7 +317,7 @@ public:
   virtual int put(RGWRados *store, string& entry, RGWObjVersionTracker& objv_tracker,
                   real_time mtime, JSONObj *obj, sync_type_t sync_type) { return -ENOTSUP; }
 
-  virtual void get_pool_and_oid(RGWRados *store, const string& key, rgw_bucket& bucket, string& oid) {}
+  virtual void get_pool_and_oid(RGWRados *store, const string& key, rgw_pool& pool, string& oid) {}
 
   virtual int remove(RGWRados *store, string& entry, RGWObjVersionTracker& objv_tracker) { return -ENOTSUP; }
 
@@ -714,7 +714,7 @@ int RGWMetadataManager::lock_exclusive(string& metadata_key, timespan duration, 
   if (ret < 0) 
     return ret;
 
-  rgw_bucket pool;
+  rgw_pool pool;
   string oid;
 
   handler->get_pool_and_oid(store, entry, pool, oid);
@@ -732,7 +732,7 @@ int RGWMetadataManager::unlock(string& metadata_key, string& owner_id) {
   if (ret < 0) 
     return ret;
 
-  rgw_bucket pool;
+  rgw_pool pool;
   string oid;
 
   handler->get_pool_and_oid(store, entry, pool, oid);
@@ -886,7 +886,7 @@ int RGWMetadataManager::store_in_heap(RGWMetadataHandler *handler, const string&
     return -EINVAL;
   }
 
-  rgw_bucket heap_pool(store->get_zone_params().metadata_heap);
+  rgw_pool heap_pool(store->get_zone_params().metadata_heap);
 
   if (heap_pool.name.empty()) {
     return 0;
@@ -912,14 +912,14 @@ int RGWMetadataManager::remove_from_heap(RGWMetadataHandler *handler, const stri
     return -EINVAL;
   }
 
-  rgw_bucket heap_pool(store->get_zone_params().metadata_heap);
+  rgw_pool heap_pool(store->get_zone_params().metadata_heap);
 
   if (heap_pool.name.empty()) {
     return 0;
   }
 
   string oid = heap_oid(handler, key, objv_tracker->write_version);
-  rgw_obj obj(heap_pool, oid);
+  rgw_raw_obj obj(heap_pool, oid);
   int ret = store->delete_system_obj(obj);
   if (ret < 0) {
     ldout(store->ctx(), 0) << "ERROR: store->delete_system_obj()=" << oid << ") returned ret=" << ret << dendl;
@@ -939,9 +939,9 @@ int RGWMetadataManager::put_entry(RGWMetadataHandler *handler, const string& key
     return ret;
 
   string oid;
-  rgw_bucket bucket;
+  rgw_pool pool;
 
-  handler->get_pool_and_oid(store, key, bucket, oid);
+  handler->get_pool_and_oid(store, key, pool, oid);
 
   ret = store_in_heap(handler, key, bl, objv_tracker, mtime, pattrs);
   if (ret < 0) {
@@ -949,7 +949,7 @@ int RGWMetadataManager::put_entry(RGWMetadataHandler *handler, const string& key
     goto done;
   }
 
-  ret = rgw_put_system_obj(store, bucket, oid,
+  ret = rgw_put_system_obj(store, pool, oid,
                            bl.c_str(), bl.length(), exclusive,
                            objv_tracker, mtime, pattrs);
 
@@ -978,11 +978,11 @@ int RGWMetadataManager::remove_entry(RGWMetadataHandler *handler, string& key, R
     return ret;
 
   string oid;
-  rgw_bucket bucket;
+  rgw_pool pool;
 
-  handler->get_pool_and_oid(store, key, bucket, oid);
+  handler->get_pool_and_oid(store, key, pool, oid);
 
-  rgw_obj obj(bucket, oid);
+  rgw_raw_obj obj(pool, oid);
 
   ret = store->delete_system_obj(obj, objv_tracker);
   /* cascading ret into post_modify() */
