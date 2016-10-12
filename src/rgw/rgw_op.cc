@@ -1853,7 +1853,6 @@ void RGWGetBucketOplog::execute()
   struct rgw_log_entry entry;
   utime_t  ut_curr, ut_end, ut_marker;
   uint32_t count = 0, index;
-  string oid_marker;
   struct tm bdt;
   time_t tt;
   bool found = false;
