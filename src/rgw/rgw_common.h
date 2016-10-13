@@ -838,7 +838,7 @@ struct rgw_raw_obj {
     oid = _oid;
   }
 
-  bool empty() {
+  bool empty() const {
     return oid.empty();
   }
 
@@ -879,6 +879,10 @@ struct rgw_raw_obj {
       }
     }
     return (r < 0);
+  }
+
+  bool operator==(const rgw_raw_obj& o) const {
+    return (pool == o.pool && oid == o.oid && loc == o.loc);
   }
 
   void dump(Formatter *f) const;
@@ -1686,7 +1690,7 @@ public:
     }
   }
 
-  bool empty() {
+  bool empty() const {
     return object.empty();
   }
 
@@ -1694,7 +1698,7 @@ public:
     return instance == "null";
   }
 
-  bool have_instance() {
+  bool have_instance() const {
     return !instance.empty();
   }
 
@@ -1782,7 +1786,7 @@ public:
     }
   }
 
-  string& get_hash_object() {
+  const string& get_hash_object() const {
     return index_hash_source.empty() ? orig_obj : index_hash_source;
   }
   /**
@@ -1880,6 +1884,14 @@ public:
 
   bool is_in_extra_data() const {
     return in_extra_data;
+  }
+
+  const rgw_pool& get_data_pool() const {
+    if (!in_extra_data) {
+      return bucket.placement.data_pool;
+    } else {
+      return bucket.placement.data_extra_pool;
+    }
   }
 
   void encode(bufferlist& bl) const {
