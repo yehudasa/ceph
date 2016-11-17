@@ -5093,13 +5093,13 @@ int RGWRados::Bucket::List::list_objects(int max, vector<RGWObjEnt> *result,
   rgw_obj marker_obj, end_marker_obj, prefix_obj;
   marker_obj.set_instance(params.marker.instance);
   marker_obj.set_ns(params.ns);
-  marker_obj.set_obj(params.marker.name);
+  marker_obj.set_name(params.marker.name);
   rgw_obj_key cur_marker;
   marker_obj.get_index_key(&cur_marker);
 
   end_marker_obj.set_instance(params.end_marker.instance);
   end_marker_obj.set_ns(params.ns);
-  end_marker_obj.set_obj(params.end_marker.name);
+  end_marker_obj.set_name(params.end_marker.name);
   rgw_obj_key cur_end_marker;
   if (params.ns.empty()) { /* no support for end marker for namespaced objects */
     end_marker_obj.get_index_key(&cur_end_marker);
@@ -5107,7 +5107,7 @@ int RGWRados::Bucket::List::list_objects(int max, vector<RGWObjEnt> *result,
   const bool cur_end_marker_valid = !cur_end_marker.empty();
 
   prefix_obj.set_ns(params.ns);
-  prefix_obj.set_obj(params.prefix);
+  prefix_obj.set_name(params.prefix);
   string cur_prefix = prefix_obj.get_index_key_name();
 
   string bigger_than_delim;
@@ -5961,7 +5961,7 @@ int RGWRados::fix_tail_obj_locator(rgw_bucket& bucket, rgw_obj_key& key, bool fi
       }
 
       string bad_loc;
-      prepend_bucket_marker(bucket, loc.get_orig_obj(), bad_loc);
+      prepend_bucket_marker(bucket, loc.get_name(), bad_loc);
 
       /* create a new ioctx with the bad locator */
       librados::IoCtx src_ioctx;
@@ -6105,7 +6105,7 @@ int RGWRados::swift_versioning_copy(RGWObjectCtx& obj_ctx,
   string client_id;
   string op_id;
 
-  const string& src_name = obj.get_object();
+  const string& src_name = obj.get_oid();
   char buf[src_name.size() + 32];
   struct timespec ts = ceph::real_clock::to_timespec(state->mtime);
   snprintf(buf, sizeof(buf), "%03x%s/%lld.%06ld", (int)src_name.size(),
@@ -6264,7 +6264,7 @@ int RGWRados::swift_versioning_restore(RGWObjectCtx& obj_ctx,
     return ret;
   };
 
-  const std::string& obj_name = obj.get_object();
+  const std::string& obj_name = obj.get_oid();
   const auto prefix = boost::str(boost::format("%03x%s") % obj_name.size()
                                                          % obj_name);
 
@@ -6300,7 +6300,7 @@ int RGWRados::Object::Write::write_meta(uint64_t size, uint64_t accounted_size,
 
   rgw_obj& obj = target->get_obj();
 
-  if (obj.get_object().empty()) {
+  if (obj.get_oid().empty()) {
     ldout(store->ctx(), 0) << "ERROR: " << __func__ << "(): cannot write object with empty name" << dendl;
     return -EIO;
   }
@@ -7054,7 +7054,7 @@ int RGWRados::fetch_remote_obj(RGWObjectCtx& obj_ctx,
   set_mtime_weight.high_precision = high_precision_time;
 
   RGWPutObjProcessor_Atomic processor(obj_ctx,
-                                      dest_bucket_info, dest_obj.bucket, dest_obj.get_orig_obj(),
+                                      dest_bucket_info, dest_obj.bucket, dest_obj.get_name(),
                                       cct->_conf->rgw_obj_stripe_size, tag, dest_bucket_info.versioning_enabled());
   const string& instance = dest_obj.get_instance();
   if (instance != "null") {
@@ -7088,7 +7088,7 @@ int RGWRados::fetch_remote_obj(RGWObjectCtx& obj_ctx,
     conn = iter->second;
   }
 
-  string obj_name = dest_obj.bucket.name + "/" + dest_obj.get_object();
+  string obj_name = dest_obj.bucket.name + "/" + dest_obj.get_oid();
 
   RGWOpStateSingleOp *opstate = NULL;
 
@@ -7372,7 +7372,7 @@ int RGWRados::copy_obj(RGWObjectCtx& obj_ctx,
   bool remote_src;
   bool remote_dest;
 
-  append_rand_alpha(cct, dest_obj.get_object(), shadow_oid, 32);
+  append_rand_alpha(cct, dest_obj.get_oid(), shadow_oid, 32);
   shadow_obj.init_ns(dest_obj.bucket, shadow_oid, shadow_ns);
 
   remote_dest = !get_zonegroup().equals(dest_bucket_info.zonegroup);
@@ -7383,7 +7383,7 @@ int RGWRados::copy_obj(RGWObjectCtx& obj_ctx,
     return -EINVAL;
   }
 
-  ldout(cct, 5) << "Copy object " << src_obj.bucket << ":" << src_obj.get_object() << " => " << dest_obj.bucket << ":" << dest_obj.get_object() << dendl;
+  ldout(cct, 5) << "Copy object " << src_obj.bucket << ":" << src_obj.get_oid() << " => " << dest_obj.bucket << ":" << dest_obj.get_oid() << dendl;
 
   if (remote_src || !source_zone.empty()) {
     return fetch_remote_obj(obj_ctx, user_id, client_id, op_id, true, info, source_zone,
@@ -7631,7 +7631,7 @@ int RGWRados::copy_obj_data(RGWObjectCtx& obj_ctx,
   append_rand_alpha(cct, tag, tag, 32);
 
   RGWPutObjProcessor_Atomic processor(obj_ctx,
-                                      dest_bucket_info, dest_obj.bucket, dest_obj.get_object(),
+                                      dest_bucket_info, dest_obj.bucket, dest_obj.get_oid(),
                                       cct->_conf->rgw_obj_stripe_size, tag, dest_bucket_info.versioning_enabled());
   if (version_id) {
     processor.set_version_id(*version_id);
@@ -7765,7 +7765,9 @@ int RGWRados::delete_bucket(RGWBucketInfo& bucket_info, RGWObjVersionTracker& ob
     for (eiter = ent_map.begin(); eiter != ent_map.end(); ++eiter) {
       obj = eiter->second.key;
 
-      if (rgw_obj::translate_raw_obj_to_obj_in_ns(obj.name, instance, ns))
+      /* obj.name actually contains index key that is formatted similar to oid */
+
+      if (rgw_obj::translate_oid_to_obj_in_ns(obj.name, obj.name, instance, ns))
         return -ENOTEMPTY;
     }
   } while (is_truncated);
@@ -12112,20 +12114,26 @@ int RGWRados::check_disk_state(librados::IoCtx io_ctx,
   uint8_t suggest_flag = (get_zone().log_data ? CEPH_RGW_DIR_SUGGEST_LOG_OP : 0);
 
   rgw_obj obj;
-  std::string oid, instance, loc, ns;
+  std::string name, instance, loc, ns;
   rgw_obj_key key;
   key.set(list_state.key);
-  oid = key.name;
-  if (!rgw_obj::strip_namespace_from_object(oid, ns, instance)) {
+  name = key.name;
+  if (!rgw_obj::strip_namespace_from_name(name, ns, instance)) {
     // well crap
     assert(0 == "got bad object name off disk");
   }
-  obj.init(bucket, oid);
-  obj.set_loc(list_state.locator);
+  obj.init(bucket, name);
   obj.set_ns(ns);
   obj.set_instance(key.instance);
+
+  string oid;
   get_obj_bucket_and_oid_loc(obj, oid, loc);
-  io_ctx.locator_set_key(loc);
+
+  if (loc != list_state.locator) {
+    ldout(cct, 0) << "WARNING: generated locator (" << loc << ") is different from listed locator (" << list_state.locator << ")" << dendl;
+  }
+
+  io_ctx.locator_set_key(list_state.locator);
 
   RGWObjState *astate = NULL;
   RGWObjectCtx rctx(this);
