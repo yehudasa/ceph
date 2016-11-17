@@ -186,7 +186,7 @@ int RGWLC::bucket_lc_process(string& shard_id)
   bool is_truncated;
   bool default_config = false;
   int default_days = 0;
-  vector<RGWObjEnt> objs;
+  vector<rgw_bucket_dir_entry> objs;
   RGWObjectCtx obj_ctx(store);
   vector<std::string> result;
   result = split(shard_id, ':');
@@ -242,7 +242,7 @@ int RGWLC::bucket_lc_process(string& shard_id)
         return ret;
       }
 
-      vector<RGWObjEnt>::iterator obj_iter;
+      vector<rgw_bucket_dir_entry>::iterator obj_iter;
       int pos = 0;
       utime_t now = ceph_clock_now(cct);
       for (obj_iter = objs.begin(); obj_iter != objs.end(); obj_iter++) {
@@ -270,21 +270,27 @@ int RGWLC::bucket_lc_process(string& shard_id)
         } else {
           continue;
         }
-        if (obj_has_expired(now - ceph::real_clock::to_time_t((*obj_iter).mtime), days)) {
+        rgw_obj_key key(obj_iter->key);
+
+        if (!key.ns.empty()) {
+          continue;
+        }
+
+        if (obj_has_expired(now - ceph::real_clock::to_time_t((*obj_iter).meta.mtime), days)) {
           RGWObjectCtx rctx(store);
-          rgw_obj obj(bucket_info.bucket, (*obj_iter).key.name);
+          rgw_obj obj(bucket_info.bucket, key);
           RGWObjState *state;
           int ret = store->get_obj_state(&rctx, obj, &state, false);
           if (ret < 0) {
             return ret;
           }
-          if (state->mtime != (*obj_iter).mtime) //Check mtime again to avoid delete a recently update object as much as possible
+          if (state->mtime != (*obj_iter).meta.mtime) //Check mtime again to avoid delete a recently update object as much as possible
             continue;
-          ret = rgw_remove_object(store, bucket_info, bucket_info.bucket, (*obj_iter).key);
+          ret = rgw_remove_object(store, bucket_info, bucket_info.bucket, key);
           if (ret < 0) {
             ldout(cct, 0) << "ERROR: rgw_remove_object " << dendl;
           } else {
-            ldout(cct, 10) << "DELETED:" << bucket_name << ":" << (*obj_iter).key.name <<dendl;
+            ldout(cct, 10) << "DELETED:" << bucket_name << ":" << key <<dendl;
           }
         }
       }
@@ -309,26 +315,32 @@ int RGWLC::bucket_lc_process(string& shard_id)
           return ret;
         }
 
-        vector<RGWObjEnt>::iterator obj_iter;
+        vector<rgw_bucket_dir_entry>::iterator obj_iter;
         int days = prefix_iter->second;
         utime_t now = ceph_clock_now(cct);
 
         for (obj_iter = objs.begin(); obj_iter != objs.end(); obj_iter++) {
-          if (obj_has_expired(now - ceph::real_clock::to_time_t((*obj_iter).mtime), days)) {
+          if (obj_has_expired(now - ceph::real_clock::to_time_t((*obj_iter).meta.mtime), days)) {
+            rgw_obj_key key(obj_iter->key);
+
+            if (!key.ns.empty()) {
+              continue;
+            }
+
             RGWObjectCtx rctx(store);
-            rgw_obj obj(bucket_info.bucket, (*obj_iter).key.name);
+            rgw_obj obj(bucket_info.bucket, key);
             RGWObjState *state;
             int ret = store->get_obj_state(&rctx, obj, &state, false);
             if (ret < 0) {
               return ret;
             }
-            if (state->mtime != (*obj_iter).mtime)//Check mtime again to avoid delete a recently update object as much as possible
+            if (state->mtime != (*obj_iter).meta.mtime)//Check mtime again to avoid delete a recently update object as much as possible
               continue;
-            ret = rgw_remove_object(store, bucket_info, bucket_info.bucket, (*obj_iter).key);
+            ret = rgw_remove_object(store, bucket_info, bucket_info.bucket, key);
             if (ret < 0) {
               ldout(cct, 0) << "ERROR: rgw_remove_object " << dendl;
             } else {
-              ldout(cct, 10) << "DELETED:" << bucket_name << ":" << (*obj_iter).key.name << dendl;
+              ldout(cct, 10) << "DELETED:" << bucket_name << ":" << key << dendl;
             }
           }
         }
