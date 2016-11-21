@@ -760,6 +760,7 @@ void rgw_obj_key::dump(Formatter *f) const
 {
   encode_json("name", name, f);
   encode_json("instance", instance, f);
+  encode_json("ns", ns, f);
 }
 
 void RGWBucketEnt::dump(Formatter *f) const
@@ -797,9 +798,8 @@ void rgw_raw_obj::decode_json(JSONObj *obj) {
 void rgw_obj::dump(Formatter *f) const
 {
   encode_json("bucket", bucket, f);
-  encode_json("ns", ns, f);
-  encode_json("name", name, f);
-  encode_json("instance", instance, f);
+  encode_json("key", key, f);
+  encode_json("placement_id", placement_id, f);
 }
 
 void RGWDefaultSystemMetaObjInfo::dump(Formatter *f) const {
