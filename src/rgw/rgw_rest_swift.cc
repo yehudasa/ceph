@@ -1804,7 +1804,7 @@ bool RGWSwiftWebsiteHandler::is_web_dir() const
   obj_ctx.obj.set_prefetch_data(obj);
 
   RGWObjState* state = nullptr;
-  if (store->get_obj_state(&obj_ctx, obj, &state, false) < 0) {
+  if (store->get_obj_state(&obj_ctx, s->bucket_info, obj, &state, false) < 0) {
     return false;
   }
 
@@ -1834,7 +1834,7 @@ bool RGWSwiftWebsiteHandler::is_index_present(const std::string& index)
   obj_ctx.obj.set_prefetch_data(obj);
 
   RGWObjState* state = nullptr;
-  if (store->get_obj_state(&obj_ctx, obj, &state, false) < 0) {
+  if (store->get_obj_state(&obj_ctx, s->bucket_info, obj, &state, false) < 0) {
     return false;
   }
 

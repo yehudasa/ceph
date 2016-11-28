@@ -1271,7 +1271,7 @@ int RGWGetObj::get_data_cb(bufferlist& bl, off_t bl_ofs, off_t bl_len)
   /* garbage collection related handling */
   utime_t start_time = ceph_clock_now(s->cct);
   if (start_time > gc_invalidate_time) {
-    int r = store->defer_gc(s->obj_ctx, obj);
+    int r = store->defer_gc(s->obj_ctx, s->bucket_info, obj);
     if (r < 0) {
       dout(0) << "WARNING: could not defer gc entry for obj" << dendl;
     }
@@ -2631,7 +2631,7 @@ int RGWPutObjProcessor_Multipart::prepare(RGWRados *store, string *oid_rand)
 
   manifest.set_multipart_part_rule(store->ctx()->_conf->rgw_obj_stripe_size, num);
 
-  int r = manifest_gen.create_begin(store->ctx(), &manifest, bucket, target_obj);
+  int r = manifest_gen.create_begin(store->ctx(), &manifest, s->bucket_info.placement_rule, bucket, target_obj);
   if (r < 0) {
     return r;
   }
@@ -2720,7 +2720,7 @@ int RGWPutObjProcessor_Multipart::do_complete(size_t accounted_size,
 
   rgw_raw_obj raw_meta_obj;
 
-  store->obj_to_raw(meta_obj, &raw_meta_obj);
+  store->obj_to_raw(s->bucket_info.placement_rule, meta_obj, &raw_meta_obj);
 
   r = store->omap_set(raw_meta_obj, p, bl);
 
@@ -3607,7 +3607,7 @@ void RGWPutMetadataObject::execute()
     }
   }
 
-  op_ret = store->set_attrs(s->obj_ctx, obj, attrs, &rmattrs);
+  op_ret = store->set_attrs(s->obj_ctx, s->bucket_info, obj, attrs, &rmattrs);
 }
 
 int RGWDeleteObj::handle_slo_manifest(bufferlist& bl)
@@ -4197,7 +4197,7 @@ void RGWPutACLs::execute()
       return;
   
     attrs[RGW_ATTR_ACL] = bl;
-    op_ret = store->set_attrs(s->obj_ctx, obj, attrs, NULL);
+    op_ret = store->set_attrs(s->obj_ctx, s->bucket_info, obj, attrs, NULL);
   } else {
     attrs = s->bucket_attrs;
     attrs[RGW_ATTR_ACL] = bl;
@@ -4658,7 +4658,7 @@ static int list_multipart_parts(RGWRados *store, struct req_state *s,
   obj.set_in_extra_data(true);
 
   rgw_raw_obj raw_obj;
-  store->obj_to_raw(obj, &raw_obj);
+  store->obj_to_raw(s->bucket_info.placement_rule, obj, &raw_obj);
 
   bool sorted_omap = is_v2_upload_id(upload_id) && !assume_unsorted;
 
@@ -5493,7 +5493,7 @@ void RGWSetAttrs::execute()
   store->set_atomic(s->obj_ctx, obj);
 
   if (!s->object.empty()) {
-    op_ret = store->set_attrs(s->obj_ctx, obj, attrs, nullptr);
+    op_ret = store->set_attrs(s->obj_ctx, s->bucket_info, obj, attrs, nullptr);
   } else {
     for (auto& iter : attrs) {
       s->bucket_attrs[iter.first] = std::move(iter.second);

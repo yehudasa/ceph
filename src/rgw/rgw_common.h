@@ -1810,7 +1810,6 @@ WRITE_CLASS_ENCODER(RGWBucketEnt)
 struct rgw_obj {
   rgw_bucket bucket;
   rgw_obj_key key;
-  std::string placement_id;
 
   bool in_extra_data{false}; /* in-memory only member, does not serialize */
 
@@ -1867,7 +1866,7 @@ struct rgw_obj {
     ::encode(key.ns, bl);
     ::encode(key.name, bl);
     ::encode(key.instance, bl);
-    ::encode(placement_id, bl);
+//    ::encode(placement_id, bl);
     ENCODE_FINISH(bl);
   }
   void decode(bufferlist::iterator& bl) {
@@ -1902,7 +1901,7 @@ struct rgw_obj {
       ::decode(key.ns, bl);
       ::decode(key.name, bl);
       ::decode(key.instance, bl);
-      ::decode(placement_id, bl);
+//      ::decode(placement_id, bl);
     }
     DECODE_FINISH(bl);
   }
