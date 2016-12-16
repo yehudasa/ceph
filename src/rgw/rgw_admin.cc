@@ -2255,6 +2255,7 @@ int main(int argc, char **argv)
   string tenant;
   std::string access_key, secret_key, user_email, display_name;
   std::string bucket_name, pool_name, object;
+  rgw_pool pool;
   std::string date, subuser, access, format;
   std::string start_date, end_date;
   std::string key_type_str;
@@ -2414,6 +2415,7 @@ int main(int argc, char **argv)
       bucket_name = val;
     } else if (ceph_argparse_witharg(args, i, &val, "-p", "--pool", (char*)NULL)) {
       pool_name = val;
+      pool = rgw_pool(pool_name);
     } else if (ceph_argparse_witharg(args, i, &val, "-o", "--object", (char*)NULL)) {
       object = val;
     } else if (ceph_argparse_witharg(args, i, &val, "--object-version", (char*)NULL)) {
@@ -4716,7 +4718,7 @@ next:
       return usage();
     }
 
-    int ret = store->add_bucket_placement(pool_name);
+    int ret = store->add_bucket_placement(pool);
     if (ret < 0)
       cerr << "failed to add bucket placement: " << cpp_strerror(-ret) << std::endl;
   }
@@ -4727,13 +4729,13 @@ next:
       return usage();
     }
 
-    int ret = store->remove_bucket_placement(pool_name);
+    int ret = store->remove_bucket_placement(pool);
     if (ret < 0)
       cerr << "failed to remove bucket placement: " << cpp_strerror(-ret) << std::endl;
   }
 
   if (opt_cmd == OPT_POOLS_LIST) {
-    set<string> pools;
+    set<rgw_pool> pools;
     int ret = store->list_placement_set(pools);
     if (ret < 0) {
       cerr << "could not list placement set: " << cpp_strerror(-ret) << std::endl;
@@ -4741,10 +4743,9 @@ next:
     }
     formatter->reset();
     formatter->open_array_section("pools");
-    set<string>::iterator siter;
-    for (siter = pools.begin(); siter != pools.end(); ++siter) {
+    for (auto siter = pools.begin(); siter != pools.end(); ++siter) {
       formatter->open_object_section("pool");
-      formatter->dump_string("name",  *siter);
+      formatter->dump_string("name",  siter->to_str());
       formatter->close_section();
     }
     formatter->close_section();
@@ -5538,7 +5539,7 @@ next:
 
     RGWOrphanSearchInfo info;
 
-    info.pool = pool_name;
+    info.pool = pool;
     info.job_name = job_id;
     info.num_shards = num_shards;
 
@@ -6409,7 +6410,7 @@ next:
         return EINVAL;
       }
 
-      RGWReplicaObjectLogger logger(store, pool_name, META_REPLICA_LOG_OBJ_PREFIX);
+      RGWReplicaObjectLogger logger(store, pool, META_REPLICA_LOG_OBJ_PREFIX);
       int ret = logger.get_bounds(shard_id, bounds);
       if (ret < 0)
         return -ret;
@@ -6418,7 +6419,7 @@ next:
         cerr << "ERROR: shard-id must be specified for get operation" << std::endl;
         return EINVAL;
       }
-      RGWReplicaObjectLogger logger(store, pool_name, DATA_REPLICA_LOG_OBJ_PREFIX);
+      RGWReplicaObjectLogger logger(store, pool, DATA_REPLICA_LOG_OBJ_PREFIX);
       int ret = logger.get_bounds(shard_id, bounds);
       if (ret < 0)
         return -ret;
@@ -6456,7 +6457,7 @@ next:
         cerr << "ERROR: daemon-id must be specified for delete operation" << std::endl;
         return EINVAL;
       }
-      RGWReplicaObjectLogger logger(store, pool_name, META_REPLICA_LOG_OBJ_PREFIX);
+      RGWReplicaObjectLogger logger(store, pool, META_REPLICA_LOG_OBJ_PREFIX);
       int ret = logger.delete_bound(shard_id, daemon_id, false);
       if (ret < 0)
         return -ret;
@@ -6469,7 +6470,7 @@ next:
         cerr << "ERROR: daemon-id must be specified for delete operation" << std::endl;
         return EINVAL;
       }
-      RGWReplicaObjectLogger logger(store, pool_name, DATA_REPLICA_LOG_OBJ_PREFIX);
+      RGWReplicaObjectLogger logger(store, pool, DATA_REPLICA_LOG_OBJ_PREFIX);
       int ret = logger.delete_bound(shard_id, daemon_id, false);
       if (ret < 0)
         return -ret;
@@ -6518,7 +6519,7 @@ next:
         return EINVAL;
       }
 
-      RGWReplicaObjectLogger logger(store, pool_name, META_REPLICA_LOG_OBJ_PREFIX);
+      RGWReplicaObjectLogger logger(store, pool, META_REPLICA_LOG_OBJ_PREFIX);
       int ret = logger.update_bound(shard_id, daemon_id, marker, time, &entries);
       if (ret < 0) {
         cerr << "ERROR: failed to update bounds: " << cpp_strerror(-ret) << std::endl;
@@ -6529,7 +6530,7 @@ next:
         cerr << "ERROR: shard-id must be specified for get operation" << std::endl;
         return EINVAL;
       }
-      RGWReplicaObjectLogger logger(store, pool_name, DATA_REPLICA_LOG_OBJ_PREFIX);
+      RGWReplicaObjectLogger logger(store, pool, DATA_REPLICA_LOG_OBJ_PREFIX);
       int ret = logger.update_bound(shard_id, daemon_id, marker, time, &entries);
       if (ret < 0) {
         cerr << "ERROR: failed to update bounds: " << cpp_strerror(-ret) << std::endl;
