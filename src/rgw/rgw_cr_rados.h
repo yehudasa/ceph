@@ -382,6 +382,8 @@ class RGWRadosSetOmapKeysCR : public RGWSimpleCoroutine {
   RGWRados *store;
   map<string, bufferlist> entries;
 
+  rgw_rados_ref ref;
+
   rgw_raw_obj obj;
 
   RGWAioCompletionNotifier *cn;
@@ -405,7 +407,7 @@ class RGWRadosGetOmapKeysCR : public RGWSimpleCoroutine {
   int max_entries;
 
   int rval;
-  librados::IoCtx ioctx;
+  rgw_rados_ref ref;
 
   rgw_raw_obj obj;
 
@@ -434,7 +436,7 @@ class RGWRadosRemoveOmapKeysCR : public RGWSimpleCoroutine {
   int max_entries;
 
   int rval;
-  librados::IoCtx ioctx;
+  rgw_rados_ref ref;
 
   set<string> keys;
 
