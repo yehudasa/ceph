@@ -2281,7 +2281,7 @@ int RGWPutObjProcessor_Aio::handle_obj_data(rgw_obj& obj, bufferlist& bl, off_t 
 
   // For the first call pass -1 as the offset to
   // do a write_full.
-  return store->aio_put_obj_data(obj, bl, ((ofs != 0) ? ofs : -1), exclusive, phandle);
+  return store->aio_put_obj_data(obj, bl, ((ofs != 0) ? ofs : -1), exclusive, is_compressed(), phandle);
 }
 
 struct put_obj_aio_info RGWPutObjProcessor_Aio::pop_pending()
@@ -2573,6 +2573,7 @@ int RGWPutObjProcessor_Atomic::do_complete(size_t accounted_size, const string& 
   obj_op.meta.flags = PUT_OBJ_CREATE;
   obj_op.meta.olh_epoch = olh_epoch;
   obj_op.meta.delete_at = delete_at;
+  obj_op.params.incompressible = is_compressed();
 
   r = obj_op.write_meta(obj_len, accounted_size, attrs);
   if (r < 0) {
@@ -6384,9 +6385,13 @@ int RGWRados::Object::Write::_do_write_meta(uint64_t size, uint64_t accounted_si
 
   if (meta.data) {
     uint64_t obj_size = meta.data->length();
+    bool avoid_compression = params.incompressible;
+    ldout(store->ctx(), 20) << "setting rados allocation hint, write_size=" << obj_size
+                   << " avoid_compression=" << (int)avoid_compression << dendl;
     op.set_alloc_hint2(obj_size, obj_size, ALLOC_HINT_FLAG_SEQUENTIAL_WRITE |
                                            ALLOC_HINT_FLAG_SEQUENTIAL_READ |
-                                           ALLOC_HINT_FLAG_IMMUTABLE);
+                                           ALLOC_HINT_FLAG_IMMUTABLE |
+                                           (avoid_compression ? LIBRADOS_ALLOC_HINT_FLAG_INCOMPRESSIBLE : 0));
     /* if we want to overwrite the data, we also want to overwrite the
        xattrs, so just remove the object */
     op.write_full(*meta.data);
@@ -6698,7 +6703,7 @@ int RGWRados::put_system_obj_data(void *ctx, rgw_obj& obj, bufferlist& bl,
  * Returns: 0 on success, -ERR# otherwise.
  */
 int RGWRados::aio_put_obj_data(rgw_obj& obj, bufferlist& bl,
-			       off_t ofs, bool exclusive,
+			       off_t ofs, bool exclusive, bool avoid_compression,
                                void **handle)
 {
   rgw_rados_ref ref;
@@ -6723,10 +6728,12 @@ int RGWRados::aio_put_obj_data(rgw_obj& obj, bufferlist& bl,
      * Not using configured chunk size, because that might be modified when pool
      * alignment requires.
      */
-    ldout(cct, 20) << "setting rados allocation hint, write_size=" << bl.length() << dendl;
+    ldout(cct, 20) << "setting rados allocation hint, write_size=" << bl.length()
+                   << " avoid_compression=" << (int)avoid_compression << dendl;
     op.set_alloc_hint2(0, bl.length(), ALLOC_HINT_FLAG_SEQUENTIAL_WRITE |
                        ALLOC_HINT_FLAG_SEQUENTIAL_READ |
-                       ALLOC_HINT_FLAG_IMMUTABLE);
+                       ALLOC_HINT_FLAG_IMMUTABLE |
+                       (avoid_compression ? LIBRADOS_ALLOC_HINT_FLAG_INCOMPRESSIBLE : 0));
     op.write_full(bl);
   } else {
     op.write(ofs, bl);
@@ -6760,6 +6767,7 @@ class RGWRadosPutObj : public RGWGetDataCB
   RGWPutObjDataProcessor *filter;
   RGWPutObjProcessor_Atomic *processor;
   RGWOpStateSingleOp *opstate;
+  bool incompressible;
   void (*progress_cb)(off_t, void *);
   void *progress_data;
   bufferlist extra_data_bl;
@@ -6770,12 +6778,14 @@ public:
                  RGWPutObjDataProcessor *filter,
                  RGWPutObjProcessor_Atomic *p,
                  RGWOpStateSingleOp *_ops,
+                 bool _incompressible,
                  void (*_progress_cb)(off_t, void *),
                  void *_progress_data) :
                        cct(cct),
                        filter(filter),
                        processor(p),
                        opstate(_ops),
+                       incompressible(_incompressible),
                        progress_cb(_progress_cb),
                        progress_data(_progress_data),
                        extra_data_len(0),
@@ -7214,7 +7224,8 @@ int RGWRados::fetch_remote_obj(RGWObjectCtx& obj_ctx,
     }
   }
 
-  RGWRadosPutObj cb(cct, filter, &processor, opstate, progress_cb, progress_data);
+  RGWRadosPutObj cb(cct, filter, &processor, opstate, false /* incompressible */,
+                    progress_cb, progress_data);
 
   string etag;
   map<string, string> req_headers;
@@ -7461,6 +7472,7 @@ int RGWRados::copy_obj(RGWObjectCtx& obj_ctx,
   uint64_t obj_size;
   rgw_obj shadow_obj = dest_obj;
   string shadow_oid;
+  bool compressed = false;
 
   bool remote_src;
   bool remote_dest;
@@ -7513,8 +7525,10 @@ int RGWRados::copy_obj(RGWObjectCtx& obj_ctx,
   attrs.erase(RGW_ATTR_PG_VER);
   attrs.erase(RGW_ATTR_SOURCE_ZONE);
   map<string, bufferlist>::iterator cmp = src_attrs.find(RGW_ATTR_COMPRESSION);
-  if (cmp != src_attrs.end())
+  if (cmp != src_attrs.end()) {
+    compressed = true;
     attrs[RGW_ATTR_COMPRESSION] = cmp->second;
+  }
 
   RGWObjManifest manifest;
   RGWObjState *astate = NULL;
@@ -7599,6 +7613,8 @@ int RGWRados::copy_obj(RGWObjectCtx& obj_ctx,
 
   RGWRados::Object dest_op_target(this, dest_bucket_info, obj_ctx, dest_obj);
   RGWRados::Object::Write write_op(&dest_op_target);
+
+  write_op.params.incompressible = compressed;
 
   string tag;
 
@@ -7726,6 +7742,13 @@ int RGWRados::copy_obj_data(RGWObjectCtx& obj_ctx,
     return ret;
 
   off_t ofs = 0;
+
+  /*
+   * if source object is compressed, avoid rados compression */
+  if (read_op.has_attr(RGW_ATTR_COMPRESSION) >= 0) {
+    ldout(cct, 20) << "source object has compression attr set" << dendl;
+    processor.set_compressed(true);
+  }
 
   do {
     bufferlist bl;
@@ -8745,6 +8768,20 @@ int RGWRados::Object::Read::get_attr(const char *name, bufferlist& dest)
   if (!state->exists)
     return -ENOENT;
   if (!state->get_attr(name, dest))
+    return -ENODATA;
+
+  return 0;
+}
+
+int RGWRados::Object::Read::has_attr(const char *name)
+{
+  RGWObjState *state;
+  int r = source->get_state(&state, true);
+  if (r < 0)
+    return r;
+  if (!state->exists)
+    return -ENOENT;
+  if (!state->has_attr(name))
     return -ENODATA;
 
   return 0;

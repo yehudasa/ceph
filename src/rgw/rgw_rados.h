@@ -799,6 +799,11 @@ struct RGWObjState {
     }
     return false;
   }
+
+  bool has_attr(string name) {
+    map<string, bufferlist>::iterator iter = attrset.find(name);
+    return (iter != attrset.end());
+  }
 };
 
 struct RGWPoolIterCtx {
@@ -2437,11 +2442,16 @@ public:
       int read(int64_t ofs, int64_t end, bufferlist& bl);
       int iterate(int64_t ofs, int64_t end, RGWGetDataCB *cb);
       int get_attr(const char *name, bufferlist& dest);
+      int has_attr(const char *name);
     };
 
     struct Write {
       RGWRados::Object *target;
-      
+
+      struct Params {
+        bool incompressible{false};
+      } params;
+
       struct MetaParams {
         ceph::real_time *mtime;
         map<std::string, bufferlist>* rmattrs;
@@ -2640,7 +2650,7 @@ public:
               ceph::real_time set_mtime /* 0 for don't set */);
 
   virtual int put_system_obj_data(void *ctx, rgw_obj& obj, bufferlist& bl, bool exclusive);
-  int aio_put_obj_data(rgw_obj& obj, bufferlist& bl, off_t ofs, bool exclusive, void **handle);
+  int aio_put_obj_data(rgw_obj& obj, bufferlist& bl, off_t ofs, bool exclusive, bool avoid_compression, void **handle);
 
   int put_system_obj(void *ctx, rgw_obj& obj, const char *data, size_t len, bool exclusive,
               ceph::real_time *mtime, map<std::string, bufferlist>& attrs, RGWObjVersionTracker *objv_tracker,
@@ -3338,13 +3348,19 @@ public:
  */
 class RGWPutObjDataProcessor
 {
+  bool compressed{false};
 public:
   RGWPutObjDataProcessor(){}
   virtual ~RGWPutObjDataProcessor(){}
   virtual int handle_data(bufferlist& bl, off_t ofs, void **phandle, rgw_obj *pobj, bool *again) = 0;
   virtual int throttle_data(void *handle, const rgw_obj& obj, uint64_t size, bool need_to_wait) = 0;
+  virtual bool is_compressed() {
+    return compressed;
+  }
+  virtual void set_compressed(bool c) {
+    compressed = c;
+  }
 }; /* RGWPutObjDataProcessor */
-
 
 class RGWPutObjProcessor : public RGWPutObjDataProcessor
 {
@@ -3432,6 +3448,7 @@ class RGWPutObjProcessor_Atomic : public RGWPutObjProcessor_Aio
   off_t data_ofs;
 
   bufferlist pending_data_bl;
+  bool compressed{false};
   uint64_t max_chunk_size;
 
   bool versioned_object;
