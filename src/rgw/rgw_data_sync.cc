@@ -2530,11 +2530,11 @@ int RGWBucketShardIncrementalSyncCR::operate()
           marker_tracker.try_update_high_marker(cur_id, 0, entry->timestamp);
           continue;
         }
-        if (make_pair<>(entry->timestamp, entry->op) != squash_map[make_pair(entry->object, entry->instance)]) {
+        if (entry->instance.empty() && make_pair<>(entry->timestamp, entry->op) != squash_map[make_pair(entry->object, entry->instance)]) {
           set_status() << "squashed operation, skipping";
           ldout(sync_env->cct, 20) << "[inc sync] skipping object: "
               << bucket_shard_str{bs} << "/" << key << ": squashed operation" << dendl;
-          /* not updating high marker though */
+          marker_tracker.try_update_high_marker(cur_id, 0, entry->timestamp);
           continue;
         }
         ldout(sync_env->cct, 20) << "[inc sync] syncing object: "
