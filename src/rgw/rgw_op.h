@@ -96,6 +96,9 @@ public:
 };
 
 
+
+void rgw_bucket_object_pre_exec(struct req_state *s);
+
 /**
  * Provide the base class for all ops.
  */
@@ -1934,7 +1937,5 @@ public:
   virtual RGWOpType get_type() { return RGW_OP_GET_OBJ_LAYOUT; }
   virtual uint32_t op_mask() { return RGW_OP_TYPE_READ; }
 };
-
-
 
 #endif /* CEPH_RGW_OP_H */

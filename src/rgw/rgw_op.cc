@@ -530,7 +530,7 @@ int rgw_build_object_policies(RGWRados *store, struct req_state *s,
   return ret;
 }
 
-static void rgw_bucket_object_pre_exec(struct req_state *s)
+void rgw_bucket_object_pre_exec(struct req_state *s)
 {
   if (s->expect_cont)
     dump_continue(s);
@@ -6022,3 +6022,4 @@ int RGWHandler::error_handler(int err_no, string *error_content) {
   // This is the do-nothing error handler
   return err_no;
 }
+
