@@ -42,6 +42,7 @@ set(rgw_a_srcs
   rgw_cors_s3.cc
   rgw_dencoder.cc
   rgw_env.cc
+  rgw_es_query.cc
   rgw_formats.cc
   rgw_frontend.cc
   rgw_gc.cc
@@ -172,7 +173,7 @@ target_link_libraries(radosgw-admin rgw_a librados
 install(TARGETS radosgw-admin DESTINATION bin)
 
 set(radosgw_es_srcs
-  rgw_es_query.cc)
+  rgw_es_main.cc)
 add_executable(radosgw-es ${radosgw_es_srcs})
 target_link_libraries(radosgw-es rgw_a librados
   cls_rgw_client cls_lock_client cls_refcount_client
