@@ -1938,4 +1938,21 @@ public:
   virtual uint32_t op_mask() { return RGW_OP_TYPE_READ; }
 };
 
+class RGWConfigBucketMetaSearch : public RGWOp {
+protected:
+  std::map<std::string, uint32_t> mdsearch_config;
+public:
+  RGWConfigBucketMetaSearch() {}
+
+  int verify_permission();
+  void pre_exec();
+  void execute();
+
+  virtual int get_params() = 0;
+  virtual void send_response() = 0;
+  virtual const string name() { return "config_bucket_meta_search"; }
+  virtual RGWOpType get_type() { return RGW_OP_CONFIG_BUCKET_META_SEARCH; }
+  virtual uint32_t op_mask() { return RGW_OP_TYPE_WRITE; }
+};
+
 #endif /* CEPH_RGW_OP_H */
