@@ -3077,8 +3077,8 @@ void RGWGetBucketMetaSearch_ObjStore_S3::send_response()
 
   Formatter *f = s->formatter;
   f->open_array_section("GetBucketMetaSearchResult");
-  f->open_object_section("Entry");
   for (auto& e : s->bucket_info.mdsearch_config) {
+    f->open_object_section("Entry");
     string k = string("x-amz-meta-") + e.first;
     f->dump_string("Key", k.c_str());
     const char *type;
@@ -3093,10 +3093,18 @@ void RGWGetBucketMetaSearch_ObjStore_S3::send_response()
         type = "str";
     }
     f->dump_string("Type", type);
+    f->close_section();
   }
   f->close_section();
-  f->close_section();
   rgw_flush_formatter(s, f);
+}
+
+void RGWDelBucketMetaSearch_ObjStore_S3::send_response()
+{
+  if (op_ret)
+    set_req_state_err(s, op_ret);
+  dump_errno(s);
+  end_header(s, this);
 }
 
 
@@ -3233,6 +3241,10 @@ RGWOp *RGWHandler_REST_Bucket_S3::op_delete()
       return NULL;
     }
     return new RGWDeleteBucketWebsite_ObjStore_S3;
+  }
+
+  if (s->info.args.exists("mdsearch")) {
+    return new RGWDelBucketMetaSearch_ObjStore_S3;
   }
 
   return new RGWDeleteBucket_ObjStore_S3;
