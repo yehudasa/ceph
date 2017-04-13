@@ -470,12 +470,12 @@ class RGWInitDataSyncStatusCoroutine : public RGWCoroutine {
   map<int, RGWDataChangesLogInfo> shards_info;
 public:
   RGWInitDataSyncStatusCoroutine(RGWDataSyncEnv *_sync_env,
-		      uint32_t _num_shards) : RGWCoroutine(_sync_env->cct),
-                                                sync_env(_sync_env), store(sync_env->store) {
+		      uint32_t _num_shards,
+                      uint64_t instance_id) : RGWCoroutine(_sync_env->cct),
+                                                   sync_env(_sync_env), store(sync_env->store) {
     lock_name = "sync_lock";
     status.num_shards = _num_shards;
-
-    get_random_bytes((char *)&status.instance_id, sizeof(status.instance_id));
+    status.instance_id = instance_id;
 
 #define COOKIE_LEN 16
     char buf[COOKIE_LEN + 1];
@@ -679,7 +679,9 @@ int RGWRemoteDataLog::init_sync_status(int num_shards)
   }
   RGWDataSyncEnv sync_env_local = sync_env;
   sync_env_local.http_manager = &http_manager;
-  ret = crs.run(new RGWInitDataSyncStatusCoroutine(&sync_env_local, num_shards));
+  uint64_t instance_id;
+  get_random_bytes((char *)&instance_id, sizeof(instance_id));
+  ret = crs.run(new RGWInitDataSyncStatusCoroutine(&sync_env_local, num_shards, instance_id));
   http_manager.stop();
   return ret;
 }
@@ -1467,7 +1469,8 @@ public:
       /* state: init status */
       if ((rgw_data_sync_info::SyncState)sync_status.sync_info.state == rgw_data_sync_info::StateInit) {
         ldout(sync_env->cct, 20) << __func__ << "(): init" << dendl;
-        yield call(new RGWInitDataSyncStatusCoroutine(sync_env, sync_status.sync_info.num_shards));
+        get_random_bytes((char *)&sync_status.sync_info.instance_id, sizeof(sync_status.sync_info.instance_id));
+        yield call(new RGWInitDataSyncStatusCoroutine(sync_env, sync_status.sync_info.num_shards, sync_status.sync_info.instance_id));
         if (retcode < 0) {
           ldout(sync_env->cct, 0) << "ERROR: failed to init sync, retcode=" << retcode << dendl;
           return set_cr_error(retcode);
