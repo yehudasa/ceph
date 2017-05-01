@@ -5374,7 +5374,10 @@ int RGWRados::init_bucket_index(RGWBucketInfo& bucket_info, int num_shards)
   librados::IoCtx index_ctx; // context for new bucket
 
   /* handle on going bucket resharding */
-  int r = reshard->block_while_resharding(bucket_info.bucket.oid);
+  BucketIndexLockGuard guard(cct, this, bucket_info.bucket.bucket_id, bucket_info.bucket.oid,
+		       reshard_pool_ctx);
+
+  int r = reshard->block_while_resharding(bucket_info.bucket.oid, guard);
   if (r < 0) {
     return r;
   }
@@ -5382,7 +5385,6 @@ int RGWRados::init_bucket_index(RGWBucketInfo& bucket_info, int num_shards)
   string dir_oid =  dir_oid_prefix;
   r = open_bucket_index_ctx(bucket_info, index_ctx);
   if (r < 0) {
-    reshard->unlock_bucket_index(bucket_info.bucket.oid);
     return r;
   }
 
@@ -5391,11 +5393,7 @@ int RGWRados::init_bucket_index(RGWBucketInfo& bucket_info, int num_shards)
   map<int, string> bucket_objs;
   get_bucket_index_objects(dir_oid, num_shards, bucket_objs);
 
-  r =  CLSRGWIssueBucketIndexInit(index_ctx, bucket_objs, cct->_conf->rgw_bucket_index_max_aio)();
-
-  reshard->unlock_bucket_index(bucket_info.bucket.oid);
-
-  return r;
+  return CLSRGWIssueBucketIndexInit(index_ctx, bucket_objs, cct->_conf->rgw_bucket_index_max_aio)();
 }
 
 void RGWRados::create_bucket_id(string *bucket_id)
@@ -8209,20 +8207,20 @@ int RGWRados::bucket_check_index(RGWBucketInfo& bucket_info,
   map<int, struct rgw_cls_check_index_ret> bucket_objs_ret;
 
   /* handle on going bucket resharding */
-  int ret = reshard->block_while_resharding(bucket_info.bucket.oid);
+  BucketIndexLockGuard guard(cct, this, bucket_info.bucket.bucket_id, bucket_info.bucket.oid,
+			     reshard_pool_ctx);
+  int ret = reshard->block_while_resharding(bucket_info.bucket.oid, guard);
   if (ret < 0) {
     return ret;
   }
 
   ret = open_bucket_index(bucket_info, index_ctx, oids, bucket_objs_ret);
   if (ret < 0) {
-      reshard->unlock_bucket_index(bucket_info.bucket.oid);
       return ret;
   }
 
   ret = CLSRGWIssueBucketCheck(index_ctx, oids, bucket_objs_ret, cct->_conf->rgw_bucket_index_max_aio)();
   if (ret < 0) {
-      reshard->unlock_bucket_index(bucket_info.bucket.oid);
       return ret;
   }
 
@@ -8242,24 +8240,20 @@ int RGWRados::bucket_rebuild_index(RGWBucketInfo& bucket_info)
   map<int, string> bucket_objs;
 
   /* handle on going bucket resharding */
-  int r = reshard->block_while_resharding(bucket_info.bucket.oid);
+  BucketIndexLockGuard guard(cct, this, bucket_info.bucket.bucket_id, bucket_info.bucket.oid,
+			     reshard_pool_ctx);
+  int r = reshard->block_while_resharding(bucket_info.bucket.oid, guard);
   if (r < 0) {
     return r;
   }
 
   r = open_bucket_index(bucket_info, index_ctx, bucket_objs);
   if (r < 0) {
-    reshard->unlock_bucket_index(bucket_info.bucket.oid);
     return r;
   }
 
-  r =  CLSRGWIssueBucketRebuild(index_ctx, bucket_objs, cct->_conf->rgw_bucket_index_max_aio)();
-
-  reshard->unlock_bucket_index(bucket_info.bucket.oid);
-
-  return r;
+  return CLSRGWIssueBucketRebuild(index_ctx, bucket_objs, cct->_conf->rgw_bucket_index_max_aio)();
 }
-
 
 int RGWRados::defer_gc(void *ctx, const RGWBucketInfo& bucket_info, const rgw_obj& obj)
 {
@@ -9519,7 +9513,9 @@ int RGWRados::Bucket::UpdateIndex::prepare(RGWModifyOp op, const string *write_t
   BucketShard *bs;
 
   /* handle on going bucket resharding */
-  int ret = store->reshard->block_while_resharding(target->get_bucket().oid);
+  BucketIndexLockGuard guard(store->ctx(), store, target->get_bucket().bucket_id, target->get_bucket().oid,
+			     store->reshard_pool_ctx);
+  int ret = store->reshard->block_while_resharding(target->get_bucket().oid, guard);
   if (ret < 0) {
     return ret;
   }
@@ -9527,7 +9523,6 @@ int RGWRados::Bucket::UpdateIndex::prepare(RGWModifyOp op, const string *write_t
   ret = get_bucket_shard(&bs);
   if (ret < 0) {
     ldout(store->ctx(), 5) << "failed to get BucketShard object: ret=" << ret << dendl;
-    store->reshard->unlock_bucket_index(target->get_bucket().oid);
     return ret;
   }
 
@@ -9541,12 +9536,10 @@ int RGWRados::Bucket::UpdateIndex::prepare(RGWModifyOp op, const string *write_t
 
   int r = store->cls_obj_prepare_op(*bs, op, optag, obj, bilog_flags);
   if (r < 0) {
-    store->reshard->unlock_bucket_index(target->get_bucket().oid);
     return r;
   }
   prepared = true;
 
-  store->reshard->unlock_bucket_index(target->get_bucket().oid);
   return 0;
 }
 
@@ -9565,7 +9558,9 @@ int RGWRados::Bucket::UpdateIndex::complete(int64_t poolid, uint64_t epoch,
   BucketShard *bs;
 
   /* handle on going bucket resharding */
-  int ret = store->reshard->block_while_resharding(target->get_bucket().oid);
+  BucketIndexLockGuard guard(store->ctx(), store, target->get_bucket().bucket_id, target->get_bucket().oid,
+			     store->reshard_pool_ctx);
+  int ret = store->reshard->block_while_resharding(target->get_bucket().oid, guard);
   if (ret < 0) {
     return ret;
   }
@@ -9573,7 +9568,6 @@ int RGWRados::Bucket::UpdateIndex::complete(int64_t poolid, uint64_t epoch,
   ret = get_bucket_shard(&bs);
   if (ret < 0) {
     ldout(store->ctx(), 5) << "failed to get BucketShard object: ret=" << ret << dendl;
-    store->reshard->unlock_bucket_index(target->get_bucket().oid);
     return ret;
   }
 
@@ -9604,8 +9598,6 @@ int RGWRados::Bucket::UpdateIndex::complete(int64_t poolid, uint64_t epoch,
     lderr(store->ctx()) << "ERROR: failed writing data log" << dendl;
   }
 
-  store->reshard->unlock_bucket_index(target->get_bucket().oid);
-
   return ret;
 }
 
@@ -9620,7 +9612,9 @@ int RGWRados::Bucket::UpdateIndex::complete_del(int64_t poolid, uint64_t epoch,
   BucketShard *bs;
 
   /* handle on going bucket resharding */
-  int ret = store->reshard->block_while_resharding(target->get_bucket().oid);
+  BucketIndexLockGuard guard(store->ctx(), store, target->get_bucket().bucket_id, target->get_bucket().oid,
+			     store->reshard_pool_ctx);
+  int ret = store->reshard->block_while_resharding(target->get_bucket().oid, guard);
   if (ret < 0) {
     return ret;
   }
@@ -9628,7 +9622,6 @@ int RGWRados::Bucket::UpdateIndex::complete_del(int64_t poolid, uint64_t epoch,
   ret = get_bucket_shard(&bs);
   if (ret < 0) {
     ldout(store->ctx(), 5) << "failed to get BucketShard object: ret=" << ret << dendl;
-    store->reshard->unlock_bucket_index(target->get_bucket().oid);
     return ret;
   }
 
@@ -9639,7 +9632,6 @@ int RGWRados::Bucket::UpdateIndex::complete_del(int64_t poolid, uint64_t epoch,
     lderr(store->ctx()) << "ERROR: failed writing data log" << dendl;
   }
 
-  store->reshard->unlock_bucket_index(target->get_bucket().oid);
   return ret;
 }
 
@@ -9653,7 +9645,9 @@ int RGWRados::Bucket::UpdateIndex::cancel()
   BucketShard *bs;
 
   /* handle on going bucket resharding */
-  int ret = store->reshard->block_while_resharding(target->get_bucket().oid);
+  BucketIndexLockGuard guard(store->ctx(), store, target->get_bucket().bucket_id, target->get_bucket().oid,
+			     store->reshard_pool_ctx);
+  int ret = store->reshard->block_while_resharding(target->get_bucket().oid, guard);
   if (ret < 0) {
     return ret;
   }
@@ -9661,7 +9655,6 @@ int RGWRados::Bucket::UpdateIndex::cancel()
   ret = get_bucket_shard(&bs);
   if (ret < 0) {
     ldout(store->ctx(), 5) << "failed to get BucketShard object: ret=" << ret << dendl;
-    store->reshard->unlock_bucket_index(target->get_bucket().oid);
     return ret;
   }
 
@@ -9677,7 +9670,6 @@ int RGWRados::Bucket::UpdateIndex::cancel()
     lderr(store->ctx()) << "ERROR: failed writing data log" << dendl;
   }
 
-  store->reshard->unlock_bucket_index(target->get_bucket().oid);
   return ret;
 }
 
@@ -10478,7 +10470,9 @@ int RGWRados::bucket_index_link_olh(const RGWBucketInfo& bucket_info, RGWObjStat
   }
 
   /* handle on going bucket resharding */
-  r = reshard->block_while_resharding(bucket_info.bucket.oid);
+  BucketIndexLockGuard guard(cct, this, bucket_info.bucket.bucket_id, bucket_info.bucket.oid,
+			     reshard_pool_ctx);
+  r = reshard->block_while_resharding(bucket_info.bucket.oid, guard);
   if (r < 0) {
     return r;
   }
@@ -10487,17 +10481,13 @@ int RGWRados::bucket_index_link_olh(const RGWBucketInfo& bucket_info, RGWObjStat
   r = bs.init(obj_instance.bucket, obj_instance);
   if (r < 0) {
     ldout(cct, 5) << "bs.init() returned ret=" << r << dendl;
-    reshard->unlock_bucket_index(bucket_info.bucket.oid);
     return r;
   }
 
   cls_rgw_obj_key key(obj_instance.key.get_index_key_name(), obj_instance.key.instance);
-  r = cls_rgw_bucket_link_olh(bs.index_ctx, bs.bucket_obj, key, olh_state.olh_tag, delete_marker, op_tag, meta, olh_epoch,
+  return cls_rgw_bucket_link_olh(bs.index_ctx, bs.bucket_obj, key, olh_state.olh_tag, delete_marker, op_tag, meta, olh_epoch,
                                 unmod_since, high_precision_time,
                                 get_zone().log_data);
-
-  reshard->unlock_bucket_index(bucket_info.bucket.oid);
-    return r;
 }
 
 void RGWRados::bucket_index_guard_olh_op(RGWObjState& olh_state, ObjectOperation& op)
@@ -11912,7 +11902,9 @@ int RGWRados::trim_bi_log_entries(RGWBucketInfo& bucket_info, int shard_id, stri
   map<int, string> bucket_objs;
 
   /* handle on going bucket resharding */
-  int r = reshard->block_while_resharding(bucket_info.bucket.oid);
+  BucketIndexLockGuard guard(cct, this, bucket_info.bucket.bucket_id, bucket_info.bucket.oid,
+			     reshard_pool_ctx);
+  int r = reshard->block_while_resharding(bucket_info.bucket.oid, guard);
   if (r < 0) {
     return r;
   }
@@ -11922,26 +11914,22 @@ int RGWRados::trim_bi_log_entries(RGWBucketInfo& bucket_info, int shard_id, stri
 
   r = open_bucket_index(bucket_info, index_ctx, bucket_objs, shard_id);
   if (r < 0) {
-    reshard->unlock_bucket_index(bucket_info.bucket.oid);
     return r;
   }
 
   r = start_marker_mgr.from_string(start_marker, shard_id);
   if (r < 0) {
-    reshard->unlock_bucket_index(bucket_info.bucket.oid);
     return r;
   }
 
   r = end_marker_mgr.from_string(end_marker, shard_id);
   if (r < 0) {
-    reshard->unlock_bucket_index(bucket_info.bucket.oid);
     return r;
   }
 
-  r = CLSRGWIssueBILogTrim(index_ctx, start_marker_mgr, end_marker_mgr, bucket_objs,
-			   cct->_conf->rgw_bucket_index_max_aio)();
+  return CLSRGWIssueBILogTrim(index_ctx, start_marker_mgr, end_marker_mgr, bucket_objs,
+			      cct->_conf->rgw_bucket_index_max_aio)();
 
-  reshard->unlock_bucket_index(bucket_info.bucket.oid);
   return r;
 }
 
