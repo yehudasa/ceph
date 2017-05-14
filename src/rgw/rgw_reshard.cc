@@ -799,3 +799,162 @@ BucketIndexLockGuard::~BucketIndexLockGuard()
 {
   unlock();
 }
+
+
+int BucketReshardShard::wait_next_completion()
+{
+  librados::AioCompletion *c = aio_completions.front();
+  aio_completions.pop_front();
+
+  c->wait_for_safe();
+
+  int ret = c->get_return_value();
+  c->release();
+
+  if (ret < 0) {
+    derr << "ERROR: reshard rados operation failed: " << cpp_strerror(-ret) << dendl;
+    return ret;
+  }
+
+  return 0;
+}
+
+int BucketReshardShard::get_completion(librados::AioCompletion **c)
+{
+  if (aio_completions.size() >= RESHARD_MAX_AIO) {
+    int ret = wait_next_completion();
+    if (ret < 0) {
+      return ret;
+    }
+  }
+
+  *c = librados::Rados::aio_create_completion(nullptr, nullptr, nullptr);
+  aio_completions.push_back(*c);
+
+  return 0;
+}
+
+BucketReshardShard::BucketReshardShard(RGWRados *_store, RGWBucketInfo& _bucket_info,
+				                                       int _num_shard,
+				                                       deque<librados::AioCompletion *>& _completions) :
+  store(_store), bucket_info(_bucket_info), bs(store), aio_completions(_completions) {
+    num_shard = (bucket_info.num_shards > 0 ? _num_shard : -1);
+    bs.init(bucket_info.bucket, num_shard);
+}
+
+
+
+int BucketReshardShard::add_entry(rgw_cls_bi_entry& entry, bool account, uint8_t category,
+				                          const rgw_bucket_category_stats& entry_stats)
+{
+  entries.push_back(entry);
+  if (account) {
+      rgw_bucket_category_stats& target = stats[category];
+      target.num_entries += entry_stats.num_entries;
+      target.total_size += entry_stats.total_size;
+      target.total_size_rounded += entry_stats.total_size_rounded;
+  }
+  if (entries.size() >= RESHARD_SHARD_WINDOW) {
+    int ret = flush();
+    if (ret < 0) {
+      return ret;
+    }
+  }
+  return 0;
+}
+
+int BucketReshardShard::flush()
+{
+  if (entries.size() == 0) {
+    return 0;
+  }
+
+  librados::ObjectWriteOperation op;
+  for (auto& entry : entries) {
+    store->bi_put(op, bs, entry);
+  }
+  cls_rgw_bucket_update_stats(op, false, stats);
+
+  librados::AioCompletion *c;
+  int ret = get_completion(&c);
+  if (ret < 0) {
+    return ret;
+  }
+  ret = bs.index_ctx.aio_operate(bs.bucket_obj, c, &op);
+  if (ret < 0) {
+    derr << "ERROR: failed to store entries in target bucket shard (bs=" << bs.bucket << "/" << bs.shard_id << ") error=" << cpp_strerror(-ret) << dendl;
+    return ret;
+  }
+  entries.clear();
+  stats.clear();
+  return 0;
+}
+
+int BucketReshardShard::wait_all_aio()
+{
+  int ret = 0;
+  while (!aio_completions.empty()) {
+    int r = wait_next_completion();
+    if (r < 0) {
+      ret = r;
+    }
+  }
+  return ret;
+}
+
+BucketReshardManager::BucketReshardManager(RGWRados *_store, RGWBucketInfo& _target_bucket_info,
+					                                        int _num_target_shards) :
+  store(_store), target_bucket_info(_target_bucket_info), num_target_shards(_num_target_shards)
+{
+  target_shards.resize(num_target_shards);
+  for (int i = 0; i < num_target_shards; ++i) {
+    target_shards[i] = new BucketReshardShard(store, target_bucket_info, i, completions);
+  }
+}
+
+BucketReshardManager::~BucketReshardManager()
+{
+  for (auto& shard : target_shards) {
+    int ret = shard->wait_all_aio();
+    if (ret < 0) {
+      ldout(store->ctx(), 20) << __func__ << ": shard->wait_all_aio() returned ret=" << ret << dendl;
+    }
+  }
+}
+
+int BucketReshardManager::add_entry(int shard_index,
+				    rgw_cls_bi_entry& entry, bool account, uint8_t category,
+				    const rgw_bucket_category_stats& entry_stats)
+{
+  int ret = target_shards[shard_index]->add_entry(entry, account, category, entry_stats);
+  if (ret < 0) {
+    derr << "ERROR: target_shards.add_entry(" << entry.idx << ") returned error: " << cpp_strerror(-ret) << dendl;
+    return ret;
+  }
+  return 0;
+}
+
+int BucketReshardManager::finish()
+{
+  int ret = 0;
+  for (auto& shard : target_shards) {
+    int r = shard->flush();
+    if (r < 0) {
+      derr << "ERROR: target_shards[" << shard->get_num_shard() << "].flush() returned error: " << cpp_strerror(-r) << dendl;
+      ret = r;
+    }
+  }
+  for (auto& shard : target_shards) {
+    int r = shard->wait_all_aio();
+    if (r < 0) {
+      derr << "ERROR: target_shards[" << shard->get_num_shard() << "].wait_all_aio() returned error: " << cpp_strerror(-r) << dendl;
+      ret = r;
+    }
+    delete shard;
+  }
+  target_shards.clear();
+  return ret;
+}
+
+
+
