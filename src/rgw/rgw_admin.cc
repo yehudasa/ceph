@@ -5585,6 +5585,7 @@ next:
     return 0;
   }
 
+
   if (opt_cmd == OPT_RESHARD_STATUS) {
     if (bucket_name.empty()) {
       cerr << "ERROR: bucket not specified" << std::endl;
