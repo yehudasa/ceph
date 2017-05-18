@@ -3705,6 +3705,10 @@ void RGWRados::finalize()
   delete obj_tombstone_cache;
   delete sync_modules_manager;
 
+  if (reshard_wait.get()) {
+    reshard_wait->stop();
+    reshard_wait.reset();
+  }
   delete reshard;
   delete index_completion_manager;
 }
@@ -4514,6 +4518,8 @@ int RGWRados::init_complete()
   if (need_tombstone_cache) {
     obj_tombstone_cache = new tombstone_cache_t(cct->_conf->rgw_obj_tombstone_cache_size);
   }
+
+  reshard_wait = std::make_shared<RGWReshardWait>(this);
 
   reshard = new RGWReshard(this);
   index_completion_manager = new RGWIndexCompletionManager(this);
@@ -9781,9 +9787,8 @@ int RGWRados::Bucket::UpdateIndex::guard_reshard(BucketShard **pbs, std::functio
       break;
     }
     ldout(store->ctx(), 0) << "NOTICE: resharding operation on bucket index detected, blocking" << dendl;
-    RGWReshard reshard(store);
     string new_bucket_id;
-    r = reshard.block_while_resharding(bs, &new_bucket_id);
+    r = store->block_while_resharding(bs, &new_bucket_id);
     if (r == -ERR_BUSY_RESHARDING) {
       continue;
     }
@@ -10749,9 +10754,8 @@ int RGWRados::guard_reshard(BucketShard *bs, const rgw_obj& obj_instance, std::f
       break;
     }
     ldout(cct, 0) << "NOTICE: resharding operation on bucket index detected, blocking" << dendl;
-    RGWReshard reshard(this);
     string new_bucket_id;
-    r = reshard.block_while_resharding(bs, &new_bucket_id);
+    r = block_while_resharding(bs, &new_bucket_id);
     if (r == -ERR_BUSY_RESHARDING) {
       continue;
     }
@@ -10771,6 +10775,13 @@ int RGWRados::guard_reshard(BucketShard *bs, const rgw_obj& obj_instance, std::f
   }
 
   return 0;
+}
+
+int RGWRados::block_while_resharding(RGWRados::BucketShard *bs, string *new_bucket_id)
+{
+  std::shared_ptr<RGWReshardWait> waiter = reshard_wait;
+
+  return waiter->block_while_resharding(bs, new_bucket_id);
 }
 
 int RGWRados::bucket_index_link_olh(const RGWBucketInfo& bucket_info, RGWObjState& olh_state, const rgw_obj& obj_instance,
