@@ -3164,6 +3164,12 @@ void RGWPutObj::execute()
     goto done;
   }
 
+  op_ret = store->check_bucket_shards(s->bucket_info, s->bucket, bucket_quota);
+  if (op_ret < 0) {
+    ldout(s->cct, 20) << "check_bucket_shards() returned ret=" << op_ret << dendl;
+    goto done;
+  }
+
   hash.Final(m);
 
   if (compressor && compressor->is_compressed()) {
@@ -3322,6 +3328,11 @@ void RGWPostObj::execute()
       return;
     }
 
+    op_ret = store->check_bucket_shards(s->bucket_info, s->bucket, bucket_quota);
+    if (op_ret < 0) {
+      return;
+    }
+
     RGWPutObjProcessor_Atomic processor(*static_cast<RGWObjectCtx *>(s->obj_ctx),
                                         s->bucket_info,
                                         s->bucket,
@@ -3398,6 +3409,11 @@ void RGWPostObj::execute()
 
     op_ret = store->check_quota(s->bucket_owner.get_id(), s->bucket,
                                 user_quota, bucket_quota, s->obj_size);
+    if (op_ret < 0) {
+      return;
+    }
+
+    op_ret = store->check_bucket_shards(s->bucket_info, s->bucket, bucket_quota);
     if (op_ret < 0) {
       return;
     }
@@ -5735,6 +5751,11 @@ int RGWBulkUploadOp::handle_file(const boost::string_ref path,
     return op_ret;
   }
 
+  op_ret = store->check_bucket_shards(s->bucket_info, s->bucket, bucket_quota);
+  if (op_ret < 0) {
+    return op_ret;
+  }
+
   RGWPutObjProcessor_Atomic processor(obj_ctx,
                                       binfo,
                                       binfo.bucket,
@@ -5805,6 +5826,11 @@ int RGWBulkUploadOp::handle_file(const boost::string_ref path,
   if (op_ret < 0) {
     ldout(s->cct, 20) << "bulk upload: quota exceeded for path=" << path
                       << dendl;
+    return op_ret;
+  }
+
+  op_ret = store->check_bucket_shards(s->bucket_info, s->bucket, bucket_quota);
+  if (op_ret < 0) {
     return op_ret;
   }
 
