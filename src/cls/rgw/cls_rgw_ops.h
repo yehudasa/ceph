@@ -1232,6 +1232,7 @@ struct cls_rgw_reshard_get_ret {
 WRITE_CLASS_ENCODER(cls_rgw_reshard_get_ret)
 
 struct cls_rgw_reshard_remove_op {
+  string tenant;
   string bucket_name;
   string bucket_id;
 
@@ -1239,6 +1240,7 @@ struct cls_rgw_reshard_remove_op {
 
   void encode(bufferlist& bl) const {
     ENCODE_START(1, 1, bl);
+    ::encode(tenant, bl);
     ::encode(bucket_name, bl);
     ::encode(bucket_id, bl);
     ENCODE_FINISH(bl);
@@ -1246,6 +1248,7 @@ struct cls_rgw_reshard_remove_op {
 
   void decode(bufferlist::iterator& bl) {
     DECODE_START(1, bl);
+    ::decode(tenant, bl);
     ::decode(bucket_name, bl);
     ::decode(bucket_id, bl);
     DECODE_FINISH(bl);
