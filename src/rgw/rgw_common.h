@@ -1166,7 +1166,7 @@ struct RGWBucketInfo
   string swift_ver_location;
 
   /* resharding */
-  bool resharding;
+  uint8_t reshard_status;
   string new_bucket_instance_id;
 
   void encode(bufferlist& bl) const {
@@ -1194,7 +1194,7 @@ struct RGWBucketInfo
        ::encode(swift_ver_location, bl);
      }
      ::encode(creation_time, bl);
-     ::encode(resharding, bl);
+     ::encode(reshard_status, bl);
      ::encode(new_bucket_instance_id, bl);
      ENCODE_FINISH(bl);
   }
@@ -1257,7 +1257,7 @@ struct RGWBucketInfo
        ::decode(creation_time, bl);
      }
      if (struct_v >= 18) {
-       ::decode(resharding, bl);
+       ::decode(reshard_status, bl);
        ::decode(new_bucket_instance_id, bl);
      }
      DECODE_FINISH(bl);
@@ -1277,7 +1277,7 @@ struct RGWBucketInfo
   }
 
   RGWBucketInfo() : flags(0), has_instance_obj(false), num_shards(0), bucket_index_shard_hash_type(MOD), requester_pays(false),
-                    has_website(false), swift_versioning(false),resharding(false) {}
+                    has_website(false), swift_versioning(false), reshard_status(0) {}
 };
 WRITE_CLASS_ENCODER(RGWBucketInfo)
 
