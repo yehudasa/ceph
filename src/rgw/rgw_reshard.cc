@@ -925,7 +925,7 @@ int RGWReshard::reshard_bucket(Formatter *formatter,
     while (is_truncated) {
       entries.clear();
       ret = store->bi_list(bucket, i, string(), marker, max_entries, &entries, &is_truncated);
-      if (ret < 0) {
+      if (ret < 0 && ret != -ENOENT) {
 	ldout (store->ctx(), 0) << "ERROR: bi_list(): " << cpp_strerror(-ret) << dendl;
 	return -ret;
       }
