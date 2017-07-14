@@ -145,9 +145,9 @@ static int log_index_operation(cls_method_context_t hctx, cls_rgw_obj_key& obj_k
  * read list of objects, skips objects in the ugly namespace
  */
 static int get_obj_vals(cls_method_context_t hctx, const string& start, const string& filter_prefix,
-                        int num_entries, map<string, bufferlist> *pkeys)
+                        int num_entries, map<string, bufferlist> *pkeys, bool *ptruncated)
 {
-  int ret = cls_cxx_map_get_vals(hctx, start, filter_prefix, num_entries, pkeys);
+  int ret = cls_cxx_map_get_vals(hctx, start, filter_prefix, num_entries, pkeys, ptruncated);
   if (ret < 0)
     return ret;
 
@@ -183,7 +183,7 @@ static int get_obj_vals(cls_method_context_t hctx, const string& start, const st
   string new_start = c;
 
   /* now get some more keys */
-  ret = cls_cxx_map_get_vals(hctx, new_start, filter_prefix, num_entries - pkeys->size(), &new_keys);
+  ret = cls_cxx_map_get_vals(hctx, new_start, filter_prefix, num_entries - pkeys->size(), &new_keys, ptruncated);
   if (ret < 0)
     return ret;
 
@@ -405,10 +405,11 @@ int rgw_bucket_list(cls_method_context_t hctx, bufferlist *in, bufferlist *out)
   string start_key;
   encode_list_index_key(hctx, op.start_obj, &start_key);
   bool done = false;
-  uint32_t left_to_read = op.num_entries + 1;
+  uint32_t left_to_read = op.num_entries;
+  bool truncated;
 
   do {
-    rc = get_obj_vals(hctx, start_key, op.filter_prefix, left_to_read, &keys);
+    rc = get_obj_vals(hctx, start_key, op.filter_prefix, left_to_read, &keys, &truncated);
     if (rc < 0)
       return rc;
 
@@ -458,8 +459,7 @@ int rgw_bucket_list(cls_method_context_t hctx, bufferlist *in, bufferlist *out)
     }
   } while (left_to_read > 0 && !done);
 
-  ret.is_truncated = (left_to_read == 0) && /* we found more entries than we were requested, meaning response is truncated */
-                     !done;
+  ret.is_truncated = truncated && !done;
 
   ::encode(ret, *out);
   return 0;
@@ -482,9 +482,10 @@ static int check_index(cls_method_context_t hctx, struct rgw_bucket_dir_header *
 
 #define CHECK_CHUNK_SIZE 1000
   bool done = false;
+  bool truncated;
 
   do {
-    rc = get_obj_vals(hctx, start_obj, filter_prefix, CHECK_CHUNK_SIZE, &keys);
+    rc = get_obj_vals(hctx, start_obj, filter_prefix, CHECK_CHUNK_SIZE, &keys, &truncated);
     if (rc < 0)
       return rc;
 
@@ -1157,11 +1158,17 @@ public:
     get_list_index_key(instance_entry, &list_idx);
     /* this is the current head, need to update! */
     map<string, bufferlist> keys;
+    bool truncated;
     string filter = key.name; /* list key starts with key name, filter it to avoid a case where we cross to
                                  different namespace */
-    int ret = cls_cxx_map_get_vals(hctx, list_idx, filter, 1, &keys);
+    int ret = cls_cxx_map_get_vals(hctx, list_idx, filter, 1, &keys, &truncated);
     if (ret < 0) {
       return ret;
+    }
+
+    if (truncated) {
+      /* wth? requested for a single entry, should never ever be truncated */
+      return -EIO;
     }
 
     if (keys.size() < 1) {
@@ -2258,7 +2265,7 @@ static int rgw_bi_put_op(cls_method_context_t hctx, bufferlist *in, bufferlist *
 }
 
 static int list_plain_entries(cls_method_context_t hctx, const string& name, const string& marker, uint32_t max,
-                              list<rgw_cls_bi_entry> *entries)
+                              list<rgw_cls_bi_entry> *entries, bool *ptruncated)
 {
   string filter = name;
   string start_key = marker;
@@ -2268,59 +2275,52 @@ static int list_plain_entries(cls_method_context_t hctx, const string& name, con
 
   int count = 0;
   map<string, bufferlist> keys;
-  do {
+  int ret = cls_cxx_map_get_vals(hctx, start_key, filter, max, &keys, ptruncated);
+  if (ret < 0) {
+    return ret;
+  }
+
+  map<string, bufferlist>::iterator iter;
+  for (iter = keys.begin(); iter != keys.end(); ++iter) {
+    if (iter->first >= end_key) {
+      /* past the end of plain namespace */
+      return count;
+    }
+
+    rgw_cls_bi_entry entry;
+    entry.type = PlainIdx;
+    entry.idx = iter->first;
+    entry.data = iter->second;
+
+    bufferlist::iterator biter = entry.data.begin();
+
+    rgw_bucket_dir_entry e;
+    try {
+      ::decode(e, biter);
+    } catch (buffer::error& err) {
+      CLS_LOG(0, "ERROR: %s(): failed to decode buffer", __func__);
+      return -EIO;
+    }
+
+    CLS_LOG(20, "%s(): entry.idx=%s e.key.name=%s", __func__, escape_str(entry.idx).c_str(), escape_str(e.key.name).c_str());
+
+    if (!name.empty() && e.key.name != name) {
+      return count;
+    }
+
+    entries->push_back(entry);
+    count++;
     if (count >= (int)max) {
       return count;
     }
-    keys.clear();
-#define BI_GET_NUM_KEYS 128
-    int ret = cls_cxx_map_get_vals(hctx, start_key, filter, BI_GET_NUM_KEYS, &keys);
-    if (ret < 0) {
-      return ret;
-    }
-
-    map<string, bufferlist>::iterator iter;
-    for (iter = keys.begin(); iter != keys.end(); ++iter) {
-      if (iter->first >= end_key) {
-        /* past the end of plain namespace */
-        return count;
-      }
-
-      rgw_cls_bi_entry entry;
-      entry.type = PlainIdx;
-      entry.idx = iter->first;
-      entry.data = iter->second;
-
-      bufferlist::iterator biter = entry.data.begin();
-
-      rgw_bucket_dir_entry e;
-      try {
-        ::decode(e, biter);
-      } catch (buffer::error& err) {
-        CLS_LOG(0, "ERROR: %s(): failed to decode buffer", __func__);
-        return -EIO;
-      }
-
-      CLS_LOG(20, "%s(): entry.idx=%s e.key.name=%s", __func__, escape_str(entry.idx).c_str(), escape_str(e.key.name).c_str());
-
-      if (!name.empty() && e.key.name != name) {
-        return count;
-      }
-
-      entries->push_back(entry);
-      count++;
-      if (count >= (int)max) {
-        return count;
-      }
-      start_key = entry.idx;
-    }
-  } while (!keys.empty());
+    start_key = entry.idx;
+  }
 
   return count;
 }
 
 static int list_instance_entries(cls_method_context_t hctx, const string& name, const string& marker, uint32_t max,
-                                 list<rgw_cls_bi_entry> *entries)
+                                 list<rgw_cls_bi_entry> *entries, bool *ptruncated)
 {
   cls_rgw_obj_key key(name);
   string first_instance_idx;
@@ -2339,66 +2339,63 @@ static int list_instance_entries(cls_method_context_t hctx, const string& name, 
   }
   int count = 0;
   map<string, bufferlist> keys;
-  bool started = true;
-  do {
-    if (count >= (int)max) {
-      return count;
-    }
-    keys.clear();
-#define BI_GET_NUM_KEYS 128
-    int ret;
-    if (started) {
-      ret = cls_cxx_map_get_val(hctx, start_key, &keys[start_key]);
-      if (ret == -ENOENT) {
-        ret = cls_cxx_map_get_vals(hctx, start_key, string(), BI_GET_NUM_KEYS, &keys);
-      }
-      started = false;
-    } else {
-      ret = cls_cxx_map_get_vals(hctx, start_key, string(), BI_GET_NUM_KEYS, &keys);
-    }
+  bufferlist k;
+  int ret = cls_cxx_map_get_val(hctx, start_key, &k);
+  if (ret < 0 && ret != -ENOENT) {
+    return ret;
+  }
+  bool found_first = (ret == 0);
+  if (found_first) {
+    --max;
+  }
+  if (max > 0) {
+    ret = cls_cxx_map_get_vals(hctx, start_key, string(), max, &keys, ptruncated);
     CLS_LOG(20, "%s(): start_key=%s first_instance_idx=%s keys.size()=%d", __func__, escape_str(start_key).c_str(), escape_str(first_instance_idx).c_str(), (int)keys.size());
     if (ret < 0) {
       return ret;
     }
+  }
+  if (found_first) {
+    keys[start_key].claim(k);
+  }
 
-    map<string, bufferlist>::iterator iter;
-    for (iter = keys.begin(); iter != keys.end(); ++iter) {
-      rgw_cls_bi_entry entry;
-      entry.type = InstanceIdx;
-      entry.idx = iter->first;
-      entry.data = iter->second;
+  map<string, bufferlist>::iterator iter;
+  for (iter = keys.begin(); iter != keys.end(); ++iter) {
+    rgw_cls_bi_entry entry;
+    entry.type = InstanceIdx;
+    entry.idx = iter->first;
+    entry.data = iter->second;
 
-      if (!filter.empty() && entry.idx.compare(0, filter.size(), filter) != 0) {
-        return count;
-      }
-
-      CLS_LOG(20, "%s(): entry.idx=%s", __func__, escape_str(entry.idx).c_str());
-
-      bufferlist::iterator biter = entry.data.begin();
-
-      rgw_bucket_dir_entry e;
-      try {
-        ::decode(e, biter);
-      } catch (buffer::error& err) {
-        CLS_LOG(0, "ERROR: %s(): failed to decode buffer (size=%d)", __func__, entry.data.length());
-        return -EIO;
-      }
-
-      if (!name.empty() && e.key.name != name) {
-        return count;
-      }
-
-      entries->push_back(entry);
-      count++;
-      start_key = entry.idx;
+    if (!filter.empty() && entry.idx.compare(0, filter.size(), filter) != 0) {
+      return count;
     }
-  } while (!keys.empty());
+
+    CLS_LOG(20, "%s(): entry.idx=%s", __func__, escape_str(entry.idx).c_str());
+
+    bufferlist::iterator biter = entry.data.begin();
+
+    rgw_bucket_dir_entry e;
+    try {
+      ::decode(e, biter);
+    } catch (buffer::error& err) {
+      CLS_LOG(0, "ERROR: %s(): failed to decode buffer (size=%d)", __func__, entry.data.length());
+      return -EIO;
+    }
+
+    if (!name.empty() && e.key.name != name) {
+      return count;
+    }
+
+    entries->push_back(entry);
+    count++;
+    start_key = entry.idx;
+  }
 
   return count;
 }
 
 static int list_olh_entries(cls_method_context_t hctx, const string& name, const string& marker, uint32_t max,
-                            list<rgw_cls_bi_entry> *entries)
+                            list<rgw_cls_bi_entry> *entries, bool *ptruncated)
 {
   cls_rgw_obj_key key(name);
   string first_instance_idx;
@@ -2417,60 +2414,59 @@ static int list_olh_entries(cls_method_context_t hctx, const string& name, const
   }
   int count = 0;
   map<string, bufferlist> keys;
-  bool started = true;
-  do {
-    if (count >= (int)max) {
-      return count;
-    }
-    keys.clear();
-#define BI_GET_NUM_KEYS 128
-    int ret;
-    if (started) {
-      ret = cls_cxx_map_get_val(hctx, start_key, &keys[start_key]);
-      if (ret == -ENOENT) {
-        ret = cls_cxx_map_get_vals(hctx, start_key, string(), BI_GET_NUM_KEYS, &keys);
-      }
-      started = false;
-    } else {
-      ret = cls_cxx_map_get_vals(hctx, start_key, string(), BI_GET_NUM_KEYS, &keys);
-    }
+  int ret;
+  bufferlist k;
+  ret = cls_cxx_map_get_val(hctx, start_key, &k);
+  if (ret < 0 && ret != -ENOENT) {
+    return ret;
+  }
+  bool found_first = (ret == 0);
+  if (found_first) {
+    --max;
+  }
+  if (max > 0) {
+    ret = cls_cxx_map_get_vals(hctx, start_key, string(), max, &keys, ptruncated);
     CLS_LOG(20, "%s(): start_key=%s first_instance_idx=%s keys.size()=%d", __func__, escape_str(start_key).c_str(), escape_str(first_instance_idx).c_str(), (int)keys.size());
     if (ret < 0) {
       return ret;
     }
+  }
 
-    map<string, bufferlist>::iterator iter;
-    for (iter = keys.begin(); iter != keys.end(); ++iter) {
-      rgw_cls_bi_entry entry;
-      entry.type = OLHIdx;
-      entry.idx = iter->first;
-      entry.data = iter->second;
+  if (found_first) {
+    keys[start_key].claim(k);
+  }
 
-      if (!filter.empty() && entry.idx.compare(0, filter.size(), filter) != 0) {
-        return count;
-      }
+  map<string, bufferlist>::iterator iter;
+  for (iter = keys.begin(); iter != keys.end(); ++iter) {
+    rgw_cls_bi_entry entry;
+    entry.type = OLHIdx;
+    entry.idx = iter->first;
+    entry.data = iter->second;
 
-      CLS_LOG(20, "%s(): entry.idx=%s", __func__, escape_str(entry.idx).c_str());
-
-      bufferlist::iterator biter = entry.data.begin();
-
-      rgw_bucket_olh_entry e;
-      try {
-        ::decode(e, biter);
-      } catch (buffer::error& err) {
-        CLS_LOG(0, "ERROR: %s(): failed to decode buffer (size=%d)", __func__, entry.data.length());
-        return -EIO;
-      }
-
-      if (!name.empty() && e.key.name != name) {
-        return count;
-      }
-
-      entries->push_back(entry);
-      count++;
-      start_key = entry.idx;
+    if (!filter.empty() && entry.idx.compare(0, filter.size(), filter) != 0) {
+      return count;
     }
-  } while (!keys.empty());
+
+    CLS_LOG(20, "%s(): entry.idx=%s", __func__, escape_str(entry.idx).c_str());
+
+    bufferlist::iterator biter = entry.data.begin();
+
+    rgw_bucket_olh_entry e;
+    try {
+      ::decode(e, biter);
+    } catch (buffer::error& err) {
+      CLS_LOG(0, "ERROR: %s(): failed to decode buffer (size=%d)", __func__, entry.data.length());
+      return -EIO;
+    }
+
+    if (!name.empty() && e.key.name != name) {
+      return count;
+    }
+
+    entries->push_back(entry);
+    count++;
+    start_key = entry.idx;
+  }
 
   return count;
 }
@@ -2491,9 +2487,10 @@ static int rgw_bi_list_op(cls_method_context_t hctx, bufferlist *in, bufferlist 
 
   string filter = op.name;
 #define MAX_BI_LIST_ENTRIES 1000
-  int32_t max = (op.max < MAX_BI_LIST_ENTRIES ? op.max : MAX_BI_LIST_ENTRIES) + 1; /* one extra entry for identifying truncation */
+  int32_t max = (op.max < MAX_BI_LIST_ENTRIES ? op.max : MAX_BI_LIST_ENTRIES);
   string start_key = op.marker;
-  int ret = list_plain_entries(hctx, op.name, op.marker, max, &op_ret.entries); 
+  bool truncated;
+  int ret = list_plain_entries(hctx, op.name, op.marker, max, &op_ret.entries, &truncated); 
   if (ret < 0) {
     CLS_LOG(0, "ERROR: %s(): list_plain_entries retured ret=%d", __func__, ret);
     return ret;
@@ -2502,23 +2499,27 @@ static int rgw_bi_list_op(cls_method_context_t hctx, bufferlist *in, bufferlist 
 
   CLS_LOG(20, "found %d plain entries", count);
 
-  ret = list_instance_entries(hctx, op.name, op.marker, max - count, &op_ret.entries);
-  if (ret < 0) {
-    CLS_LOG(0, "ERROR: %s(): list_instance_entries retured ret=%d", __func__, ret);
-    return ret;
+  if (!truncated) {
+    ret = list_instance_entries(hctx, op.name, op.marker, max - count, &op_ret.entries, &truncated);
+    if (ret < 0) {
+      CLS_LOG(0, "ERROR: %s(): list_instance_entries retured ret=%d", __func__, ret);
+      return ret;
+    }
+
+    count += ret;
   }
 
-  count += ret;
+  if (!truncated) {
+    ret = list_olh_entries(hctx, op.name, op.marker, max - count, &op_ret.entries, &truncated);
+    if (ret < 0) {
+      CLS_LOG(0, "ERROR: %s(): list_olh_entries retured ret=%d", __func__, ret);
+      return ret;
+    }
 
-  ret = list_olh_entries(hctx, op.name, op.marker, max - count, &op_ret.entries);
-  if (ret < 0) {
-    CLS_LOG(0, "ERROR: %s(): list_olh_entries retured ret=%d", __func__, ret);
-    return ret;
+    count += ret;
   }
 
-  count += ret;
-
-  op_ret.is_truncated = (count >= max);
+  op_ret.is_truncated = (count >= max) || truncated;
   while (count >= max) {
     op_ret.entries.pop_back();
     count--;
@@ -2580,45 +2581,40 @@ static int bi_log_iterate_entries(cls_method_context_t hctx, const string& marke
 
   string filter;
 
-  do {
-#define BI_NUM_KEYS 128
-    int ret = cls_cxx_map_get_vals(hctx, start_key, filter, BI_NUM_KEYS, &keys);
+  int ret = cls_cxx_map_get_vals(hctx, start_key, filter, max_entries, &keys, truncated);
+  if (ret < 0)
+    return ret;
+
+  map<string, bufferlist>::iterator iter = keys.begin();
+  if (iter == keys.end())
+    return 0;
+
+  uint32_t num_keys = keys.size();
+
+  for (; iter != keys.end(); ++iter,++i) {
+    const string& key = iter->first;
+    rgw_bi_log_entry e;
+
+    CLS_LOG(0, "bi_log_iterate_entries key=%s bl.length=%d\n", key.c_str(), (int)iter->second.length());
+
+    if (key.compare(end_key) > 0) {
+      key_iter = key;
+      return 0;
+    }
+
+    ret = bi_log_record_decode(iter->second, e);
     if (ret < 0)
       return ret;
 
-    map<string, bufferlist>::iterator iter = keys.begin();
-    if (iter == keys.end())
-      break;
+    ret = cb(hctx, key, e, param);
+    if (ret < 0)
+      return ret;
 
-    for (; iter != keys.end(); ++iter) {
-      const string& key = iter->first;
-      rgw_bi_log_entry e;
-
-      CLS_LOG(0, "bi_log_iterate_entries key=%s bl.length=%d\n", key.c_str(), (int)iter->second.length());
-
-      if (key.compare(end_key) > 0)
-        return 0;
-
-      ret = bi_log_record_decode(iter->second, e);
-      if (ret < 0)
-        return ret;
-
-      if (max_entries && (i >= max_entries)) {
-        if (truncated)
-          *truncated = true;
-        key_iter = key;
-        return 0;
-      }
-
-      ret = cb(hctx, key, e, param);
-      if (ret < 0)
-        return ret;
-      i++;
-
+    if (i == num_keys - 1) {
+      key_iter = key;
     }
-    --iter;
-    start_key = iter->first;
-  } while (true);
+  }
+
   return 0;
 }
 
@@ -2860,58 +2856,53 @@ static int usage_iterate_range(cls_method_context_t hctx, uint64_t start, uint64
     start_key = key_iter;
   }
 
-  do {
-    CLS_LOG(20, "usage_iterate_range start_key=%s", start_key.c_str());
-    int ret = cls_cxx_map_get_vals(hctx, start_key, filter_prefix, NUM_KEYS, &keys);
+  CLS_LOG(20, "usage_iterate_range start_key=%s", start_key.c_str());
+  int ret = cls_cxx_map_get_vals(hctx, start_key, filter_prefix, max_entries, &keys, truncated);
+  if (ret < 0)
+    return ret;
+
+
+  map<string, bufferlist>::iterator iter = keys.begin();
+  if (iter == keys.end())
+    return 0;
+
+  uint32_t num_keys = keys.size();
+
+  for (; iter != keys.end(); ++iter,++i) {
+    const string& key = iter->first;
+    rgw_usage_log_entry e;
+
+    if (!by_user && key.compare(end_key) >= 0) {
+      CLS_LOG(20, "usage_iterate_range reached key=%s, done", key.c_str());
+      return 0;
+    }
+
+    if (by_user && key.compare(0, user_key.size(), user_key) != 0) {
+      CLS_LOG(20, "usage_iterate_range reached key=%s, done", key.c_str());
+      return 0;
+    }
+
+    ret = usage_record_decode(iter->second, e);
+    if (ret < 0)
+      return ret;
+
+    if (e.epoch < start)
+      continue;
+
+    /* keys are sorted by epoch, so once we're past end we're done */
+    if (e.epoch >= end)
+      return 0;
+
+    ret = cb(hctx, key, e, param);
     if (ret < 0)
       return ret;
 
 
-    map<string, bufferlist>::iterator iter = keys.begin();
-    if (iter == keys.end())
-      break;
-
-    for (; iter != keys.end(); ++iter) {
-      const string& key = iter->first;
-      rgw_usage_log_entry e;
-
-      if (!by_user && key.compare(end_key) >= 0) {
-        CLS_LOG(20, "usage_iterate_range reached key=%s, done", key.c_str());
-        return 0;
-      }
-
-      if (by_user && key.compare(0, user_key.size(), user_key) != 0) {
-        CLS_LOG(20, "usage_iterate_range reached key=%s, done", key.c_str());
-        return 0;
-      }
-
-      ret = usage_record_decode(iter->second, e);
-      if (ret < 0)
-        return ret;
-
-      if (e.epoch < start)
-	continue;
-
-      /* keys are sorted by epoch, so once we're past end we're done */
-      if (e.epoch >= end)
-        return 0;
-
-      ret = cb(hctx, key, e, param);
-      if (ret < 0)
-        return ret;
-
-
-      i++;
-      if (max_entries && (i > max_entries)) {
-        CLS_LOG(20, "usage_iterate_range reached max_entries (%d), done", max_entries);
-        *truncated = true;
-        key_iter = key;
-        return 0;
-      }
+    if (i == num_keys - 1) {
+      key_iter = key;
+      return 0;
     }
-    --iter;
-    start_key = iter->first;
-  } while (true);
+  }
   return 0;
 }
 
@@ -2997,7 +2988,9 @@ int rgw_user_usage_log_trim(cls_method_context_t hctx, bufferlist *in, bufferlis
   }
 
   string iter;
-  ret = usage_iterate_range(hctx, op.start_epoch, op.end_epoch, op.user, iter, 0, NULL, usage_log_trim_cb, NULL);
+  bool truncated;
+#define MAX_USAGE_TRIM_ENTRIES 128
+  ret = usage_iterate_range(hctx, op.start_epoch, op.end_epoch, op.user, iter, MAX_USAGE_TRIM_ENTRIES, &truncated, usage_log_trim_cb, NULL);
   if (ret < 0)
     return ret;
 
@@ -3195,50 +3188,42 @@ static int gc_iterate_entries(cls_method_context_t hctx, const string& marker, b
 
   string filter;
 
-  do {
-#define GC_NUM_KEYS 32
-    int ret = cls_cxx_map_get_vals(hctx, start_key, filter, GC_NUM_KEYS, &keys);
+  int ret = cls_cxx_map_get_vals(hctx, start_key, filter, max_entries, &keys, truncated);
+  if (ret < 0)
+    return ret;
+
+
+  map<string, bufferlist>::iterator iter = keys.begin();
+  if (iter == keys.end())
+    return 0;
+
+  uint32_t num_keys = keys.size();
+
+  for (; iter != keys.end(); ++iter, ++i) {
+    const string& key = iter->first;
+    cls_rgw_gc_obj_info e;
+
+    CLS_LOG(10, "gc_iterate_entries key=%s\n", key.c_str());
+
+    if (!end_key.empty() && key.compare(end_key) >= 0)
+      return 0;
+
+    if (!key_in_index(key, GC_OBJ_TIME_INDEX))
+      return 0;
+
+    ret = gc_record_decode(iter->second, e);
     if (ret < 0)
       return ret;
 
+    ret = cb(hctx, key, e, param);
+    if (ret < 0)
+      return ret;
 
-    map<string, bufferlist>::iterator iter = keys.begin();
-    if (iter == keys.end())
-      break;
-
-    for (; iter != keys.end(); ++iter) {
-      const string& key = iter->first;
-      cls_rgw_gc_obj_info e;
-
-      CLS_LOG(10, "gc_iterate_entries key=%s\n", key.c_str());
-
-      if (!end_key.empty() && key.compare(end_key) >= 0)
-        return 0;
-
-      if (!key_in_index(key, GC_OBJ_TIME_INDEX))
-	return 0;
-
-      ret = gc_record_decode(iter->second, e);
-      if (ret < 0)
-        return ret;
-
-      if (max_entries && (i >= max_entries)) {
-        if (truncated)
-          *truncated = true;
-        --iter;
-        key_iter = iter->first;
-        return 0;
-      }
-
-      ret = cb(hctx, key, e, param);
-      if (ret < 0)
-        return ret;
-      i++;
-
+    if (i == num_keys - 1) {
+      key_iter = key;
     }
-    --iter;
-    start_key = iter->first;
-  } while (true);
+  }
+
   return 0;
 }
 
@@ -3272,7 +3257,8 @@ static int rgw_cls_gc_list(cls_method_context_t hctx, bufferlist *in, bufferlist
   }
 
   cls_rgw_gc_list_ret op_ret;
-  int ret = gc_list_entries(hctx, op.marker, op.max, op.expired_only, 
+#define GC_LIST_ENTRIES_DEFAULT 128
+  int ret = gc_list_entries(hctx, op.marker, (op.max ? op.max : GC_LIST_ENTRIES_DEFAULT), op.expired_only, 
    op_ret.entries, &op_ret.truncated, op_ret.next_marker);
   if (ret < 0)
     return ret;
@@ -3382,9 +3368,14 @@ static int rgw_cls_lc_get_next_entry(cls_method_context_t hctx, bufferlist *in, 
 
   map<string, bufferlist> vals;
   string filter_prefix;
-  int ret = cls_cxx_map_get_vals(hctx, op.marker, filter_prefix, 1, &vals);
+  bool truncated;
+  int ret = cls_cxx_map_get_vals(hctx, op.marker, filter_prefix, 1, &vals, &truncated);
   if (ret < 0)
     return ret;
+  if (truncated) {
+    /* should never happen */
+    return -EIO;
+  }
   map<string, bufferlist>::iterator it;
   pair<string, int> entry;
   if (!vals.empty()) {
@@ -3417,7 +3408,7 @@ static int rgw_cls_lc_list_entries(cls_method_context_t hctx, bufferlist *in, bu
   bufferlist::iterator iter;
   map<string, bufferlist> vals;
   string filter_prefix;
-  int ret = cls_cxx_map_get_vals(hctx, op.marker, filter_prefix, op.max_entries, &vals);
+  int ret = cls_cxx_map_get_vals(hctx, op.marker, filter_prefix, op.max_entries, &vals, &op_ret.is_truncated);
   if (ret < 0)
     return ret;
   map<string, bufferlist>::iterator it;
@@ -3522,8 +3513,8 @@ static int rgw_reshard_list(cls_method_context_t hctx, bufferlist *in, bufferlis
   string filter_prefix;
 #define MAX_RESHARD_LIST_ENTRIES 1000
   /* one extra entry for identifying truncation */
-  int32_t max = (op.max < MAX_RESHARD_LIST_ENTRIES ? op.max : MAX_RESHARD_LIST_ENTRIES) + 1;
-  int ret = cls_cxx_map_get_vals(hctx, op.marker, filter_prefix, max, &vals);
+  int32_t max = (op.max && (op.max < MAX_RESHARD_LIST_ENTRIES) ? op.max : MAX_RESHARD_LIST_ENTRIES);
+  int ret = cls_cxx_map_get_vals(hctx, op.marker, filter_prefix, max, &vals, &op_ret.is_truncated);
   if (ret < 0)
     return ret;
   map<string, bufferlist>::iterator it;
@@ -3539,7 +3530,6 @@ static int rgw_reshard_list(cls_method_context_t hctx, bufferlist *in, bufferlis
    }
     op_ret.entries.push_back(entry);
   }
-  op_ret.is_truncated = op.max && (vals.size() > op.max);
   ::encode(op_ret, *out);
   return 0;
 }
