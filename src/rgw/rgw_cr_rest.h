@@ -306,4 +306,33 @@ public:
   }
 };
 
+class RGWCRRESTGetDataCB;
+
+class RGWStreamReadRESTResourceCRF {
+  RGWCoroutinesEnv *env;
+  RGWCoroutine *caller;
+  RGWHTTPManager *http_manager;
+
+  RGWRESTStreamRWRequest *req;
+
+  RGWCRRESTGetDataCB *in_cb{nullptr};
+
+  boost::asio::coroutine read_state;
+
+
+public:
+  RGWStreamReadRESTResourceCRF(CephContext *_cct,
+                               RGWCoroutinesEnv *_env,
+                               RGWCoroutine *_caller,
+                               RGWHTTPManager *_http_manager,
+                               RGWRESTStreamRWRequest *_req) : env(_env),
+                                                               caller(_caller),
+                                                               http_manager(_http_manager),
+                                                               req(_req) {}
+  ~RGWStreamReadRESTResourceCRF();
+
+  int init();
+  int read(bufferlist *data, uint64_t max); /* reentrant */
+};
+
 #endif
