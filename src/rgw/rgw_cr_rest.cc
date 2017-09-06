@@ -29,9 +29,6 @@ public:
       }
     }
 
-#if 0
-    env->manager->set_sleeping(cr, false); /* wake up! */
-#endif
     env->manager->io_complete(cr);
     return 0;
   }
@@ -65,6 +62,8 @@ int RGWStreamReadHTTPResourceCRF::init()
 {
   in_cb = new RGWCRHTTPGetDataCB(env, caller);
 
+  req->set_user_info(env->stack);
+
   int r = http_manager->add_request(req);
   if (r < 0) {
     return r;
@@ -78,9 +77,6 @@ int RGWStreamReadHTTPResourceCRF::read(bufferlist *out, uint64_t max_size)
   reenter(&read_state) {
     while (!req->is_done()) {
       if (!in_cb->has_data()) {
-#if 0
-        yield caller->set_sleeping(true);
-#endif
         yield caller->io_block();
       }
       in_cb->claim_data(out, max_size);

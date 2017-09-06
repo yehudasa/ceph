@@ -6253,7 +6253,9 @@ next:
     RGWHTTPStreamRWRequest req(store->ctx(), "PUT", url, &cb, nullptr, nullptr);
     derr << __FILE__ << ":" << __LINE__ << dendl;
 
+#if 0
     req.set_stream_write(true);
+#endif
 
     RGWCoroutinesManager crs(store->ctx(), store->get_cr_registry());
     RGWHTTPManager http(store->ctx(), crs.get_completion_mgr());

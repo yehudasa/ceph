@@ -667,6 +667,7 @@ void RGWHTTPManager::_complete_request(rgw_http_req_data *req_data)
     req_data->mgr = nullptr;
   }
   if (completion_mgr) {
+dout(0) << __FILE__ << ":" << __LINE__ << dendl;
     completion_mgr->complete(NULL, req_data->user_info);
   }
 
@@ -675,6 +676,7 @@ void RGWHTTPManager::_complete_request(rgw_http_req_data *req_data)
 
 void RGWHTTPManager::finish_request(rgw_http_req_data *req_data, int ret)
 {
+dout(0) << __FILE__ << ":" << __LINE__ << dendl;
   req_data->finish(ret);
   complete_request(req_data);
 }

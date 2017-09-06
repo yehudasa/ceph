@@ -8,6 +8,7 @@
 #include <boost/asio/yield.hpp>
 
 #define dout_subsys ceph_subsys_rgw
+#define dout_context g_ceph_context
 
 
 class RGWCompletionManager::WaitContext : public Context {
@@ -37,6 +38,7 @@ void RGWCompletionManager::complete(RGWAioCompletionNotifier *cn, void *user_inf
 {
   Mutex::Locker l(lock);
   _complete(cn, user_info);
+dout(0) << __FILE__ << ":" << __LINE__ << dendl;
 }
 
 void RGWCompletionManager::register_completion_notifier(RGWAioCompletionNotifier *cn)
@@ -62,6 +64,7 @@ void RGWCompletionManager::_complete(RGWAioCompletionNotifier *cn, void *user_in
   }
   complete_reqs.push_back(user_info);
   cond.Signal();
+dout(0) << __FILE__ << ":" << __LINE__ << " user_info=" << user_info << dendl;
 }
 
 int RGWCompletionManager::get_next(void **user_info)
