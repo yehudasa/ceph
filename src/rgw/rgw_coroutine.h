@@ -216,7 +216,6 @@ protected:
     return 0;
   }
   void set_io_blocked(bool flag);
-  int io_block(int ret = 0);
 
   void reset_description() {
     description.str(string());
@@ -282,6 +281,9 @@ public:
   RGWCoroutinesEnv *get_env() const;
 
   void dump(Formatter *f) const;
+
+  int io_block(int ret = 0);
+  void io_complete();
 };
 
 ostream& operator<<(ostream& out, const RGWCoroutine& cr);
@@ -441,6 +443,7 @@ public:
 
   int wait(const utime_t& interval);
   void wakeup();
+  void io_complete();
 
   bool collect(int *ret, RGWCoroutinesStack *skip_stack); /* returns true if needs to be called again */
 
@@ -561,6 +564,7 @@ public:
   RGWCoroutinesStack *allocate_stack();
 
   void set_sleeping(RGWCoroutine *cr, bool flag);
+  void io_complete(RGWCoroutine *cr);
 
   virtual string get_id();
   void dump(Formatter *f) const;

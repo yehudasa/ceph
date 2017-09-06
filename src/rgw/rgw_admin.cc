@@ -42,6 +42,7 @@
 #include "rgw_realm_watcher.h"
 #include "rgw_role.h"
 #include "rgw_reshard.h"
+#include "rgw_cr_rest.h"
 
 using namespace std;
 
@@ -520,6 +521,7 @@ static int get_cmd(const char *cmd, const char *prev_cmd, const char *prev_prev_
       strcmp(cmd, "role-policy") == 0 ||
       strcmp(cmd, "subuser") == 0 ||
       strcmp(cmd, "sync") == 0 ||
+      strcmp(cmd, "test") == 0 ||
       strcmp(cmd, "usage") == 0 ||
       strcmp(cmd, "user") == 0 ||
       strcmp(cmd, "zone") == 0 ||
@@ -6253,6 +6255,22 @@ next:
 
     req.set_stream_write(true);
 
+    RGWCoroutinesManager crs(store->ctx(), store->get_cr_registry());
+    RGWHTTPManager http(store->ctx(), crs.get_completion_mgr());
+    int ret = http.start();
+    if (ret < 0) {
+      cerr << "failed to initialize http client with " << cpp_strerror(ret) << std::endl;
+      return -ret;
+    }
+
+    TestCR *cr = new TestCR(store->ctx(), &http, &req);
+
+    ret = crs.run(cr);
+
+    derr << __FILE__ << ":" << __LINE__ << " ret=" << ret << dendl;
+
+
+#if 0
     RGWHTTP::send(&req);
     derr << __FILE__ << ":" << __LINE__ << dendl;
     for (int i = 0; i < 100000; i++) {
@@ -6266,6 +6284,7 @@ next:
     derr << __FILE__ << ":" << __LINE__ << dendl;
     req.wait();
     derr << __FILE__ << ":" << __LINE__ << dendl;
+#endif
   }
 
   if (opt_cmd == OPT_MDLOG_AUTOTRIM) {

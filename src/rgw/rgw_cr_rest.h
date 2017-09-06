@@ -306,33 +306,48 @@ public:
   }
 };
 
-class RGWCRRESTGetDataCB;
+class RGWCRHTTPGetDataCB;
 
-class RGWStreamReadRESTResourceCRF {
+class RGWStreamReadHTTPResourceCRF {
   RGWCoroutinesEnv *env;
   RGWCoroutine *caller;
   RGWHTTPManager *http_manager;
 
-  RGWRESTStreamRWRequest *req;
+  RGWHTTPStreamRWRequest *req;
 
-  RGWCRRESTGetDataCB *in_cb{nullptr};
+  RGWCRHTTPGetDataCB *in_cb{nullptr};
 
   boost::asio::coroutine read_state;
 
 
 public:
-  RGWStreamReadRESTResourceCRF(CephContext *_cct,
+  RGWStreamReadHTTPResourceCRF(CephContext *_cct,
                                RGWCoroutinesEnv *_env,
                                RGWCoroutine *_caller,
                                RGWHTTPManager *_http_manager,
-                               RGWRESTStreamRWRequest *_req) : env(_env),
+                               RGWHTTPStreamRWRequest *_req) : env(_env),
                                                                caller(_caller),
                                                                http_manager(_http_manager),
                                                                req(_req) {}
-  ~RGWStreamReadRESTResourceCRF();
+  ~RGWStreamReadHTTPResourceCRF();
 
   int init();
   int read(bufferlist *data, uint64_t max); /* reentrant */
+};
+
+class TestCR : public RGWCoroutine {
+  CephContext *cct;
+  RGWHTTPManager *http_manager;
+  string url;
+  RGWHTTPStreamRWRequest *req{nullptr};
+  RGWStreamReadHTTPResourceCRF *crf{nullptr};
+  bufferlist bl;
+  int ret{0};
+public:
+  TestCR(CephContext *_cct, RGWHTTPManager *_mgr, RGWHTTPStreamRWRequest *_req);
+  ~TestCR();
+
+  int operate();
 };
 
 #endif

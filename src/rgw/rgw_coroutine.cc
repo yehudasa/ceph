@@ -142,6 +142,10 @@ int RGWCoroutine::io_block(int ret) {
   return ret;
 }
 
+void RGWCoroutine::io_complete() {
+  stack->io_complete();
+}
+
 void RGWCoroutine::StatusItem::dump(Formatter *f) const {
   ::encode_json("timestamp", timestamp, f);
   ::encode_json("status", status, f);
@@ -278,6 +282,12 @@ void RGWCoroutinesStack::wakeup()
 {
   RGWCompletionManager *completion_mgr = env->manager->get_completion_mgr();
   completion_mgr->wakeup((void *)this);
+}
+
+void RGWCoroutinesStack::io_complete()
+{
+  RGWCompletionManager *completion_mgr = env->manager->get_completion_mgr();
+  completion_mgr->complete(nullptr, (void *)this);
 }
 
 int RGWCoroutinesStack::unwind(int retcode)
@@ -457,6 +467,12 @@ void RGWCoroutinesManager::set_sleeping(RGWCoroutine *cr, bool flag)
 {
   RWLock::WLocker wl(lock);
   cr->set_sleeping(flag);
+}
+
+void RGWCoroutinesManager::io_complete(RGWCoroutine *cr)
+{
+  RWLock::WLocker wl(lock);
+  cr->io_complete();
 }
 
 int RGWCoroutinesManager::run(list<RGWCoroutinesStack *>& stacks)

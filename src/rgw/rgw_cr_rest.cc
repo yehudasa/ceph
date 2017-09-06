@@ -7,13 +7,16 @@
 
 #include <boost/asio/yield.hpp>
 
-class RGWCRRESTGetDataCB : public RGWGetDataCB {
+#define dout_context g_ceph_context
+#define dout_subsys ceph_subsys_rgw
+
+class RGWCRHTTPGetDataCB : public RGWGetDataCB {
   Mutex lock;
   RGWCoroutinesEnv *env;
   RGWCoroutine *cr;
   bufferlist data;
 public:
-  RGWCRRESTGetDataCB(RGWCoroutinesEnv *_env, RGWCoroutine *_cr) : lock("RGWCRRESTGetDataCB"), env(_env), cr(_cr) {}
+  RGWCRHTTPGetDataCB(RGWCoroutinesEnv *_env, RGWCoroutine *_cr) : lock("RGWCRHTTPGetDataCB"), env(_env), cr(_cr) {}
 
   int handle_data(bufferlist& bl, off_t bl_ofs, off_t bl_len) override {
     {
@@ -26,7 +29,10 @@ public:
       }
     }
 
+#if 0
     env->manager->set_sleeping(cr, false); /* wake up! */
+#endif
+    env->manager->io_complete(cr);
     return 0;
   }
 
@@ -50,14 +56,14 @@ public:
 };
 
 
-RGWStreamReadRESTResourceCRF::~RGWStreamReadRESTResourceCRF()
+RGWStreamReadHTTPResourceCRF::~RGWStreamReadHTTPResourceCRF()
 {
   delete in_cb;
 }
 
-int RGWStreamReadRESTResourceCRF::init()
+int RGWStreamReadHTTPResourceCRF::init()
 {
-  in_cb = new RGWCRRESTGetDataCB(env, caller);
+  in_cb = new RGWCRHTTPGetDataCB(env, caller);
 
   int r = http_manager->add_request(req);
   if (r < 0) {
@@ -67,12 +73,15 @@ int RGWStreamReadRESTResourceCRF::init()
   return 0;
 }
 
-int RGWStreamReadRESTResourceCRF::read(bufferlist *out, uint64_t max_size)
+int RGWStreamReadHTTPResourceCRF::read(bufferlist *out, uint64_t max_size)
 {
   reenter(&read_state) {
     while (!req->is_done()) {
       if (!in_cb->has_data()) {
+#if 0
         yield caller->set_sleeping(true);
+#endif
+        yield caller->io_block();
       }
       in_cb->claim_data(out, max_size);
     }
@@ -80,3 +89,43 @@ int RGWStreamReadRESTResourceCRF::read(bufferlist *out, uint64_t max_size)
   return 0;
 }
 
+TestCR::TestCR(CephContext *_cct, RGWHTTPManager *_mgr, RGWHTTPStreamRWRequest *_req) : RGWCoroutine(_cct), cct(_cct), http_manager(_mgr),
+                                                                                        req(_req) {}
+TestCR::~TestCR() {
+  delete crf;
+}
+
+int TestCR::operate() {
+  reenter(this) {
+    crf = new RGWStreamReadHTTPResourceCRF(cct, get_env(), this, http_manager, req);
+
+    {
+      int ret = crf->init();
+      if (ret < 0) {
+        return set_cr_error(ret);
+      }
+    }
+
+    do {
+
+      bl.clear();
+
+      yield {
+        ret = crf->read(&bl, 4 * 1024 * 1024);
+        if (ret < 0)  {
+          return set_cr_error(ret);
+        }
+      }
+
+      if (retcode < 0) {
+        dout(0) << __FILE__ << ":" << __LINE__ << " retcode=" << retcode << dendl;
+        return set_cr_error(ret);
+      }
+
+      dout(0) << "read " << bl.length() << " bytes" << dendl;
+    } while (bl.length() > 0);
+
+    return set_cr_done();
+  }
+  return 0;
+}
