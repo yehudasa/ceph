@@ -308,7 +308,7 @@ public:
 
 class RGWCRHTTPGetDataCB;
 
-class RGWStreamReadHTTPResourceCRF {
+class RGWStreamRWHTTPResourceCRF {
   RGWCoroutinesEnv *env;
   RGWCoroutine *caller;
   RGWHTTPManager *http_manager;
@@ -318,10 +318,11 @@ class RGWStreamReadHTTPResourceCRF {
   RGWCRHTTPGetDataCB *in_cb{nullptr};
 
   boost::asio::coroutine read_state;
+  boost::asio::coroutine write_state;
 
 
 public:
-  RGWStreamReadHTTPResourceCRF(CephContext *_cct,
+  RGWStreamRWHTTPResourceCRF(CephContext *_cct,
                                RGWCoroutinesEnv *_env,
                                RGWCoroutine *_caller,
                                RGWHTTPManager *_http_manager,
@@ -329,10 +330,11 @@ public:
                                                                caller(_caller),
                                                                http_manager(_http_manager),
                                                                req(_req) {}
-  ~RGWStreamReadHTTPResourceCRF();
+  ~RGWStreamRWHTTPResourceCRF();
 
   int init();
-  int read(bufferlist *data, uint64_t max); /* reentrant */
+  int read(bufferlist *data, uint64_t max, bool *need_retry); /* reentrant */
+  int write(bufferlist& data); /* reentrant */
 };
 
 class TestCR : public RGWCoroutine {
@@ -340,8 +342,9 @@ class TestCR : public RGWCoroutine {
   RGWHTTPManager *http_manager;
   string url;
   RGWHTTPStreamRWRequest *req{nullptr};
-  RGWStreamReadHTTPResourceCRF *crf{nullptr};
+  RGWStreamRWHTTPResourceCRF *crf{nullptr};
   bufferlist bl;
+  bool need_retry{false};
   int ret{0};
 public:
   TestCR(CephContext *_cct, RGWHTTPManager *_mgr, RGWHTTPStreamRWRequest *_req);

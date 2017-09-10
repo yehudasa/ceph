@@ -502,12 +502,13 @@ int RGWCoroutinesManager::run(list<RGWCoroutinesStack *>& stacks)
   env.scheduled_stacks = &scheduled_stacks;
 
   for (list<RGWCoroutinesStack *>::iterator iter = scheduled_stacks.begin(); iter != scheduled_stacks.end() && !going_down;) {
-    lock.get_write();
-
     RGWCoroutinesStack *stack = *iter;
     env.stack = stack;
 
     ret = stack->operate(&env);
+
+    lock.get_write();
+
     stack->set_is_scheduled(false);
     if (ret < 0) {
       ldout(cct, 20) << "stack->operate() returned ret=" << ret << dendl;

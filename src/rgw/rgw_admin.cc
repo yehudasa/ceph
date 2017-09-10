@@ -6250,10 +6250,10 @@ next:
       }
     } cb;
 
-    RGWHTTPStreamRWRequest req(store->ctx(), "PUT", url, &cb, nullptr, nullptr);
+    RGWHTTPStreamRWRequest req(store->ctx(), "PUT", url, nullptr, nullptr);
     derr << __FILE__ << ":" << __LINE__ << dendl;
 
-#if 0
+#if 1
     req.set_stream_write(true);
 #endif
 
