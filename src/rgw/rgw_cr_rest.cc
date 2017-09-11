@@ -19,7 +19,6 @@ public:
   RGWCRHTTPGetDataCB(RGWCoroutinesEnv *_env, RGWCoroutine *_cr) : lock("RGWCRHTTPGetDataCB"), env(_env), cr(_cr) {}
 
   int handle_data(bufferlist& bl, off_t bl_ofs, off_t bl_len) override {
-dout(0) << __FILE__ << ":" << __LINE__ << ": bl.length()=" << bl.length() << " bl_ofs=" << bl_ofs << " bl_len=" << bl_len << " bl=" << string(bl.c_str(), bl.length()) << dendl; 
     {
       Mutex::Locker l(lock);
       if (bl_len == bl.length()) {
@@ -34,7 +33,6 @@ dout(0) << __FILE__ << ":" << __LINE__ << ": bl.length()=" << bl.length() << " b
   }
 
   void claim_data(bufferlist *dest, uint64_t max) {
-dout(0) << __FILE__ << ":" << __LINE__ << ": data.length()=" << data.length() << " data=" << string(data.c_str(), data.length()) << dendl;
     Mutex::Locker l(lock);
 
     if (data.length() == 0) {
@@ -74,25 +72,19 @@ int RGWStreamRWHTTPResourceCRF::init()
   return 0;
 }
 
-int RGWStreamRWHTTPResourceCRF::read(bufferlist *out, uint64_t max_size, bool *need_retry)
+int RGWStreamRWHTTPResourceCRF::read(bufferlist *out, uint64_t max_size, bool *io_pending)
 {
     reenter(&read_state) {
-dout(0) << __FILE__ << ":" << __LINE__ << dendl;
     while (!req->is_done()) {
-      *need_retry = true;
-dout(0) << __FILE__ << ":" << __LINE__ << dendl;
+      *io_pending = true;
       if (!in_cb->has_data()) {
-dout(0) << __FILE__ << ":" << __LINE__ << dendl;
         yield caller->io_block();
-dout(0) << __FILE__ << ":" << __LINE__ << dendl;
       }
-dout(0) << __FILE__ << ":" << __LINE__ << dendl;
-      *need_retry = false;
+      *io_pending = false;
       in_cb->claim_data(out, max_size);
       if (!req->is_done()) {
         yield;
       }
-dout(0) << __FILE__ << ":" << __LINE__ << dendl;
     }
   }
   return 0;
@@ -102,11 +94,8 @@ int RGWStreamRWHTTPResourceCRF::write(bufferlist& data)
 {
 #warning write need to throttle and block
   reenter(&write_state) {
-dout(0) << __FILE__ << ":" << __LINE__ << dendl;
     while (!req->is_done()) {
-dout(0) << __FILE__ << ":" << __LINE__ << " data.length()=" << data.length() <<  " data=" << string(data.c_str(), data.length()) << dendl;
       yield req->add_send_data(data);
-dout(0) << __FILE__ << ":" << __LINE__ << dendl;
     }
   }
   return 0;
@@ -155,6 +144,78 @@ int TestCR::operate() {
 
       yield {
         ret = crf->write(bl);
+        if (ret < 0)  {
+          return set_cr_error(ret);
+        }
+      }
+
+      if (retcode < 0) {
+        dout(0) << __FILE__ << ":" << __LINE__ << " retcode=" << retcode << dendl;
+        return set_cr_error(ret);
+      }
+
+      dout(0) << "wrote " << bl.length() << " bytes" << dendl;
+    } while (true);
+
+    return set_cr_done();
+  }
+  return 0;
+}
+
+TestSpliceCR::TestSpliceCR(CephContext *_cct, RGWHTTPManager *_mgr,
+                           RGWHTTPStreamRWRequest *_in_req,
+                           RGWHTTPStreamRWRequest *_out_req) : RGWCoroutine(_cct), cct(_cct), http_manager(_mgr),
+                                                               in_req(_in_req), out_req(_out_req) {}
+TestSpliceCR::~TestSpliceCR() {
+  delete in_crf;
+  delete out_crf;
+}
+
+int TestSpliceCR::operate() {
+  reenter(this) {
+    in_crf = new RGWStreamRWHTTPResourceCRF(cct, get_env(), this, http_manager, in_req);
+    out_crf = new RGWStreamRWHTTPResourceCRF(cct, get_env(), this, http_manager, out_req);
+
+    {
+      int ret = in_crf->init();
+      if (ret < 0) {
+        return set_cr_error(ret);
+      }
+    }
+
+    {
+      int ret = out_crf->init();
+      if (ret < 0) {
+        return set_cr_error(ret);
+      }
+    }
+
+    do {
+
+      bl.clear();
+
+      do {
+        yield {
+          ret = in_crf->read(&bl, 4 * 1024 * 1024, &need_retry);
+          if (ret < 0)  {
+            return set_cr_error(ret);
+          }
+        }
+
+        if (retcode < 0) {
+          dout(0) << __FILE__ << ":" << __LINE__ << " retcode=" << retcode << dendl;
+          return set_cr_error(ret);
+        }
+      } while (need_retry);
+
+      dout(0) << "read " << bl.length() << " bytes" << dendl;
+
+      if (bl.length() == 0) {
+        break;
+      }
+
+      yield {
+        ret = out_crf->write(bl);
         if (ret < 0)  {
           return set_cr_error(ret);
         }

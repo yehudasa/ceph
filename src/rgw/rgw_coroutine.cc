@@ -446,13 +446,15 @@ void RGWCoroutinesStack::dump(Formatter *f) const {
 void RGWCoroutinesManager::handle_unblocked_stack(set<RGWCoroutinesStack *>& context_stacks, list<RGWCoroutinesStack *>& scheduled_stacks, RGWCoroutinesStack *stack, int *blocked_count)
 {
   RWLock::WLocker wl(lock);
+  if (context_stacks.find(stack) == context_stacks.end()) {
+    return;
+  }
   --(*blocked_count);
   stack->set_io_blocked(false);
   stack->set_interval_wait(false);
   if (!stack->is_done()) {
     scheduled_stacks.push_back(stack);
   } else {
-    RWLock::WLocker wl(lock);
     context_stacks.erase(stack);
     stack->put();
   }

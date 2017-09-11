@@ -353,4 +353,24 @@ public:
   int operate();
 };
 
+class TestSpliceCR : public RGWCoroutine {
+  CephContext *cct;
+  RGWHTTPManager *http_manager;
+  string url;
+  RGWHTTPStreamRWRequest *in_req{nullptr};
+  RGWHTTPStreamRWRequest *out_req{nullptr};
+  RGWStreamRWHTTPResourceCRF *in_crf{nullptr};
+  RGWStreamRWHTTPResourceCRF *out_crf{nullptr};
+  bufferlist bl;
+  bool need_retry{false};
+  int ret{0};
+public:
+  TestSpliceCR(CephContext *_cct, RGWHTTPManager *_mgr,
+               RGWHTTPStreamRWRequest *_in_req,
+               RGWHTTPStreamRWRequest *_out_req);
+  ~TestSpliceCR();
+
+  int operate();
+};
+
 #endif

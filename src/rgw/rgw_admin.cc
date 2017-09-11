@@ -485,6 +485,7 @@ enum {
   OPT_RESHARD_PROCESS,
   OPT_RESHARD_CANCEL,
   OPT_TEST_CONN,
+  OPT_TEST_SPLICE,
 };
 
 static int get_cmd(const char *cmd, const char *prev_cmd, const char *prev_prev_cmd, bool *need_more)
@@ -937,6 +938,8 @@ static int get_cmd(const char *cmd, const char *prev_cmd, const char *prev_prev_
   } else if (strcmp(prev_cmd, "test") == 0) {
     if (strcmp(cmd, "conn") == 0)
       return OPT_TEST_CONN;
+    if (strcmp(cmd, "splice") == 0)
+      return OPT_TEST_SPLICE;
   }
 
   return -EINVAL;
@@ -2342,6 +2345,8 @@ int main(int argc, const char **argv)
   std::string start_date, end_date;
   std::string key_type_str;
   std::string period_id, period_epoch, remote, url;
+#warning removeme
+std::string url2;
   std::string master_zonegroup, master_zone;
   std::string realm_name, realm_id, realm_new_name;
   std::string zone_name, zone_id, zone_new_name;
@@ -2727,6 +2732,9 @@ int main(int argc, const char **argv)
       remote = val;
     } else if (ceph_argparse_witharg(args, i, &val, "--url", (char*)NULL)) {
       url = val;
+    } else if (ceph_argparse_witharg(args, i, &val, "--url2", (char*)NULL)) {
+#warning removeme
+      url2 = val;
     } else if (ceph_argparse_witharg(args, i, &val, "--realm-id", (char*)NULL)) {
       realm_id = val;
     } else if (ceph_argparse_witharg(args, i, &val, "--realm-new-name", (char*)NULL)) {
@@ -6266,6 +6274,51 @@ next:
     }
 
     TestCR *cr = new TestCR(store->ctx(), &http, &req);
+
+    ret = crs.run(cr);
+
+    derr << __FILE__ << ":" << __LINE__ << " ret=" << ret << dendl;
+
+
+#if 0
+    RGWHTTP::send(&req);
+    derr << __FILE__ << ":" << __LINE__ << dendl;
+    for (int i = 0; i < 100000; i++) {
+      bufferptr bp("zxc", 3);
+      bufferlist bl;
+      bl.push_back(bp);
+
+      req.add_send_data(bl);
+    }
+    req.finish_write();
+    derr << __FILE__ << ":" << __LINE__ << dendl;
+    req.wait();
+    derr << __FILE__ << ":" << __LINE__ << dendl;
+#endif
+  }
+
+  if (opt_cmd == OPT_TEST_SPLICE) {
+    derr << __FILE__ << ":" << __LINE__ << dendl;
+
+    RGWHTTPStreamRWRequest in(store->ctx(), "GET", url, nullptr, nullptr);
+    derr << __FILE__ << ":" << __LINE__ << dendl;
+
+    RGWHTTPStreamRWRequest out(store->ctx(), "PUT", url2, nullptr, nullptr);
+    derr << __FILE__ << ":" << __LINE__ << dendl;
+
+#if 1
+    out.set_stream_write(true);
+#endif
+
+    RGWCoroutinesManager crs(store->ctx(), store->get_cr_registry());
+    RGWHTTPManager http(store->ctx(), crs.get_completion_mgr());
+    int ret = http.start();
+    if (ret < 0) {
+      cerr << "failed to initialize http client with " << cpp_strerror(ret) << std::endl;
+      return -ret;
+    }
+
+    TestSpliceCR *cr = new TestSpliceCR(store->ctx(), &http, &in, &out);
 
     ret = crs.run(cr);
 
