@@ -292,7 +292,7 @@ public:
 
   void init_new_io(RGWIOProvider *io_provider);
 
-  int io_block(int ret = 0);
+  int io_block(int ret = 0, int64_t io_id = -1);
   void io_complete(int64_t io_id = -1);
 };
 
@@ -364,7 +364,8 @@ class RGWCoroutinesStack : public RefCountedObject {
   set<RGWCoroutinesStack *> blocked_by_stack;
   set<RGWCoroutinesStack *> blocking_stacks;
 
-  set<int64_t> io_ids;
+  set<int64_t> io_finish_ids;
+  int64_t io_blocked_id{-1};
 
   bool done_flag;
   bool error_flag;
@@ -405,9 +406,18 @@ public:
   void set_io_blocked(bool flag) {
     blocked_flag = flag;
   }
+  void set_io_blocked_id(int64_t io_id) {
+    io_blocked_id = io_id;
+  }
   bool is_io_blocked() {
     return blocked_flag;
   }
+  bool can_io_unblock(int64_t io_id) {
+    return (io_blocked_id == io_id) ||
+           (io_blocked_id < 0);
+  }
+  bool try_io_unblock(int64_t io_id);
+  bool consume_io_finish(int64_t io_id);
   void set_interval_wait(bool flag) {
     interval_wait_flag = flag;
   }
@@ -583,7 +593,7 @@ public:
   int64_t get_next_io_id();
 
   void set_sleeping(RGWCoroutine *cr, bool flag);
-  void io_complete(RGWCoroutine *cr);
+  void io_complete(RGWCoroutine *cr, int64_t io_id = -1);
 
   virtual string get_id();
   void dump(Formatter *f) const;

@@ -37,6 +37,7 @@ RGWCompletionManager::~RGWCompletionManager()
 void RGWCompletionManager::complete(RGWAioCompletionNotifier *cn, int64_t io_id, void *user_info)
 {
   Mutex::Locker l(lock);
+dout(0) << __FILE__ << ":" << __LINE__ << " io_id=" << io_id << dendl;
   _complete(cn, io_id, user_info);
 }
 
@@ -62,6 +63,7 @@ void RGWCompletionManager::_complete(RGWAioCompletionNotifier *cn, int64_t io_id
     cns.erase(cn);
   }
 
+dout(0) << __FILE__ << ":" << __LINE__ << ": io_id=" << io_id << dendl;
   complete_reqs.push_back(io_completion{io_id, user_info});
   cond.Signal();
 }
@@ -144,8 +146,13 @@ void RGWCoroutine::set_sleeping(bool flag) {
   stack->set_sleeping(flag);
 }
 
-int RGWCoroutine::io_block(int ret) {
+int RGWCoroutine::io_block(int ret, int64_t io_id) {
+  if (stack->consume_io_finish(io_id)) {
+    return 0;
+  }
   set_io_blocked(true);
+  stack->set_io_blocked_id(io_id);
+dout(0) << __FILE__ << ":" << __LINE__ << ": io_id=" << io_id << dendl;
   return ret;
 }
 
@@ -457,7 +464,31 @@ void RGWCoroutinesStack::init_new_io(RGWIOProvider *io_provider)
 {
   io_provider->set_io_user_info((void *)this);
   io_provider->set_io_id(env->manager->get_next_io_id());
+dout(0) << __FILE__ << ":" << __LINE__ << ": io_provider->io_id=" << io_provider->get_io_id() << dendl;
 }
+
+bool RGWCoroutinesStack::try_io_unblock(int64_t io_id)
+{
+dout(0) << __FILE__ << ":" << __LINE__ << ": io_id=" << io_id << " io_blocked_id=" << io_blocked_id << dendl;
+  if (!can_io_unblock(io_id)) {
+    io_finish_ids.insert(io_id);
+    return false;
+  }
+
+  return true;
+}
+
+bool RGWCoroutinesStack::consume_io_finish(int64_t io_id)
+{
+dout(0) << __FILE__ << ":" << __LINE__ << ": io_id=" << io_id << dendl;
+  auto iter = io_finish_ids.find(io_id);
+  if (iter == io_finish_ids.end()) {
+    return false;
+  }
+  io_finish_ids.erase(iter);
+  return true;
+}
+
 
 void RGWCoroutinesManager::handle_unblocked_stack(set<RGWCoroutinesStack *>& context_stacks, list<RGWCoroutinesStack *>& scheduled_stacks,
                                                   RGWCompletionManager::io_completion& io, int *blocked_count)
@@ -465,6 +496,9 @@ void RGWCoroutinesManager::handle_unblocked_stack(set<RGWCoroutinesStack *>& con
   assert(lock.is_wlocked());
   RGWCoroutinesStack *stack = (RGWCoroutinesStack *)io.user_info;
   if (context_stacks.find(stack) == context_stacks.end()) {
+    return;
+  }
+  if (!stack->try_io_unblock(io.io_id)) {
     return;
   }
   --(*blocked_count);
@@ -492,10 +526,10 @@ void RGWCoroutinesManager::set_sleeping(RGWCoroutine *cr, bool flag)
   cr->set_sleeping(flag);
 }
 
-void RGWCoroutinesManager::io_complete(RGWCoroutine *cr)
+void RGWCoroutinesManager::io_complete(RGWCoroutine *cr, int64_t io_id)
 {
   RWLock::WLocker wl(lock);
-  cr->io_complete();
+  cr->io_complete(io_id);
 }
 
 int RGWCoroutinesManager::run(list<RGWCoroutinesStack *>& stacks)
