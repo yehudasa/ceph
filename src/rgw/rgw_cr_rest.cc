@@ -61,7 +61,7 @@ int RGWStreamRWHTTPResourceCRF::init()
 {
   in_cb = new RGWCRHTTPGetDataCB(env, caller);
 
-  req->set_user_info(env->stack);
+  env->stack->init_new_io(req);
   req->set_in_cb(in_cb);
 
   int r = http_manager->add_request(req);
