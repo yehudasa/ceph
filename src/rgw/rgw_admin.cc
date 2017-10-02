@@ -484,7 +484,6 @@ enum {
   OPT_RESHARD_STATUS,
   OPT_RESHARD_PROCESS,
   OPT_RESHARD_CANCEL,
-  OPT_TEST_CONN,
   OPT_TEST_SPLICE,
 };
 
@@ -936,8 +935,6 @@ static int get_cmd(const char *cmd, const char *prev_cmd, const char *prev_prev_
     if (strcmp(cmd, "cancel") == 0)
       return OPT_RESHARD_CANCEL;
   } else if (strcmp(prev_cmd, "test") == 0) {
-    if (strcmp(cmd, "conn") == 0)
-      return OPT_TEST_CONN;
     if (strcmp(cmd, "splice") == 0)
       return OPT_TEST_SPLICE;
   }
@@ -6241,60 +6238,6 @@ next:
 
     formatter->close_section();
     formatter->flush(cout);
-  }
-
-  if (opt_cmd == OPT_TEST_CONN) {
-    derr << __FILE__ << ":" << __LINE__ << dendl;
-
-    list<string> endpoint{url};
-
-    derr << __FILE__ << ":" << __LINE__ << dendl;
-
-
-    class GetDataCB : public RGWGetDataCB {
-      int handle_data(bufferlist& bl, off_t bl_off, off_t bl_len) {
-        dout(0) << "got " << bl_len << " bytes" << dendl;
-        return 0;
-      }
-    } cb;
-
-    RGWHTTPStreamRWRequest req(store->ctx(), "PUT", url, nullptr, nullptr);
-    derr << __FILE__ << ":" << __LINE__ << dendl;
-
-#if 1
-    req.set_stream_write(true);
-#endif
-
-    RGWCoroutinesManager crs(store->ctx(), store->get_cr_registry());
-    RGWHTTPManager http(store->ctx(), crs.get_completion_mgr());
-    int ret = http.start();
-    if (ret < 0) {
-      cerr << "failed to initialize http client with " << cpp_strerror(ret) << std::endl;
-      return -ret;
-    }
-
-    TestCR *cr = new TestCR(store->ctx(), &http, &req);
-
-    ret = crs.run(cr);
-
-    derr << __FILE__ << ":" << __LINE__ << " ret=" << ret << dendl;
-
-
-#if 0
-    RGWHTTP::send(&req);
-    derr << __FILE__ << ":" << __LINE__ << dendl;
-    for (int i = 0; i < 100000; i++) {
-      bufferptr bp("zxc", 3);
-      bufferlist bl;
-      bl.push_back(bp);
-
-      req.add_send_data(bl);
-    }
-    req.finish_write();
-    derr << __FILE__ << ":" << __LINE__ << dendl;
-    req.wait();
-    derr << __FILE__ << ":" << __LINE__ << dendl;
-#endif
   }
 
   if (opt_cmd == OPT_TEST_SPLICE) {
