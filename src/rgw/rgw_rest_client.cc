@@ -609,6 +609,8 @@ int RGWRESTStreamRWRequest::send_request(RGWAccessKey *key, map<string, string>&
     send_data_hint = true;
   }
 
+#warning FIXME
+#if 0
   // Not sure if this is the place to set a send_size, curl otherwise sets
   // chunked option and doesn't send content length anymore
   uint64_t send_size = (size_t)(outbl.length() - write_ofs);
@@ -617,6 +619,7 @@ int RGWRESTStreamRWRequest::send_request(RGWAccessKey *key, map<string, string>&
     ldout(cct,20) << "Setting content length as " << send_size << dendl;
     set_send_length(send_size);
   }
+#endif
 
   method = new_info.method;
   url = new_url;
