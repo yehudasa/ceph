@@ -256,6 +256,16 @@ void RGWCoroutinesStack::call(RGWCoroutine *next_op) {
   }
 }
 
+void RGWCoroutinesStack::schedule()
+{
+  env->manager->schedule(env, this);
+}
+
+void RGWCoroutinesStack::_schedule()
+{
+  env->manager->_schedule(env, this);
+}
+
 RGWCoroutinesStack *RGWCoroutinesStack::spawn(RGWCoroutine *source_op, RGWCoroutine *op, bool wait)
 {
   if (!op) {
@@ -508,8 +518,15 @@ void RGWCoroutinesManager::handle_unblocked_stack(set<RGWCoroutinesStack *>& con
 
 void RGWCoroutinesManager::schedule(RGWCoroutinesEnv *env, RGWCoroutinesStack *stack)
 {
+  RWLock::WLocker wl(lock);
+  _schedule(env, stack);
+}
+
+void RGWCoroutinesManager::_schedule(RGWCoroutinesEnv *env, RGWCoroutinesStack *stack)
+{
   assert(lock.is_wlocked());
   env->scheduled_stacks->push_back(stack);
+  stack->set_is_scheduled(true);
   set<RGWCoroutinesStack *>& context_stacks = run_contexts[env->run_context];
   context_stacks.insert(stack);
 }
@@ -543,6 +560,7 @@ int RGWCoroutinesManager::run(list<RGWCoroutinesStack *>& stacks)
   for (auto& st : stacks) {
     context_stacks.insert(st);
     scheduled_stacks.push_back(st);
+    st->set_is_scheduled(true);
   }
   env.run_context = run_context;
   env.manager = this;
@@ -597,13 +615,13 @@ int RGWCoroutinesManager::run(list<RGWCoroutinesStack *>& stacks)
             }
 	    blocked_count++;
 	  } else {
-	    s->schedule();
+	    s->_schedule();
 	  }
 	}
       }
       if (stack->parent && stack->parent->waiting_for_child()) {
         stack->parent->set_wait_for_child(false);
-        stack->parent->schedule();
+        stack->parent->_schedule();
       }
       context_stacks.erase(stack);
       stack->put();
@@ -611,7 +629,7 @@ int RGWCoroutinesManager::run(list<RGWCoroutinesStack *>& stacks)
     } else {
       op_not_blocked = true;
       stack->run_count++;
-      stack->schedule();
+      stack->_schedule();
     }
 
     if (!op_not_blocked && stack) {
@@ -701,7 +719,7 @@ int RGWCoroutinesManager::run(RGWCoroutine *op)
   op->get();
   stack->call(op);
 
-  stack->schedule(&stacks);
+  stacks.push_back(stack);
 
   int r = run(stacks);
   if (r < 0) {

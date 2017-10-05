@@ -443,15 +443,8 @@ public:
           is_io_blocked() || waiting_for_child() ;
   }
 
-  void schedule(list<RGWCoroutinesStack *> *stacks = NULL) {
-    if (!stacks) {
-      stacks = env->scheduled_stacks;
-    }
-    if (!is_scheduled) {
-      stacks->push_back(this);
-      is_scheduled = true;
-    }
-  }
+  void schedule();
+  void _schedule();
 
   int get_ret_status() {
     return retcode;
@@ -588,6 +581,7 @@ public:
   RGWCompletionManager *get_completion_mgr() { return completion_mgr; }
 
   void schedule(RGWCoroutinesEnv *env, RGWCoroutinesStack *stack);
+  void _schedule(RGWCoroutinesEnv *env, RGWCoroutinesStack *stack);
   RGWCoroutinesStack *allocate_stack();
 
   int64_t get_next_io_id();
