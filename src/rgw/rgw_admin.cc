@@ -6241,6 +6241,8 @@ next:
   }
 
   if (opt_cmd == OPT_TEST_SPLICE) {
+#warning cleanup
+#if 0
     derr << __FILE__ << ":" << __LINE__ << dendl;
 
     RGWHTTPStreamRWRequest in(store->ctx(), "GET", url, nullptr, nullptr);
@@ -6266,6 +6268,7 @@ next:
     ret = crs.run(cr);
 
     derr << __FILE__ << ":" << __LINE__ << " ret=" << ret << dendl;
+#endif
 
 
 #if 0
