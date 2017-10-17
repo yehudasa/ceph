@@ -484,7 +484,6 @@ enum {
   OPT_RESHARD_STATUS,
   OPT_RESHARD_PROCESS,
   OPT_RESHARD_CANCEL,
-  OPT_TEST_SPLICE,
 };
 
 static int get_cmd(const char *cmd, const char *prev_cmd, const char *prev_prev_cmd, bool *need_more)
@@ -521,7 +520,6 @@ static int get_cmd(const char *cmd, const char *prev_cmd, const char *prev_prev_
       strcmp(cmd, "role-policy") == 0 ||
       strcmp(cmd, "subuser") == 0 ||
       strcmp(cmd, "sync") == 0 ||
-      strcmp(cmd, "test") == 0 ||
       strcmp(cmd, "usage") == 0 ||
       strcmp(cmd, "user") == 0 ||
       strcmp(cmd, "zone") == 0 ||
@@ -934,9 +932,6 @@ static int get_cmd(const char *cmd, const char *prev_cmd, const char *prev_prev_
       return OPT_RESHARD_PROCESS;
     if (strcmp(cmd, "cancel") == 0)
       return OPT_RESHARD_CANCEL;
-  } else if (strcmp(prev_cmd, "test") == 0) {
-    if (strcmp(cmd, "splice") == 0)
-      return OPT_TEST_SPLICE;
   }
 
   return -EINVAL;
@@ -6238,54 +6233,6 @@ next:
 
     formatter->close_section();
     formatter->flush(cout);
-  }
-
-  if (opt_cmd == OPT_TEST_SPLICE) {
-#warning cleanup
-#if 0
-    derr << __FILE__ << ":" << __LINE__ << dendl;
-
-    RGWHTTPStreamRWRequest in(store->ctx(), "GET", url, nullptr, nullptr);
-    derr << __FILE__ << ":" << __LINE__ << dendl;
-
-    RGWHTTPStreamRWRequest out(store->ctx(), "PUT", url2, nullptr, nullptr);
-    derr << __FILE__ << ":" << __LINE__ << dendl;
-
-#if 1
-    out.set_stream_write(true);
-#endif
-
-    RGWCoroutinesManager crs(store->ctx(), store->get_cr_registry());
-    RGWHTTPManager http(store->ctx(), crs.get_completion_mgr());
-    int ret = http.start();
-    if (ret < 0) {
-      cerr << "failed to initialize http client with " << cpp_strerror(ret) << std::endl;
-      return -ret;
-    }
-
-    TestSpliceCR *cr = new TestSpliceCR(store->ctx(), &http, &in, &out);
-
-    ret = crs.run(cr);
-
-    derr << __FILE__ << ":" << __LINE__ << " ret=" << ret << dendl;
-#endif
-
-
-#if 0
-    RGWHTTP::send(&req);
-    derr << __FILE__ << ":" << __LINE__ << dendl;
-    for (int i = 0; i < 100000; i++) {
-      bufferptr bp("zxc", 3);
-      bufferlist bl;
-      bl.push_back(bp);
-
-      req.add_send_data(bl);
-    }
-    req.finish_write();
-    derr << __FILE__ << ":" << __LINE__ << dendl;
-    req.wait();
-    derr << __FILE__ << ":" << __LINE__ << dendl;
-#endif
   }
 
   if (opt_cmd == OPT_MDLOG_AUTOTRIM) {
