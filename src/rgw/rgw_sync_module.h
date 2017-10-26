@@ -110,6 +110,7 @@ protected:
 
   ceph::real_time mtime;
   uint64_t size = 0;
+  string etag;
   map<string, bufferlist> attrs;
 public:
   RGWStatRemoteObjCBCR(RGWDataSyncEnv *_sync_env,
@@ -118,9 +119,11 @@ public:
 
   void set_result(ceph::real_time& _mtime,
                   uint64_t _size,
+                  const string& _etag,
                   map<string, bufferlist>&& _attrs) {
     mtime = _mtime;
     size = _size;
+    etag = _etag;
     attrs = std::move(_attrs);
   }
 };
@@ -128,6 +131,7 @@ public:
 class RGWCallStatRemoteObjCR : public RGWCoroutine {
   ceph::real_time mtime;
   uint64_t size{0};
+  string etag;
   map<string, bufferlist> attrs;
 
 protected:
