@@ -231,7 +231,7 @@ public:
 
         http_op = new RGWRESTReadResource(sync_env->conn, p, pairs, NULL, sync_env->http_manager);
 
-        http_op->set_user_info((void *)stack);
+        init_new_io(http_op);
 
         int ret = http_op->aio_read();
         if (ret < 0) {
@@ -311,7 +311,7 @@ public:
 
         http_op = new RGWRESTReadResource(sync_env->conn, p, pairs, NULL, sync_env->http_manager);
 
-        http_op->set_user_info((void *)stack);
+        init_new_io(http_op);
 
         int ret = http_op->aio_read();
         if (ret < 0) {
@@ -402,7 +402,7 @@ public:
     string p = "/admin/log/";
 
     http_op = new RGWRESTReadResource(conn, p, pairs, NULL, sync_env->http_manager);
-    http_op->set_user_info((void *)stack);
+    init_new_io(http_op);
 
     int ret = http_op->aio_read();
     if (ret < 0) {
