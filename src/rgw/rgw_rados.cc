@@ -7542,6 +7542,10 @@ struct obj_time_weight {
     if (l < r) {
       return true;
     }
+    if (!zone_short_id || !rhs.zone_short_id) {
+      /* don't compare zone ids, if one wasn't provided */
+      return false;
+    }
     if (zone_short_id != rhs.zone_short_id) {
       return (zone_short_id < rhs.zone_short_id);
     }
@@ -7558,6 +7562,10 @@ struct obj_time_weight {
     }
     if (mtime < rhs.mtime) {
       return true;
+    }
+    if (!zone_short_id || !rhs.zone_short_id) {
+      /* don't compare zone ids, if one wasn't provided */
+      return false;
     }
     if (zone_short_id != rhs.zone_short_id) {
       return (zone_short_id < rhs.zone_short_id);
