@@ -52,7 +52,9 @@ struct rgw_http_req_data : public RefCountedObject {
   }
 
   void set_state(int bitmask) {
-    Mutex::Locker l(lock);
+    /* no need to lock here, moreover curl_easy_pause() might trigger
+     * the data receive callback :/
+     */
     CURLcode rc;
 
     rc = curl_easy_pause(easy_handle, bitmask);
@@ -140,7 +142,7 @@ size_t RGWHTTPClient::receive_http_data(void * const ptr,
 
   bool pause = false;
 
-  size_t skip_bytes = req_data->client->receive_pause_skip;
+  size_t& skip_bytes = req_data->client->receive_pause_skip;
 
   if (skip_bytes >= len) {
     skip_bytes -= len;
@@ -161,7 +163,9 @@ size_t RGWHTTPClient::receive_http_data(void * const ptr,
   skip_bytes = 0;
  
   if (pause) {
+    dout(20) << "RGWHTTPClient::receive_http_data(): pause" << dendl;
     skip_bytes = len;
+    req_data->read_paused = true;
     return CURL_WRITEFUNC_PAUSE;
   }
 
@@ -812,8 +816,9 @@ int RGWHTTPManager::set_request_state(RGWHTTPClient *client, RGWHTTPRequestSetSt
     return -EINVAL;
   }
 
-  bool suggested_wr_paused;
-  bool suggested_rd_paused;
+  bool suggested_wr_paused = req_data->write_paused;
+  bool suggested_rd_paused = req_data->read_paused;
+
   switch (state) {
     case SET_WRITE_PAUSED:
       suggested_wr_paused = true;
