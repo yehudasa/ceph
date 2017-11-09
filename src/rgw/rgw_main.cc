@@ -12,6 +12,7 @@
 #include <signal.h>
 
 #include <curl/curl.h>
+#include <liboath/oath.h>
 
 #include <boost/intrusive_ptr.hpp>
 
@@ -319,6 +320,7 @@ int main(int argc, const char **argv)
   }
 
   rgw_init_resolver();
+  oath_init();
 
   rgw_http_client_init(g_ceph_context);
   
@@ -594,6 +596,7 @@ int main(int argc, const char **argv)
 
   RGWStoreManager::close_storage(store);
 
+  oath_done();
   rgw_tools_cleanup();
   rgw_shutdown_resolver();
   rgw_http_client_cleanup();
