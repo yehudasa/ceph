@@ -393,6 +393,7 @@ if(WITH_RADOSGW)
     message(WARNING "disabling WITH_RADOSGW_BEAST_FRONTEND, which depends on WITH_BOOST_CONTEXT")
     set(WITH_RADOSGW_BEAST_FRONTEND OFF)
   endif()
+  find_package(liboath 2.4 REQUIRED)
 endif(WITH_RADOSGW)
 
 
