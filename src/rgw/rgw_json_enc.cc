@@ -473,7 +473,7 @@ void RGWUserInfo::dump(Formatter *f) const
     break;
   }
   encode_json("type", user_source_type, f);
-  encode_json("mfa_devices", mfa_devices, f);
+  encode_json("mfa_ids", mfa_ids, f);
 }
 
 
@@ -543,7 +543,7 @@ void RGWUserInfo::decode_json(JSONObj *obj)
   } else if (user_source_type == "none") {
     type = TYPE_NONE;
   }
-  JSONDecoder::decode_json("mfa_devices", mfa_devices, obj);
+  JSONDecoder::decode_json("mfa_ids", mfa_ids, obj);
 }
 
 void RGWQuotaInfo::dump(Formatter *f) const

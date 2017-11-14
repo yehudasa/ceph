@@ -629,7 +629,7 @@ struct RGWUserInfo
   map<int, string> temp_url_keys;
   RGWQuotaInfo user_quota;
   uint32_t type;
-  map<string, string> mfa_devices;
+  set<string> mfa_ids;
 
   RGWUserInfo()
     : auid(0),
@@ -690,7 +690,7 @@ struct RGWUserInfo
      ::encode(user_id.tenant, bl);
      ::encode(admin, bl);
      ::encode(type, bl);
-     ::encode(mfa_devices, bl);
+     ::encode(mfa_ids, bl);
      ENCODE_FINISH(bl);
   }
   void decode(bufferlist::iterator& bl) {
@@ -768,7 +768,7 @@ struct RGWUserInfo
       ::decode(type, bl);
     }
     if (struct_v >= 20) {
-      ::decode(mfa_devices, bl);
+      ::decode(mfa_ids, bl);
     }
     DECODE_FINISH(bl);
   }
