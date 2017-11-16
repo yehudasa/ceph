@@ -468,6 +468,9 @@ int RGWRESTStreamS3PutObj::send_ready(RGWAccessKey& key, map<string, bufferlist>
       header_name.append(name.substr(sizeof(RGW_ATTR_META_PREFIX) - 1));
       new_env.set(header_name, val);
       new_info.x_meta_map[header_name] = val;
+    } else {
+      new_env.set(name, val);
+      new_info.x_meta_map[name] = val;
     }
   }
   RGWAccessControlPolicy policy;
