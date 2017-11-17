@@ -3227,7 +3227,7 @@ static int verify_mfa(RGWRados *store, RGWUserInfo *user, const string& mfa_str,
   }
 
   string& serial = params[0];
-  string& otp = params[1];
+  string& pin = params[1];
 
   auto i = user->mfa_ids.find(serial);
   if (i == user->mfa_ids.end()) {
@@ -3235,6 +3235,13 @@ static int verify_mfa(RGWRados *store, RGWUserInfo *user, const string& mfa_str,
     return -EACCES;
   }
 
+  int ret = store->check_mfa(user->user_id, serial, pin);
+  if (ret < 0) {
+    ldout(store->ctx(), 20) << "NOTICE: failed to check MFA, serial=" << serial << dendl;
+    return -EACCES;
+  }
+
+#warning clean me up
 #if 0
   string& seed = i->second;
 
