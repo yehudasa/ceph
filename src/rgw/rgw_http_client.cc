@@ -187,7 +187,7 @@ size_t RGWHTTPClient::send_http_data(void * const ptr,
     return 0;
   }
 
-  bool pause;
+  bool pause = false;
 
   int ret = req_data->client->send_data(ptr, size * nmemb, &pause);
   if (ret < 0) {
@@ -264,6 +264,8 @@ static curl_slist *headers_to_slist(param_vec_t& headers)
     val.append(p.second);
     h = curl_slist_append(h, val.c_str());
   }
+  // disable Expect: 100-contnue header
+  h = curl_slist_append(h, "Expect:");
 
   return h;
 }
