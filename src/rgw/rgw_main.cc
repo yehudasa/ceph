@@ -30,6 +30,7 @@
 #include "rgw_common.h"
 #include "rgw_rados.h"
 #include "rgw_user.h"
+#include "rgw_otp.h"
 #include "rgw_period_pusher.h"
 #include "rgw_realm_reloader.h"
 #include "rgw_rest.h"
@@ -353,6 +354,7 @@ int main(int argc, const char **argv)
 
   rgw_user_init(store);
   rgw_bucket_init(store->meta_mgr);
+  rgw_otp_init(store);
   rgw_log_usage_init(g_ceph_context, store);
 
   RGWREST rest;

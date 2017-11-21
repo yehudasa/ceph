@@ -28,6 +28,7 @@
 
 #include "rgw_user.h"
 #include "rgw_bucket.h"
+#include "rgw_otp.h"
 #include "rgw_rados.h"
 #include "rgw_acl.h"
 #include "rgw_acl_s3.h"
@@ -2979,6 +2980,7 @@ int main(int argc, const char **argv)
 
   rgw_user_init(store);
   rgw_bucket_init(store->meta_mgr);
+  rgw_otp_init(store);
 
   StoreDestructor store_destructor(store);
 
