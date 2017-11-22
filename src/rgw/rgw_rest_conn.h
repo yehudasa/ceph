@@ -90,6 +90,8 @@ public:
   }
   size_t get_endpoint_count() const { return endpoints.size(); }
 
+  virtual void populate_params(param_vec_t& params, const rgw_user *uid, const string& zonegroup);
+
   /* sync request */
   int forward(const rgw_user& uid, req_info& info, obj_version *objv, size_t max_response, bufferlist *inbl, bufferlist *outbl);
 
@@ -147,6 +149,37 @@ public:
   int get_json_resource(const string& resource, param_vec_t *params, T& t);
   template <class T>
   int get_json_resource(const string& resource, const rgw_http_param_pair *pp, T& t);
+
+private:
+  void populate_zonegroup(param_vec_t& params, const string& zonegroup) {
+    if (!zonegroup.empty()) {
+      params.push_back(param_pair_t(RGW_SYS_PARAM_PREFIX "zonegroup", zonegroup));
+    }
+  }
+  void populate_uid(param_vec_t& params, const rgw_user *uid) {
+    if (uid) {
+      string uid_str = uid->to_str();
+      if (!uid->empty()){
+        params.push_back(param_pair_t(RGW_SYS_PARAM_PREFIX "uid", uid_str));
+      }
+    }
+  }
+};
+
+class S3RESTConn : public RGWRESTConn {
+
+public:
+
+  S3RESTConn(CephContext *_cct, RGWRados *store, const string& _remote_id, const list<string>& endpoints) :
+    RGWRESTConn(_cct, store, _remote_id, endpoints) {}
+
+  S3RESTConn(CephContext *_cct, RGWRados *store, const string& _remote_id, const list<string>& endpoints, RGWAccessKey _cred):
+    RGWRESTConn(_cct, store, _remote_id, endpoints, _cred) {}
+
+  void populate_params(param_vec_t& params, const rgw_user *uid, const string& zonegroup) override {
+    // do not populate any params in S3 REST Connection.
+    return;
+  }
 };
 
 
