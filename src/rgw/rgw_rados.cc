@@ -13933,7 +13933,7 @@ int RGWRados::get_mfa(const rgw_user& user, const string& id, rados::cls::otp::o
     return r;
   }
 
-  r = rados::cls::otp::OTP::get(ref.ioctx, ref.oid, id, result);
+  r = rados::cls::otp::OTP::get(nullptr, ref.ioctx, ref.oid, id, result);
   if (r < 0) {
     return r;
   }
@@ -13950,7 +13950,7 @@ int RGWRados::list_mfa(const rgw_user& user, list<rados::cls::otp::otp_info_t> *
     return r;
   }
 
-  r = rados::cls::otp::OTP::get_all(ref.ioctx, ref.oid, result);
+  r = rados::cls::otp::OTP::get_all(nullptr, ref.ioctx, ref.oid, result);
   if (r < 0) {
     return r;
   }
@@ -13958,7 +13958,8 @@ int RGWRados::list_mfa(const rgw_user& user, list<rados::cls::otp::otp_info_t> *
   return 0;
 }
 
-int RGWRados::set_mfa(const string& oid, const list<rados::cls::otp::otp_info_t>& entries, bool reset_obj)
+int RGWRados::set_mfa(const string& oid, const list<rados::cls::otp::otp_info_t>& entries,
+                      bool reset_obj, RGWObjVersionTracker *objv_tracker)
 {
   rgw_raw_obj obj(get_zone_params().otp_pool, oid);
   rgw_rados_ref ref;
@@ -13966,6 +13967,21 @@ int RGWRados::set_mfa(const string& oid, const list<rados::cls::otp::otp_info_t>
   if (r < 0) {
     return r;
   }
+  RGWObjVersionTracker ot;
+
+  if (objv_tracker) {
+    ot = *objv_tracker;
+  }
+
+  if (ot.write_version.tag.empty()) {
+    if (ot.read_version.tag.empty()) {
+      ot.generate_new_write_ver(cct);
+    } else {
+      ot.write_version = ot.read_version;
+      ot.write_version.ver++;
+    }
+  }
+
 
   librados::ObjectWriteOperation op;
   if (reset_obj) {
@@ -13973,6 +13989,7 @@ int RGWRados::set_mfa(const string& oid, const list<rados::cls::otp::otp_info_t>
     op.set_op_flags2(LIBRADOS_OP_FLAG_FAILOK);
     op.create(false);
   }
+  ot.prepare_op_for_write(&op);
   rados::cls::otp::OTP::set(&op, entries);
   r = ref.ioctx.operate(ref.oid, &op);
   if (r < 0) {
@@ -13983,7 +14000,8 @@ int RGWRados::set_mfa(const string& oid, const list<rados::cls::otp::otp_info_t>
   return 0;
 }
 
-int RGWRados::list_mfa(const string& oid, list<rados::cls::otp::otp_info_t> *result)
+int RGWRados::list_mfa(const string& oid, list<rados::cls::otp::otp_info_t> *result,
+                       RGWObjVersionTracker *objv_tracker, ceph::real_time *pmtime)
 {
   rgw_raw_obj obj(get_zone_params().otp_pool, oid);
   rgw_rados_ref ref;
@@ -13991,9 +14009,18 @@ int RGWRados::list_mfa(const string& oid, list<rados::cls::otp::otp_info_t> *res
   if (r < 0) {
     return r;
   }
-  r = rados::cls::otp::OTP::get_all(ref.ioctx, ref.oid, result);
+  librados::ObjectReadOperation op;
+  struct timespec mtime_ts;
+  if (pmtime) {
+    op.stat2(nullptr, &mtime_ts, nullptr);
+  }
+  objv_tracker->prepare_op_for_read(&op);
+  r = rados::cls::otp::OTP::get_all(&op, ref.ioctx, ref.oid, result);
   if (r < 0) {
     return r;
+  }
+  if (pmtime) {
+    *pmtime = ceph::real_clock::from_timespec(mtime_ts);
   }
 
   return 0;
