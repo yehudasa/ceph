@@ -263,7 +263,7 @@ static curl_slist *headers_to_slist(param_vec_t& headers)
     val.append(": ");
     val.append(p.second);
     h = curl_slist_append(h, val.c_str());
-  }
+ }
 
   return h;
 }
@@ -316,6 +316,7 @@ int RGWHTTPClient::init_request(rgw_http_req_data *_req_data, bool send_data_hin
 
   curl_slist *h = headers_to_slist(headers);
 
+
   req_data->h = h;
 
   curl_easy_setopt(easy_handle, CURLOPT_CUSTOMREQUEST, method.c_str());
@@ -334,6 +335,9 @@ int RGWHTTPClient::init_request(rgw_http_req_data *_req_data, bool send_data_hin
   curl_easy_setopt(easy_handle, CURLOPT_READDATA, (void *)req_data);
   if (send_data_hint || is_upload_request(method)) {
     curl_easy_setopt(easy_handle, CURLOPT_UPLOAD, 1L);
+    if (!cct->_conf->rgw_print_continue) {
+      h = curl_slist_append(h, "Expect:");
+    }
   }
   if (has_send_len) {
     curl_easy_setopt(easy_handle, CURLOPT_INFILESIZE, (void *)send_len); 
