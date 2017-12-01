@@ -366,8 +366,9 @@ if(WITH_RADOSGW)
   if(WITH_RADOSGW_FCGI_FRONTEND)
     find_package(fcgi REQUIRED)
   endif()
-  find_package(liboath 2.4 REQUIRED)
 endif(WITH_RADOSGW)
+
+find_package(liboath 2.4 REQUIRED)
 
 
 if (WITH_RADOSGW)
