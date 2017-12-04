@@ -395,7 +395,7 @@ if(WITH_RADOSGW)
   endif()
 endif(WITH_RADOSGW)
 
-find_package(liboath 2.4 REQUIRED)
+find_package(liboath REQUIRED)
 
 
 if (WITH_RADOSGW)
