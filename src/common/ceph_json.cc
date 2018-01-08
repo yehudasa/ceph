@@ -641,6 +641,7 @@ struct field_entity {
   bool is_obj{false}; /* either obj field or array entity */
   string name; /* if obj */
   int index{0}; /* if array */
+  bool append{false};
 
   field_entity() {}
   field_entity(const string& n) : is_obj(true), name(n) {}
@@ -674,7 +675,13 @@ static int parse_entity(const string& s, vector<field_entity> *result)
 
     ofs = end_arr + 1;
 
-    result->push_back(field_entity(atoi(index_str.c_str())));
+    if (!index_str.empty()) {
+      result->push_back(field_entity(atoi(index_str.c_str())));
+    } else {
+      field_entity f;
+      f.append = true;
+      result->push_back(f);
+    }
   }
   return 0;
 }
@@ -714,10 +721,19 @@ int JSONFormattable::set(const string& name, const string& val)
         if (vi.is_obj) {
           return -EINVAL;
         }
-        if ((size_t)vi.index >= f->arr.size()) {
-          f->arr.resize(vi.index + 1);
+        int index = vi.index;
+        if (vi.append) {
+          index = f->arr.size();
+        } else if (index < 0) {
+          index = f->arr.size() + index;
+          if (index < 0) {
+            return -EINVAL; /* out of bounds */
+          }
         }
-        f = &f->arr[vi.index];
+        if ((size_t)index >= f->arr.size()) {
+          f->arr.resize(index + 1);
+        }
+        f = &f->arr[index];
       }
     }
   }
@@ -758,8 +774,6 @@ int JSONFormattable::erase(const string& name)
 
       parent = f;
 
-      last_entity = vi;
-
       if (f->type == FMT_OBJ) {
         if (!vi.is_obj) {
           return -EINVAL;
@@ -773,11 +787,18 @@ int JSONFormattable::erase(const string& name)
         if (vi.is_obj) {
           return -EINVAL;
         }
+        if (vi.index < 0) {
+          vi.index = f->arr.size() + vi.index;
+          if (vi.index < 0) { /* out of bounds, nothing to remove */
+            return 0;
+          }
+        }
         if ((size_t)vi.index >= f->arr.size()) {
           return 0; /* index beyond array boundaries */
         }
         f = &f->arr[vi.index];
       }
+      last_entity = vi;
     }
   }
 
