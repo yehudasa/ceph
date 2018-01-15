@@ -23,6 +23,28 @@ namespace ceph {
 
   class Formatter {
   public:
+    class ObjectSection {
+      Formatter& formatter;
+
+    public:
+      ObjectSection(Formatter& f, const char *name) : formatter(f) {
+        formatter.open_object_section(name);
+      }
+      ~ObjectSection() {
+        formatter.close_section();
+      }
+    };
+    class ArraySection {
+      Formatter& formatter;
+
+    public:
+      ArraySection(Formatter& f, const char *name) : formatter(f) {
+        formatter.open_array_section(name);
+      }
+      ~ArraySection() {
+        formatter.close_section();
+      }
+    };
     static Formatter *create(const std::string& type,
 			     const std::string& default_type,
 			     const std::string& fallback);
