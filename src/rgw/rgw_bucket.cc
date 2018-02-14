@@ -2308,9 +2308,11 @@ public:
       }
       bci.info.index_type = rule_info.index_type;
     } else {
-      /* existing bucket, keep its placement */
-      bci.info.bucket.explicit_placement = old_bci.info.bucket.explicit_placement;
-      bci.info.placement_rule = old_bci.info.placement_rule;
+      if (bci.info.bucket.explicit_placement.index_pool.empty()) {
+        /* existing bucket, keep its placement -- unless explicit placement is set */
+        bci.info.bucket.explicit_placement = old_bci.info.bucket.explicit_placement;
+        bci.info.placement_rule = old_bci.info.placement_rule;
+      }
     }
 
     if (exists && old_bci.info.datasync_flag_enabled() != bci.info.datasync_flag_enabled()) {
