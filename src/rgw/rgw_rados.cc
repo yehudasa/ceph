@@ -7702,7 +7702,6 @@ int RGWRados::stat_remote_obj(RGWObjectCtx& obj_ctx,
   }
 
   RGWGetExtraDataCB cb;
-  string etag;
   map<string, string> req_headers;
   real_time set_mtime;
 
@@ -7724,7 +7723,7 @@ int RGWRados::stat_remote_obj(RGWObjectCtx& obj_ctx,
     return ret;
   }
 
-  ret = conn->complete_request(in_stream_req, etag, &set_mtime, psize, req_headers);
+  ret = conn->complete_request(in_stream_req, nullptr, &set_mtime, psize, nullptr, pheaders);
   if (ret < 0) {
     return ret;
   }
@@ -7759,10 +7758,6 @@ int RGWRados::stat_remote_obj(RGWObjectCtx& obj_ctx,
 
   if (pattrs) {
     *pattrs = std::move(src_attrs);
-  }
-
-  if (pheaders) {
-    *pheaders = std::move(req_headers);
   }
 
   return 0;
@@ -7873,7 +7868,6 @@ int RGWRados::fetch_remote_obj(RGWObjectCtx& obj_ctx,
   RGWRadosPutObj cb(cct, plugin, compressor, &processor, opstate, progress_cb, progress_data);
 
   string etag;
-  map<string, string> req_headers;
   real_time set_mtime;
 
   RGWObjState *dest_state = NULL;
@@ -7909,7 +7903,7 @@ int RGWRados::fetch_remote_obj(RGWObjectCtx& obj_ctx,
     goto set_err_state;
   }
 
-  ret = conn->complete_request(in_stream_req, etag, &set_mtime, nullptr, req_headers);
+  ret = conn->complete_request(in_stream_req, &etag, &set_mtime, nullptr, nullptr, nullptr);
   if (ret < 0) {
     goto set_err_state;
   }
