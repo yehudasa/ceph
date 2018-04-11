@@ -7665,6 +7665,7 @@ int RGWRados::stat_remote_obj(RGWObjectCtx& obj_ctx,
                const char *if_match,
                const char *if_nomatch,
                map<string, bufferlist> *pattrs,
+               map<string, string> *pheaders,
                string *version_id,
                string *ptag,
                string *petag)
@@ -7757,7 +7758,11 @@ int RGWRados::stat_remote_obj(RGWObjectCtx& obj_ctx,
   }
 
   if (pattrs) {
-    *pattrs = src_attrs;
+    *pattrs = std::move(src_attrs);
+  }
+
+  if (pheaders) {
+    *pheaders = std::move(req_headers);
   }
 
   return 0;
