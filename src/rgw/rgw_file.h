@@ -2353,7 +2353,8 @@ public:
     struct req_state* s = get_state();
     uint64_t part_size = s->cct->_conf->rgw_obj_stripe_size;
     RGWPutObjProcessor_Atomic *processor =
-      new RGWPutObjProcessor_Atomic(obj_ctx, s->bucket_info, s->bucket,
+      new RGWPutObjProcessor_Atomic(obj_ctx, s->bucket_info,
+                                    nullptr /* ptail_rule */, s->bucket,
 				    s->object.name, part_size, s->req_id,
 				    s->bucket_info.versioning_enabled());
     processor->set_olh_epoch(olh_epoch);
