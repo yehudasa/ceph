@@ -3293,7 +3293,11 @@ int RGWPutObjProcessor_Multipart::prepare(RGWRados *store, string *oid_rand)
 
   manifest.set_multipart_part_rule(store->ctx()->_conf->rgw_obj_stripe_size, num);
 
-  int r = manifest_gen.create_begin(store->ctx(), &manifest, s->bucket_info.placement_rule, bucket, target_obj);
+#warning tail placement rule
+  int r = manifest_gen.create_begin(store->ctx(), &manifest,
+                                    s->bucket_info.placement_rule,
+                                    nullptr, /* FIXME: tail placement */
+                                    bucket, target_obj);
   if (r < 0) {
     return r;
   }
@@ -3392,11 +3396,12 @@ RGWPutObjProcessor *RGWPutObj::select_processor(RGWObjectCtx& obj_ctx, bool *is_
   uint64_t part_size = s->cct->_conf->rgw_obj_stripe_size;
 
   if (!multipart) {
-    processor = new RGWPutObjProcessor_Atomic(obj_ctx, s->bucket_info, s->bucket, s->object.name, part_size, s->req_id, s->bucket_info.versioning_enabled());
+#warning FIXME: tail placement
+    processor = new RGWPutObjProcessor_Atomic(obj_ctx, s->bucket_info, nullptr, s->bucket, s->object.name, part_size, s->req_id, s->bucket_info.versioning_enabled());
     (static_cast<RGWPutObjProcessor_Atomic *>(processor))->set_olh_epoch(olh_epoch);
     (static_cast<RGWPutObjProcessor_Atomic *>(processor))->set_version_id(version_id);
   } else {
-    processor = new RGWPutObjProcessor_Multipart(obj_ctx, s->bucket_info, part_size, s);
+    processor = new RGWPutObjProcessor_Multipart(obj_ctx, s->bucket_info, nullptr, part_size, s);
   }
 
   if (is_multipart) {
@@ -3993,8 +3998,10 @@ void RGWPostObj::execute()
       ldpp_dout(this, 15) << "supplied_md5=" << supplied_md5 << dendl;
     }
 
+#warning FIXME tail placement rule
     RGWPutObjProcessor_Atomic processor(*static_cast<RGWObjectCtx *>(s->obj_ctx),
                                         s->bucket_info,
+                                        nullptr,
                                         s->bucket,
                                         get_current_filename(),
                                         /* part size */
@@ -4848,6 +4855,7 @@ void RGWCopyObj::execute()
 			   src_obj,
 			   dest_bucket_info,
 			   src_bucket_info,
+                           nullptr, /* dest placement rule */
 			   &src_mtime,
 			   &mtime,
 			   mod_ptr,
@@ -6753,8 +6761,10 @@ int RGWBulkUploadOp::handle_file(const boost::string_ref path,
     return op_ret;
   }
 
+#warning FIXME tail placement rule
   RGWPutObjProcessor_Atomic processor(obj_ctx,
                                       binfo,
+                                      nullptr,
                                       binfo.bucket,
                                       object.name,
                                       /* part size */

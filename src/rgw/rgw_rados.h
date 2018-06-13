@@ -807,7 +807,10 @@ public:
   public:
     generator() : manifest(NULL), last_ofs(0), cur_part_ofs(0), cur_part_id(0), 
 		  cur_stripe(0), cur_stripe_size(0) {}
-    int create_begin(CephContext *cct, RGWObjManifest *manifest, const string& placement_rule, rgw_bucket& bucket, rgw_obj& obj);
+    int create_begin(CephContext *cct, RGWObjManifest *manifest,
+                     const string& head_placement_rule,
+                     const string *tail_placement_rule,
+                     rgw_bucket& bucket, rgw_obj& obj);
 
     int create_next(uint64_t ofs);
 
@@ -3113,6 +3116,7 @@ public:
                rgw_obj& src_obj,
                RGWBucketInfo& dest_bucket_info,
                RGWBucketInfo& src_bucket_info,
+               const string *ptail_rule,
                ceph::real_time *src_mtime,
                ceph::real_time *mtime,
                const ceph::real_time *mod_ptr,
@@ -3134,6 +3138,7 @@ public:
 
   int copy_obj_data(RGWObjectCtx& obj_ctx,
                RGWBucketInfo& dest_bucket_info,
+               const string *ptail_rule,
 	       RGWRados::Object::Read& read_op, off_t end,
                rgw_obj& dest_obj,
 	       ceph::real_time *mtime,
@@ -3955,6 +3960,8 @@ protected:
   RGWObjManifest manifest;
   RGWObjManifest::generator manifest_gen;
 
+  const string *ptail_placement_rule;
+
   int write_data(bufferlist& bl, off_t ofs, void **phandle, rgw_raw_obj *pobj, bool exclusive);
   int do_complete(size_t accounted_size, const string& etag,
                   ceph::real_time *mtime, ceph::real_time set_mtime,
@@ -3970,6 +3977,7 @@ protected:
 public:
   ~RGWPutObjProcessor_Atomic() override {}
   RGWPutObjProcessor_Atomic(RGWObjectCtx& obj_ctx, RGWBucketInfo& bucket_info,
+                            const string *_ptail_placement_rule,
                             rgw_bucket& _b, const string& _o, uint64_t _p, const string& _t, bool versioned) :
                                 RGWPutObjProcessor_Aio(obj_ctx, bucket_info),
                                 part_size(_p),
@@ -3981,7 +3989,9 @@ public:
                                 versioned_object(versioned),
                                 bucket(_b),
                                 obj_str(_o),
-                                unique_tag(_t) {}
+                                unique_tag(_t),
+                                ptail_placement_rule(_ptail_placement_rule) {}
+
   int prepare(RGWRados *store, string *oid_rand) override;
   virtual bool immutable_head() { return false; }
   int handle_data(bufferlist& bl, off_t ofs, void **phandle, rgw_raw_obj *pobj, bool *again) override;
@@ -4081,8 +4091,10 @@ protected:
                   rgw_zone_set *zones_trace) override;
 public:
   bool immutable_head() override { return true; }
-  RGWPutObjProcessor_Multipart(RGWObjectCtx& obj_ctx, RGWBucketInfo& bucket_info, uint64_t _p, req_state *_s) :
-                   RGWPutObjProcessor_Atomic(obj_ctx, bucket_info, _s->bucket, _s->object.name, _p, _s->req_id, false), s(_s) {}
+  RGWPutObjProcessor_Multipart(RGWObjectCtx& obj_ctx, RGWBucketInfo& bucket_info,
+                               const string *ptail_placement_rule,
+                               uint64_t _p, req_state *_s) :
+                   RGWPutObjProcessor_Atomic(obj_ctx, bucket_info, ptail_placement_rule, _s->bucket, _s->object.name, _p, _s->req_id, false), s(_s) {}
   void get_mp(RGWMPObj** _mp);
 }; /* RGWPutObjProcessor_Multipart */
 

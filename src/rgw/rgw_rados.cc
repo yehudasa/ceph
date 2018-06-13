@@ -2197,12 +2197,19 @@ void RGWObjManifest::obj_iterator::operator++()
   update_location();
 }
 
-int RGWObjManifest::generator::create_begin(CephContext *cct, RGWObjManifest *_m, const string& placement_rule, rgw_bucket& _b, rgw_obj& _obj)
+int RGWObjManifest::generator::create_begin(CephContext *cct, RGWObjManifest *_m,
+                                            const string& head_placement_rule,
+                                            const string *tail_placement_rule,
+                                            rgw_bucket& _b, rgw_obj& _obj)
 {
   manifest = _m;
 
-  manifest->set_tail_placement(placement_rule, _b);
-  manifest->set_head(placement_rule, _obj, 0);
+  if (!tail_placement_rule) {
+    tail_placement_rule = &head_placement_rule;
+  }
+
+  manifest->set_tail_placement(*tail_placement_rule, _b);
+  manifest->set_head(head_placement_rule, _obj, 0);
   last_ofs = 0;
 
   if (manifest->get_prefix().empty()) {
@@ -2729,7 +2736,8 @@ int RGWPutObjProcessor_Atomic::prepare(RGWRados *store, string *oid_rand)
 
   manifest.set_trivial_rule(max_chunk_size, store->ctx()->_conf->rgw_obj_stripe_size);
 
-  r = manifest_gen.create_begin(store->ctx(), &manifest, bucket_info.placement_rule, head_obj.bucket, head_obj);
+  r = manifest_gen.create_begin(store->ctx(), &manifest, bucket_info.placement_rule,
+                                ptail_placement_rule, head_obj.bucket, head_obj);
   if (r < 0) {
     return r;
   }
@@ -6971,6 +6979,7 @@ int RGWRados::swift_versioning_copy(RGWObjectCtx& obj_ctx,
                obj,
                dest_bucket_info,
                bucket_info,
+               nullptr, /* const string *tail_rule */
                NULL, /* time_t *src_mtime */
                NULL, /* time_t *mtime */
                NULL, /* const time_t *mod_ptr */
@@ -7056,6 +7065,7 @@ int RGWRados::swift_versioning_restore(RGWObjectCtx& obj_ctx,
                        archive_obj,   /* src obj */
                        bucket_info,   /* dest bucket info */
                        archive_binfo, /* src bucket info */
+                       nullptr,       /* const string *ptail_rule */
                        nullptr,       /* time_t *src_mtime */
                        nullptr,       /* time_t *mtime */
                        nullptr,       /* const time_t *mod_ptr */
@@ -7759,7 +7769,9 @@ int RGWRados::rewrite_obj(RGWBucketInfo& dest_bucket_info, rgw_obj& obj)
   attrset.erase(RGW_ATTR_ID_TAG);
   attrset.erase(RGW_ATTR_TAIL_TAG);
 
-  return copy_obj_data(rctx, dest_bucket_info, read_op, obj_size - 1, obj, NULL, mtime, attrset,
+#warning need to preserve current object placement rule
+
+  return copy_obj_data(rctx, dest_bucket_info, nullptr, read_op, obj_size - 1, obj, NULL, mtime, attrset,
                        0, real_time(),
                        (obj.key.instance.empty() ? NULL : &(obj.key.instance)),
                        NULL);
@@ -8008,8 +8020,11 @@ int RGWRados::fetch_remote_obj(RGWObjectCtx& obj_ctx,
   obj_time_weight set_mtime_weight;
   set_mtime_weight.high_precision = high_precision_time;
 
+#warning FIXME ptail_rule
+  string *ptail_rule{nullptr};
+
   RGWPutObjProcessor_Atomic processor(obj_ctx,
-                                      dest_bucket_info, dest_obj.bucket, dest_obj.key.name,
+                                      dest_bucket_info, ptail_rule, dest_obj.bucket, dest_obj.key.name,
                                       cct->_conf->rgw_obj_stripe_size, tag, dest_bucket_info.versioning_enabled());
   if (version_id && *version_id != "null") {
     processor.set_version_id(*version_id);
@@ -8263,6 +8278,7 @@ int RGWRados::copy_obj(RGWObjectCtx& obj_ctx,
                rgw_obj& src_obj,
                RGWBucketInfo& dest_bucket_info,
                RGWBucketInfo& src_bucket_info,
+               const string *ptail_rule,
                real_time *src_mtime,
                real_time *mtime,
                const real_time *mod_ptr,
@@ -8373,11 +8389,27 @@ int RGWRados::copy_obj(RGWObjectCtx& obj_ctx,
 
   rgw_pool src_pool;
   rgw_pool dest_pool;
-  if (!get_obj_data_pool(src_bucket_info.placement_rule, src_obj, &src_pool)) {
+
+  const string *src_rule{nullptr};
+
+  if (astate->has_manifest) {
+    src_rule = &astate->manifest.get_tail_placement().placement_rule;
+  }
+
+  if (!src_rule || src_rule->empty()) {
+    src_rule = &src_bucket_info.placement_rule;
+  }
+
+  if (!ptail_rule) {
+    ptail_rule = &dest_bucket_info.placement_rule;
+  }
+
+  if (!get_obj_data_pool(*src_rule, src_obj, &src_pool)) {
     ldout(cct, 0) << "ERROR: failed to locate data pool for " << src_obj << dendl;
     return -EIO;
   }
-  if (!get_obj_data_pool(dest_bucket_info.placement_rule, dest_obj, &dest_pool)) {
+
+  if (!get_obj_data_pool(*ptail_rule, dest_obj, &dest_pool)) {
     ldout(cct, 0) << "ERROR: failed to locate data pool for " << dest_obj << dendl;
     return -EIO;
   }
@@ -8409,7 +8441,7 @@ int RGWRados::copy_obj(RGWObjectCtx& obj_ctx,
   }
 
   if (copy_data) { /* refcounting tail wouldn't work here, just copy the data */
-    return copy_obj_data(obj_ctx, dest_bucket_info, read_op, obj_size - 1, dest_obj,
+    return copy_obj_data(obj_ctx, dest_bucket_info, ptail_rule, read_op, obj_size - 1, dest_obj,
                          mtime, real_time(), attrs, olh_epoch, delete_at,
                          version_id, petag);
   }
@@ -8533,6 +8565,7 @@ done_ret:
 
 int RGWRados::copy_obj_data(RGWObjectCtx& obj_ctx,
                RGWBucketInfo& dest_bucket_info,
+               const string *ptail_rule,
 	       RGWRados::Object::Read& read_op, off_t end,
                rgw_obj& dest_obj,
 	       real_time *mtime,
@@ -8547,7 +8580,8 @@ int RGWRados::copy_obj_data(RGWObjectCtx& obj_ctx,
   append_rand_alpha(cct, tag, tag, 32);
 
   RGWPutObjProcessor_Atomic processor(obj_ctx,
-                                      dest_bucket_info, dest_obj.bucket, dest_obj.key.name,
+                                      dest_bucket_info, ptail_rule,
+                                      dest_obj.bucket, dest_obj.key.name,
                                       cct->_conf->rgw_obj_stripe_size, tag, dest_bucket_info.versioning_enabled());
   if (version_id) {
     processor.set_version_id(*version_id);
