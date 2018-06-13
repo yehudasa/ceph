@@ -111,6 +111,7 @@ class ManifestObjectProcessor : public HeadObjectProcessor,
  protected:
   RGWRados *const store;
   const RGWBucketInfo& bucket_info;
+  const string *ptail_placement_rule;
   const rgw_user& owner;
   RGWObjectCtx& obj_ctx;
   rgw_obj head_obj;
@@ -127,10 +128,12 @@ class ManifestObjectProcessor : public HeadObjectProcessor,
  public:
   ManifestObjectProcessor(Aio *aio, RGWRados *store,
                           const RGWBucketInfo& bucket_info,
+                          const string *ptail_placement_rule,
                           const rgw_user& owner, RGWObjectCtx& obj_ctx,
                           const rgw_obj& head_obj)
     : HeadObjectProcessor(0),
-      store(store), bucket_info(bucket_info), owner(owner),
+      store(store), bucket_info(bucket_info),
+      ptail_placement_rule(ptail_placement_rule), owner(owner),
       obj_ctx(obj_ctx), head_obj(head_obj),
       writer(aio, store, bucket_info, obj_ctx, head_obj),
       chunk(&writer, 0), stripe(&chunk, this, 0)
@@ -148,11 +151,14 @@ class AtomicObjectProcessor : public ManifestObjectProcessor {
   int process_first_chunk(bufferlist&& data, DataProcessor **processor) override;
  public:
   AtomicObjectProcessor(Aio *aio, RGWRados *store,
-                        const RGWBucketInfo& bucket_info, const rgw_user& owner,
+                        const RGWBucketInfo& bucket_info,
+                        const string *ptail_placement_rule,
+                        const rgw_user& owner,
                         RGWObjectCtx& obj_ctx, const rgw_obj& head_obj,
                         std::optional<uint64_t> olh_epoch,
                         const std::string& unique_tag)
-    : ManifestObjectProcessor(aio, store, bucket_info, owner, obj_ctx, head_obj),
+    : ManifestObjectProcessor(aio, store, bucket_info, ptail_placement_rule,
+                              owner, obj_ctx, head_obj),
       olh_epoch(olh_epoch), unique_tag(unique_tag)
   {}
 
@@ -187,11 +193,13 @@ class MultipartObjectProcessor : public ManifestObjectProcessor {
  public:
   MultipartObjectProcessor(Aio *aio, RGWRados *store,
                            const RGWBucketInfo& bucket_info,
+                           const string *ptail_placement_rule,
                            const rgw_user& owner, RGWObjectCtx& obj_ctx,
                            const rgw_obj& head_obj,
                            const std::string& upload_id, uint64_t part_num,
                            const std::string& part_num_str)
-    : ManifestObjectProcessor(aio, store, bucket_info, owner, obj_ctx, head_obj),
+    : ManifestObjectProcessor(aio, store, bucket_info, ptail_placement_rule,
+                              owner, obj_ctx, head_obj),
       target_obj(head_obj), upload_id(upload_id),
       part_num(part_num), part_num_str(part_num_str),
       mp(head_obj.key.name, upload_id)
