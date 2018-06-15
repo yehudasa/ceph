@@ -131,15 +131,16 @@ static inline bool rgw_raw_obj_to_obj(const rgw_bucket& bucket, const rgw_raw_ob
   return true;
 }
 
+
 struct rgw_bucket_placement {
-  string placement_rule;
+  rgw_placement_rule placement_rule;
   rgw_bucket bucket;
 
   void dump(Formatter *f) const;
 };
 
 class rgw_obj_select {
-  string placement_rule;
+  rgw_placement_rule placement_rule;
   rgw_obj obj;
   rgw_raw_obj raw_obj;
   bool is_raw;
@@ -173,7 +174,7 @@ public:
     return *this;
   }
 
-  void set_placement_rule(const string& rule) {
+  void set_placement_rule(const rgw_placement_rule& rule) {
     placement_rule = rule;
   }
   void dump(Formatter *f) const;
@@ -404,7 +405,7 @@ protected:
 
   rgw_obj obj;
   uint64_t head_size;
-  string head_placement_rule;
+  rgw_placement_rule head_placement_rule;
 
   uint64_t max_head_size;
   string prefix;
@@ -604,7 +605,7 @@ public:
     return (obj_size > head_size);
   }
 
-  void set_head(const string& placement_rule, const rgw_obj& _o, uint64_t _s) {
+  void set_head(const rgw_placement_rule& placement_rule, const rgw_obj& _o, uint64_t _s) {
     head_placement_rule = placement_rule;
     obj = _o;
     head_size = _s;
@@ -619,7 +620,7 @@ public:
     return obj;
   }
 
-  void set_tail_placement(const string& placement_rule, const rgw_bucket& _b) {
+  void set_tail_placement(const rgw_placement_rule& placement_rule, const rgw_bucket& _b) {
     tail_placement.placement_rule = placement_rule;
     tail_placement.bucket = _b;
   }
@@ -628,7 +629,7 @@ public:
     return tail_placement;
   }
 
-  const string& get_head_placement_rule() {
+  const rgw_placement_rule& get_head_placement_rule() {
     return head_placement_rule;
   }
 
@@ -808,8 +809,8 @@ public:
     generator() : manifest(NULL), last_ofs(0), cur_part_ofs(0), cur_part_id(0), 
 		  cur_stripe(0), cur_stripe_size(0) {}
     int create_begin(CephContext *cct, RGWObjManifest *manifest,
-                     const string& head_placement_rule,
-                     const string *tail_placement_rule,
+                     const rgw_placement_rule& head_placement_rule,
+                     const rgw_placement_rule *tail_placement_rule,
                      const rgw_bucket& bucket,
                      const rgw_obj& obj);
 
@@ -1110,17 +1111,18 @@ WRITE_CLASS_ENCODER(RGWSystemMetaObj)
 
 struct RGWZonePlacementInfo {
   rgw_pool index_pool;
-  rgw_pool data_pool;
+  rgw_pool standard_data_pool;
   rgw_pool data_extra_pool; /* if not set we should use data_pool */
+  map<string, rgw_pool> data_pools;
   RGWBucketIndexType index_type;
   std::string compression_type;
 
   RGWZonePlacementInfo() : index_type(RGWBIType_Normal) {}
 
   void encode(bufferlist& bl) const {
-    ENCODE_START(6, 1, bl);
+    ENCODE_START(7, 1, bl);
     encode(index_pool.to_str(), bl);
-    encode(data_pool.to_str(), bl);
+    encode(standard_data_pool.to_str(), bl);
     encode(data_extra_pool.to_str(), bl);
     encode((uint32_t)index_type, bl);
     encode(compression_type, bl);
@@ -1128,13 +1130,13 @@ struct RGWZonePlacementInfo {
   }
 
   void decode(bufferlist::const_iterator& bl) {
-    DECODE_START(6, bl);
+    DECODE_START(7, bl);
     string index_pool_str;
     string data_pool_str;
     decode(index_pool_str, bl);
     index_pool = rgw_pool(index_pool_str);
     decode(data_pool_str, bl);
-    data_pool = rgw_pool(data_pool_str);
+    standard_data_pool = rgw_pool(data_pool_str);
     if (struct_v >= 4) {
       string data_extra_pool_str;
       decode(data_extra_pool_str, bl);
@@ -1148,13 +1150,28 @@ struct RGWZonePlacementInfo {
     if (struct_v >= 6) {
       decode(compression_type, bl);
     }
+    if (struct_v >= 7) {
+      decode(data_pools, bl);
+    } else {
+      data_pools[RGW_STORAGE_CLASS_STANDARD] = standard_data_pool;
+    }
     DECODE_FINISH(bl);
   }
   const rgw_pool& get_data_extra_pool() const {
     if (data_extra_pool.empty()) {
-      return data_pool;
+      return standard_data_pool;
     }
     return data_extra_pool;
+  }
+  const rgw_pool& get_data_pool(const string& storage_class) const {
+    auto iter = data_pools.find(storage_class);
+    if (iter == data_pools.end() && storage_class.empty()) {
+      iter = data_pools.find(RGW_STORAGE_CLASS_STANDARD);
+    }
+    if (iter == data_pools.end()) {
+      return standard_data_pool;
+    }
+    return iter->second;
   }
   void dump(Formatter *f) const;
   void decode_json(JSONObj *obj);
@@ -1313,7 +1330,7 @@ struct RGWZoneParams : RGWSystemMetaObj {
   /*
    * return data pool of the head object
    */
-  bool get_head_data_pool(const string& placement_id, const rgw_obj& obj, rgw_pool *pool) const {
+  bool get_head_data_pool(const rgw_placement_rule& placement_rule, const rgw_obj& obj, rgw_pool *pool) const {
     const rgw_data_placement_target& explicit_placement = obj.bucket.explicit_placement;
     if (!explicit_placement.data_pool.empty()) {
       if (!obj.in_extra_data) {
@@ -1323,15 +1340,15 @@ struct RGWZoneParams : RGWSystemMetaObj {
       }
       return true;
     }
-    if (placement_id.empty()) {
+    if (placement_rule.empty()) {
       return false;
     }
-    auto iter = placement_pools.find(placement_id);
+    auto iter = placement_pools.find(placement_rule.name);
     if (iter == placement_pools.end()) {
       return false;
     }
     if (!obj.in_extra_data) {
-      *pool = iter->second.data_pool;
+      *pool = iter->second.get_data_pool(placement_rule.storage_class);
     } else {
       *pool = iter->second.get_data_extra_pool();
     }
@@ -1447,6 +1464,7 @@ WRITE_CLASS_ENCODER(RGWDefaultZoneGroupInfo)
 struct RGWZoneGroupPlacementTarget {
   string name;
   set<string> tags;
+  set<string> storage_classes;
 
   bool user_permitted(list<string>& user_tags) const {
     if (tags.empty()) {
@@ -1461,16 +1479,23 @@ struct RGWZoneGroupPlacementTarget {
   }
 
   void encode(bufferlist& bl) const {
-    ENCODE_START(1, 1, bl);
+    ENCODE_START(2, 1, bl);
     encode(name, bl);
     encode(tags, bl);
+    encode(storage_classes, bl);
     ENCODE_FINISH(bl);
   }
 
   void decode(bufferlist::const_iterator& bl) {
-    DECODE_START(1, bl);
+    DECODE_START(2, bl);
     decode(name, bl);
     decode(tags, bl);
+    if (struct_v >= 2) {
+      decode(storage_classes, bl);
+    }
+    if (storage_classes.empty()) {
+      storage_classes.insert(RGW_STORAGE_CLASS_STANDARD);
+    }
     DECODE_FINISH(bl);
   }
   void dump(Formatter *f) const;
@@ -1488,7 +1513,7 @@ struct RGWZoneGroup : public RGWSystemMetaObj {
   map<string, RGWZone> zones;
 
   map<string, RGWZoneGroupPlacementTarget> placement_targets;
-  string default_placement;
+  rgw_placement_rule default_placement;
 
   list<string> hostnames;
   list<string> hostnames_s3website;
@@ -2448,7 +2473,7 @@ public:
 
   int get_required_alignment(const rgw_pool& pool, uint64_t *alignment);
   int get_max_chunk_size(const rgw_pool& pool, uint64_t *max_chunk_size);
-  int get_max_chunk_size(const string& placement_rule, const rgw_obj& obj, uint64_t *max_chunk_size);
+  int get_max_chunk_size(const rgw_placement_rule& placement_rule, const rgw_obj& obj, uint64_t *max_chunk_size);
 
   uint32_t get_max_bucket_shards() {
     return rgw_shards_max();
@@ -2530,20 +2555,22 @@ public:
   int create_pool(const rgw_pool& pool);
 
   int init_bucket_index(RGWBucketInfo& bucket_info, int num_shards);
-  int select_bucket_placement(RGWUserInfo& user_info, const string& zonegroup_id, const string& rule,
-                              string *pselected_rule_name, RGWZonePlacementInfo *rule_info);
+  int select_bucket_placement(RGWUserInfo& user_info, const string& zonegroup_id,
+                              const rgw_placement_rule& rule,
+                              rgw_placement_rule *pselected_rule, RGWZonePlacementInfo *rule_info);
   int select_legacy_bucket_placement(RGWZonePlacementInfo *rule_info);
-  int select_new_bucket_location(RGWUserInfo& user_info, const string& zonegroup_id, const string& rule,
-                                 string *pselected_rule_name, RGWZonePlacementInfo *rule_info);
-  int select_bucket_location_by_rule(const string& location_rule, RGWZonePlacementInfo *rule_info);
+  int select_new_bucket_location(RGWUserInfo& user_info, const string& zonegroup_id,
+                                 const rgw_placement_rule& rule,
+                                 rgw_placement_rule *pselected_rule_name, RGWZonePlacementInfo *rule_info);
+  int select_bucket_location_by_rule(const rgw_placement_rule& location_rule, RGWZonePlacementInfo *rule_info);
   void create_bucket_id(string *bucket_id);
 
-  bool get_obj_data_pool(const string& placement_rule, const rgw_obj& obj, rgw_pool *pool);
-  bool obj_to_raw(const string& placement_rule, const rgw_obj& obj, rgw_raw_obj *raw_obj);
+  bool get_obj_data_pool(const rgw_placement_rule& placement_rule, const rgw_obj& obj, rgw_pool *pool);
+  bool obj_to_raw(const rgw_placement_rule& placement_rule, const rgw_obj& obj, rgw_raw_obj *raw_obj);
 
   int create_bucket(RGWUserInfo& owner, rgw_bucket& bucket,
                             const string& zonegroup_id,
-                            const string& placement_rule,
+                            const rgw_placement_rule& placement_rule,
                             const string& swift_ver_location,
                             const RGWQuotaInfo * pquota_info,
                             map<std::string,bufferlist>& attrs,
@@ -3100,7 +3127,7 @@ public:
                rgw_obj& src_obj,
                RGWBucketInfo& dest_bucket_info,
                RGWBucketInfo& src_bucket_info,
-               const string *ptail_rule,
+               const rgw_placement_rule *ptail_rule,
                ceph::real_time *src_mtime,
                ceph::real_time *mtime,
                const ceph::real_time *mod_ptr,
@@ -3122,7 +3149,7 @@ public:
 
   int copy_obj_data(RGWObjectCtx& obj_ctx,
                RGWBucketInfo& dest_bucket_info,
-               const string *ptail_rule,
+               const rgw_placement_rule *ptail_rule,
 	       RGWRados::Object::Read& read_op, off_t end,
                const rgw_obj& dest_obj,
 	       ceph::real_time *mtime,

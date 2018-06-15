@@ -110,7 +110,7 @@ class ManifestObjectProcessor : public HeadObjectProcessor,
  protected:
   RGWRados *const store;
   const RGWBucketInfo& bucket_info;
-  const string *ptail_placement_rule;
+  const rgw_placement_rule *ptail_placement_rule;
   const rgw_user& owner;
   RGWObjectCtx& obj_ctx;
   rgw_obj head_obj;
@@ -127,7 +127,7 @@ class ManifestObjectProcessor : public HeadObjectProcessor,
  public:
   ManifestObjectProcessor(Aio *aio, RGWRados *store,
                           const RGWBucketInfo& bucket_info,
-                          const string *ptail_placement_rule,
+                          const rgw_placement_rule *ptail_placement_rule,
                           const rgw_user& owner, RGWObjectCtx& obj_ctx,
                           const rgw_obj& head_obj)
     : HeadObjectProcessor(0),
@@ -151,7 +151,7 @@ class AtomicObjectProcessor : public ManifestObjectProcessor {
  public:
   AtomicObjectProcessor(Aio *aio, RGWRados *store,
                         const RGWBucketInfo& bucket_info,
-                        const string *ptail_placement_rule,
+                        const rgw_placement_rule *ptail_placement_rule,
                         const rgw_user& owner,
                         RGWObjectCtx& obj_ctx, const rgw_obj& head_obj,
                         std::optional<uint64_t> olh_epoch,
@@ -192,7 +192,7 @@ class MultipartObjectProcessor : public ManifestObjectProcessor {
  public:
   MultipartObjectProcessor(Aio *aio, RGWRados *store,
                            const RGWBucketInfo& bucket_info,
-                           const string *ptail_placement_rule,
+                           const rgw_placement_rule *ptail_placement_rule,
                            const rgw_user& owner, RGWObjectCtx& obj_ctx,
                            const rgw_obj& head_obj,
                            const std::string& upload_id, uint64_t part_num,
