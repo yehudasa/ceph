@@ -933,9 +933,9 @@ bool RGWSI_Zone::is_syncing_bucket_meta(const rgw_bucket& bucket)
 }
 
 
-int RGWSI_Zone::select_new_bucket_location(RGWUserInfo& user_info, const string& zonegroup_id, const string& request_rule,
-                                         string *pselected_rule_name, RGWZonePlacementInfo *rule_info)
-
+int RGWSI_Zone::select_new_bucket_location(RGWUserInfo& user_info, const string& zonegroup_id,
+                                         const rgw_placement_rule& request_rule,
+                                         rgw_placement_rule *pselected_rule_name, RGWZonePlacementInfo *rule_info)
 {
   /* first check that zonegroup exists within current period. */
   RGWZoneGroup zonegroup;
@@ -945,29 +945,34 @@ int RGWSI_Zone::select_new_bucket_location(RGWUserInfo& user_info, const string&
     return ret;
   }
 
+  const rgw_placement_rule *used_rule;
+
   /* find placement rule. Hierarchy: request rule > user default rule > zonegroup default rule */
   std::map<std::string, RGWZoneGroupPlacementTarget>::const_iterator titer;
 
-  if (!request_rule.empty()) {
-    titer = zonegroup.placement_targets.find(request_rule);
+  if (!request_rule.name.empty()) {
+    used_rule = &request_rule;
+    titer = zonegroup.placement_targets.find(request_rule.name);
     if (titer == zonegroup.placement_targets.end()) {
       ldout(cct, 0) << "could not find requested placement id " << request_rule 
                     << " within zonegroup " << dendl;
       return -ERR_INVALID_LOCATION_CONSTRAINT;
     }
   } else if (!user_info.default_placement.empty()) {
-    titer = zonegroup.placement_targets.find(user_info.default_placement);
+    used_rule = &user_info.default_placement;
+    titer = zonegroup.placement_targets.find(user_info.default_placement.name);
     if (titer == zonegroup.placement_targets.end()) {
       ldout(cct, 0) << "could not find user default placement id " << user_info.default_placement
                     << " within zonegroup " << dendl;
       return -ERR_INVALID_LOCATION_CONSTRAINT;
     }
   } else {
-    if (zonegroup.default_placement.empty()) { // zonegroup default rule as fallback, it should not be empty.
+    if (zonegroup.default_placement.name.empty()) { // zonegroup default rule as fallback, it should not be empty.
       ldout(cct, 0) << "misconfiguration, zonegroup default placement id should not be empty." << dendl;
       return -ERR_ZONEGROUP_DEFAULT_PLACEMENT_MISCONFIGURATION;
     } else {
-      titer = zonegroup.placement_targets.find(zonegroup.default_placement);
+      used_rule = &zonegroup.default_placement;
+      titer = zonegroup.placement_targets.find(zonegroup.default_placement.name);
       if (titer == zonegroup.placement_targets.end()) {
         ldout(cct, 0) << "could not find zonegroup default placement id " << zonegroup.default_placement
                       << " within zonegroup " << dendl;
@@ -983,15 +988,24 @@ int RGWSI_Zone::select_new_bucket_location(RGWUserInfo& user_info, const string&
     return -EPERM;
   }
 
-  if (pselected_rule_name)
-    *pselected_rule_name = titer->first;
+  const string *storage_class = &request_rule.storage_class;
 
-  return select_bucket_location_by_rule(titer->first, rule_info);
+  if (storage_class->empty()) {
+    storage_class = &used_rule->storage_class;
+  }
+
+  rgw_placement_rule rule(titer->first, *storage_class);
+
+  if (pselected_rule_name) {
+    *pselected_rule_name = rule;
+  }
+
+  return select_bucket_location_by_rule(rule, rule_info);
 }
 
-int RGWSI_Zone::select_bucket_location_by_rule(const string& location_rule, RGWZonePlacementInfo *rule_info)
+int RGWSI_Zone::select_bucket_location_by_rule(const rgw_placement_rule& location_rule, RGWZonePlacementInfo *rule_info)
 {
-  if (location_rule.empty()) {
+  if (location_rule.name.empty()) {
     /* we can only reach here if we're trying to set a bucket location from a bucket
      * created on a different zone, using a legacy / default pool configuration
      */
@@ -1007,7 +1021,7 @@ int RGWSI_Zone::select_bucket_location_by_rule(const string& location_rule, RGWZ
    * checking it for the local zone, because that's where this bucket object is going to
    * reside.
    */
-  map<string, RGWZonePlacementInfo>::iterator piter = get_zone_params().placement_pools.find(location_rule);
+  map<string, RGWZonePlacementInfo>::iterator piter = get_zone_params().placement_pools.find(location_rule.name);
   if (piter == get_zone_params().placement_pools.end()) {
     /* couldn't find, means we cannot really place data for this bucket in this zone */
     if (get_zonegroup().equals(zonegroup->get_id())) {
@@ -1022,6 +1036,8 @@ int RGWSI_Zone::select_bucket_location_by_rule(const string& location_rule, RGWZ
     }
   }
 
+#warning FIXME check that location_rule.storage_class exists in piter->second
+
   RGWZonePlacementInfo& placement_info = piter->second;
 
   if (rule_info) {
@@ -1031,16 +1047,17 @@ int RGWSI_Zone::select_bucket_location_by_rule(const string& location_rule, RGWZ
   return 0;
 }
 
-int RGWSI_Zone::select_bucket_placement(RGWUserInfo& user_info, const string& zonegroup_id, const string& placement_rule,
-                                      string *pselected_rule_name, RGWZonePlacementInfo *rule_info)
+int RGWSI_Zone::select_bucket_placement(RGWUserInfo& user_info, const string& zonegroup_id,
+                                        const rgw_placement_rule& placement_rule,
+                                        rgw_placement_rule *pselected_rule, RGWZonePlacementInfo *rule_info)
 {
   if (!get_zone_params().placement_pools.empty()) {
     return select_new_bucket_location(user_info, zonegroup_id, placement_rule,
-                                      pselected_rule_name, rule_info);
+                                      pselected_rule, rule_info);
   }
 
-  if (pselected_rule_name) {
-    pselected_rule_name->clear();
+  if (pselected_rule) {
+    pselected_rule->clear();
   }
 
   if (rule_info) {
@@ -1113,7 +1130,7 @@ read_omap:
   }
   pool_name = miter->first;
 
-  rule_info->data_pool = pool_name;
+  rule_info->data_pools[RGW_STORAGE_CLASS_STANDARD] = pool_name;
   rule_info->data_extra_pool = pool_name;
   rule_info->index_pool = pool_name;
   rule_info->index_type = RGWBIType_Normal;

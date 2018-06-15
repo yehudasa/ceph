@@ -883,7 +883,7 @@ class RGWCreateBucket : public RGWOp {
 protected:
   RGWAccessControlPolicy policy;
   string location_constraint;
-  string placement_rule;
+  rgw_placement_rule placement_rule;
   RGWBucketInfo info;
   obj_version ep_objv;
   bool has_cors;
@@ -1181,7 +1181,7 @@ protected:
   uint32_t policy_rw_mask;
   RGWAccessControlPolicy policy;
   RGWCORSConfiguration cors_config;
-  string placement_rule;
+  rgw_placement_rule placement_rule;
   boost::optional<std::string> swift_ver_location;
 
 public:
