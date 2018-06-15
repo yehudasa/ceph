@@ -2740,9 +2740,9 @@ void RGWCreateBucket::execute()
   }
 
   const auto& zonegroup = store->get_zonegroup();
-  if (!placement_rule.empty() &&
-      !zonegroup.placement_targets.count(placement_rule)) {
-    ldpp_dout(this, 0) << "placement target (" << placement_rule << ")"
+  if (!placement_rule.name.empty() &&
+      !zonegroup.placement_targets.count(placement_rule.name)) {
+    ldpp_dout(this, 0) << "placement target (" << placement_rule.name << ")"
                      << " doesn't exist in the placement targets of zonegroup"
                      << " (" << store->get_zonegroup().api_name << ")" << dendl;
     op_ret = -ERR_INVALID_LOCATION_CONSTRAINT;
@@ -2810,12 +2810,13 @@ void RGWCreateBucket::execute()
   }
 
   if (s->bucket_exists) {
-    string selected_placement_rule;
+    rgw_placement_rule selected_placement_rule;
     rgw_bucket bucket;
     bucket.tenant = s->bucket_tenant;
     bucket.name = s->bucket_name;
     op_ret = store->select_bucket_placement(*(s->user), zonegroup_id,
 					    placement_rule,
+                                            s->info.storage_class,
 					    &selected_placement_rule, nullptr);
     if (selected_placement_rule != s->bucket_info.placement_rule) {
       op_ret = -EEXIST;
@@ -6439,13 +6440,14 @@ int RGWBulkUploadOp::handle_dir(const boost::string_ref path)
 
   std::string placement_rule;
   if (bucket_exists) {
-    std::string selected_placement_rule;
+    rgw_placement_rule selected_placement_rule;
     rgw_bucket bucket;
     bucket.tenant = s->bucket_tenant;
     bucket.name = s->bucket_name;
     op_ret = store->select_bucket_placement(*(s->user),
                                             store->get_zonegroup().get_id(),
                                             placement_rule,
+                                            s->info.storage_class,
                                             &selected_placement_rule,
                                             nullptr);
     if (selected_placement_rule != binfo.placement_rule) {
