@@ -90,7 +90,7 @@ void rgw_bucket_placement::dump(Formatter *f) const
 
 void rgw_obj_select::dump(Formatter *f) const
 {
-  f->dump_string("placement_rule", placement_rule);
+  f->dump_string("placement_rule", placement_rule.to_str());
   f->dump_object("obj", obj);
   f->dump_object("raw_obj", raw_obj);
   f->dump_bool("is_raw", is_raw);
@@ -785,7 +785,9 @@ void RGWBucketInfo::decode_json(JSONObj *obj) {
   if (zonegroup.empty()) {
     JSONDecoder::decode_json("region", zonegroup, obj);
   }
-  JSONDecoder::decode_json("placement_rule", placement_rule, obj);
+  string pr;
+  JSONDecoder::decode_json("placement_rule", pr, obj);
+  placement_rule.from_str(pr);
   JSONDecoder::decode_json("has_instance_obj", has_instance_obj, obj);
   JSONDecoder::decode_json("quota", quota, obj);
   JSONDecoder::decode_json("num_shards", num_shards, obj);
@@ -953,7 +955,7 @@ void RGWZoneParams::dump(Formatter *f) const
 void RGWZonePlacementInfo::dump(Formatter *f) const
 {
   encode_json("index_pool", index_pool, f);
-  encode_json("data_pool", data_pool, f);
+  encode_json("data_pools", data_pools, f);
   encode_json("data_extra_pool", data_extra_pool, f);
   encode_json("index_type", (uint32_t)index_type, f);
   encode_json("compression", compression_type, f);
@@ -962,7 +964,15 @@ void RGWZonePlacementInfo::dump(Formatter *f) const
 void RGWZonePlacementInfo::decode_json(JSONObj *obj)
 {
   JSONDecoder::decode_json("index_pool", index_pool, obj);
-  JSONDecoder::decode_json("data_pool", data_pool, obj);
+  JSONDecoder::decode_json("data_pools", data_pools, obj);
+  if (JSONDecoder::decode_json("data_pool", standard_data_pool, obj)) {
+    data_pools[RGW_STORAGE_CLASS_STANDARD] = standard_data_pool;
+  } else {
+    auto iter = data_pools.find(RGW_STORAGE_CLASS_STANDARD);
+    if (iter != data_pools.end()) {
+      standard_data_pool = iter->second;
+    }
+  }
   JSONDecoder::decode_json("data_extra_pool", data_extra_pool, obj);
   uint32_t it;
   JSONDecoder::decode_json("index_type", it, obj);

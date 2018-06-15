@@ -130,7 +130,8 @@ static string RGW_DEFAULT_PERIOD_ROOT_POOL = "rgw.root";
 
 
 static bool rgw_get_obj_data_pool(const RGWZoneGroup& zonegroup, const RGWZoneParams& zone_params,
-                                  const string& placement_id, const rgw_obj& obj, rgw_pool *pool)
+                                  const string& placement_id, const string& storage_class,
+                                  const rgw_obj& obj, rgw_pool *pool)
 {
   if (!zone_params.get_head_data_pool(placement_id, obj, pool)) {
     RGWZonePlacementInfo placement;
@@ -139,7 +140,7 @@ static bool rgw_get_obj_data_pool(const RGWZoneGroup& zonegroup, const RGWZonePa
     }
 
     if (!obj.in_extra_data) {
-      *pool = placement.data_pool;
+      *pool = placement.standard_data_pool;
     } else {
       *pool = placement.get_data_extra_pool();
     }
@@ -160,7 +161,7 @@ rgw_raw_obj rgw_obj_select::get_raw_obj(const RGWZoneGroup& zonegroup, const RGW
 {
   if (!is_raw) {
     rgw_raw_obj r;
-    rgw_obj_to_raw(zonegroup, zone_params, placement_rule, obj, &r);
+    rgw_obj_to_raw(zonegroup, zone_params, placement_rule, RGW_STORAGE_CLASS_STANDARD, obj, &r);
     return r;
   }
   return raw_obj;
@@ -6132,8 +6133,9 @@ int RGWRados::create_bucket(RGWUserInfo& owner, rgw_bucket& bucket,
   return -ENOENT;
 }
 
-int RGWRados::select_new_bucket_location(RGWUserInfo& user_info, const string& zonegroup_id, const string& request_rule,
-                                         string *pselected_rule_name, RGWZonePlacementInfo *rule_info)
+int RGWRados::select_new_bucket_location(RGWUserInfo& user_info, const string& zonegroup_id,
+                                         const rgw_placement_rule& request_rule,
+                                         rgw_placement_rule *pselected_rule_name, RGWZonePlacementInfo *rule_info)
 
 {
   /* first check that zonegroup exists within current period. */
@@ -6144,17 +6146,21 @@ int RGWRados::select_new_bucket_location(RGWUserInfo& user_info, const string& z
     return ret;
   }
 
+  const rgw_placement_rule *used_rule;
+
   /* find placement rule. Hierarchy: request rule > user default rule > zonegroup default rule */
   std::map<std::string, RGWZoneGroupPlacementTarget>::const_iterator titer;
 
-  if (!request_rule.empty()) {
-    titer = zonegroup.placement_targets.find(request_rule);
+  if (!request_rule.name.empty()) {
+    used_rule = &request_rule;
+    titer = zonegroup.placement_targets.find(request_rule.name);
     if (titer == zonegroup.placement_targets.end()) {
-      ldout(cct, 0) << "could not find requested placement id " << request_rule 
+      ldout(cct, 0) << "could not find requested placement id " << request_rule.name
                     << " within zonegroup " << dendl;
       return -ERR_INVALID_LOCATION_CONSTRAINT;
     }
   } else if (!user_info.default_placement.empty()) {
+    used_rule = &user_info.default_placement;
     titer = zonegroup.placement_targets.find(user_info.default_placement);
     if (titer == zonegroup.placement_targets.end()) {
       ldout(cct, 0) << "could not find user default placement id " << user_info.default_placement
@@ -6162,11 +6168,12 @@ int RGWRados::select_new_bucket_location(RGWUserInfo& user_info, const string& z
       return -ERR_INVALID_LOCATION_CONSTRAINT;
     }
   } else {
-    if (zonegroup.default_placement.empty()) { // zonegroup default rule as fallback, it should not be empty.
+    if (zonegroup.default_placement.name.empty()) { // zonegroup default rule as fallback, it should not be empty.
       ldout(cct, 0) << "misconfiguration, zonegroup default placement id should not be empty." << dendl;
       return -ERR_ZONEGROUP_DEFAULT_PLACEMENT_MISCONFIGURATION;
     } else {
-      titer = zonegroup.placement_targets.find(zonegroup.default_placement);
+      used_rule = &zonegroup.default_placement;
+      titer = zonegroup.placement_targets.find(zonegroup.default_placement.name);
       if (titer == zonegroup.placement_targets.end()) {
         ldout(cct, 0) << "could not find zonegroup default placement id " << zonegroup.default_placement
                       << " within zonegroup " << dendl;
@@ -6185,10 +6192,16 @@ int RGWRados::select_new_bucket_location(RGWUserInfo& user_info, const string& z
   if (pselected_rule_name)
     *pselected_rule_name = titer->first;
 
-  return select_bucket_location_by_rule(titer->first, rule_info);
+  const string *storage_class = &request_rule.storage_class;
+
+  if (storage_class->empty()) {
+    storage_class = &used_rule->storage_class;
+  }
+
+  return select_bucket_location_by_rule(titer->first, *storage_class, rule_info);
 }
 
-int RGWRados::select_bucket_location_by_rule(const string& location_rule, RGWZonePlacementInfo *rule_info)
+int RGWRados::select_bucket_location_by_rule(const string& location_rule, const string& storage_class, RGWZonePlacementInfo *rule_info)
 {
   if (location_rule.empty()) {
     /* we can only reach here if we're trying to set a bucket location from a bucket

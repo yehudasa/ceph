@@ -706,7 +706,7 @@ int RGWCreateBucket_ObjStore_SWIFT::get_params()
   location_constraint = store->get_zonegroup().api_name;
   get_rmattrs_from_headers(s, CONT_PUT_ATTR_PREFIX,
                            CONT_REMOVE_ATTR_PREFIX, rmattr_names);
-  placement_rule = s->info.env->get("HTTP_X_STORAGE_POLICY", "");
+  placement_rule.init(s->info.env->get("HTTP_X_STORAGE_POLICY", ""), s->storage_class);
 
   return get_swift_versioning_settings(s, swift_ver_location);
 }
@@ -2943,6 +2943,11 @@ int RGWHandler_REST_SWIFT::init(RGWRados* store, struct req_state* s,
     t->url_bucket = dest_bucket_name;
     s->object = rgw_obj_key(dest_object);
     s->op = OP_PUT;
+  }
+
+  const char *sc = s->info.env->get("HTTP_X_OBJECT_STORAGE_CLASS"); /* rgw extension */
+  if (sc) {
+    s->info.storge_class = sc;
   }
 
   return RGWHandler_REST::init(store, s, cio);
