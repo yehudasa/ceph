@@ -1803,11 +1803,9 @@ void RGWInfo_ObjStore_SWIFT::list_swift_data(Formatter& formatter,
 
   for (const auto& placement_targets : zonegroup.placement_targets) {
     formatter.open_object_section("policy");
-    if (placement_targets.second.compare(zonegroup.default_placement) == 0)
+    if (placement_targets.second.name.compare(zonegroup.default_placement.name) == 0)
       formatter.dump_bool("default", true);
     formatter.dump_string("name", placement_targets.second.name.c_str());
-    auto sc = placement_targets.second.get_storage_class();
-    formatter.dump_string("storage_class", sc.c_str());
     formatter.close_section();
   }
   formatter.close_section();
@@ -2948,10 +2946,7 @@ int RGWHandler_REST_SWIFT::init(RGWRados* store, struct req_state* s,
     s->op = OP_PUT;
   }
 
-  const char *sc = s->info.env->get("HTTP_X_OBJECT_STORAGE_CLASS"); /* rgw extension */
-  if (sc) {
-    s->info.storge_class = sc;
-  }
+  s->info.storage_class = s->info.env->get("HTTP_X_OBJECT_STORAGE_CLASS", "");
 
   return RGWHandler_REST::init(store, s, cio);
 }

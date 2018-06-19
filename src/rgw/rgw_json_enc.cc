@@ -53,6 +53,18 @@ void decode_json_obj(rgw_pool& pool, JSONObj *obj)
   pool = rgw_pool(s);
 }
 
+void encode_json(const char *name, const rgw_placement_rule& r, Formatter *f)
+{
+  encode_json(name, r.to_str(), f);
+}
+
+void decode_json_obj(rgw_placement_rule& v, JSONObj *obj)
+{
+  string s;
+  decode_json_obj(s, obj);
+  v.from_str(s);
+}
+
 void RGWOLHInfo::dump(Formatter *f) const
 {
   encode_json("target", target, f);
@@ -1043,12 +1055,17 @@ void RGWZoneGroupPlacementTarget::dump(Formatter *f) const
 {
   encode_json("name", name, f);
   encode_json("tags", tags, f);
+  encode_json("storage_classes", storage_classes, f);
 }
 
 void RGWZoneGroupPlacementTarget::decode_json(JSONObj *obj)
 {
   JSONDecoder::decode_json("name", name, obj);
   JSONDecoder::decode_json("tags", tags, obj);
+  JSONDecoder::decode_json("storage_classes", storage_classes, obj);
+  if (storage_classes.empty()) {
+    storage_classes.insert(RGW_STORAGE_CLASS_STANDARD);
+  }
 }
 
 void RGWZoneGroup::dump(Formatter *f) const
