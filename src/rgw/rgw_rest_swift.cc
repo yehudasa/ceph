@@ -466,9 +466,10 @@ static void dump_container_metadata(struct req_state *s,
     if (write_acl.size()) {
       dump_header(s, "X-Container-Write", write_acl);
     }
-    if (!s->bucket_info.placement_rule.empty()) {
-      dump_header(s, "X-Storage-Policy", s->bucket_info.placement_rule);
+    if (!s->bucket_info.placement_rule.name.empty()) {
+      dump_header(s, "X-Storage-Policy", s->bucket_info.placement_rule.name);
     }
+    dump_header(s, "X-Storage-Class", s->bucket_info.placement_rule.get_storage_class());
 
     /* Dump user-defined metadata items and generic attrs. */
     const size_t PREFIX_LEN = sizeof(RGW_ATTR_META_PREFIX) - 1;
@@ -706,7 +707,7 @@ int RGWCreateBucket_ObjStore_SWIFT::get_params()
   location_constraint = store->get_zonegroup().api_name;
   get_rmattrs_from_headers(s, CONT_PUT_ATTR_PREFIX,
                            CONT_REMOVE_ATTR_PREFIX, rmattr_names);
-  placement_rule.init(s->info.env->get("HTTP_X_STORAGE_POLICY", ""), s->storage_class);
+  placement_rule.init(s->info.env->get("HTTP_X_STORAGE_POLICY", ""), s->info.storage_class);
 
   return get_swift_versioning_settings(s, swift_ver_location);
 }
@@ -1020,7 +1021,7 @@ int RGWPutMetadataBucket_ObjStore_SWIFT::get_params()
 
   get_rmattrs_from_headers(s, CONT_PUT_ATTR_PREFIX, CONT_REMOVE_ATTR_PREFIX,
 			   rmattr_names);
-  placement_rule = s->info.env->get("HTTP_X_STORAGE_POLICY", "");
+  placement_rule.init(s->info.env->get("HTTP_X_STORAGE_POLICY", ""), s->info.storage_class);
 
   return get_swift_versioning_settings(s, swift_ver_location);
 }
@@ -1802,9 +1803,11 @@ void RGWInfo_ObjStore_SWIFT::list_swift_data(Formatter& formatter,
 
   for (const auto& placement_targets : zonegroup.placement_targets) {
     formatter.open_object_section("policy");
-    if (placement_targets.second.name.compare(zonegroup.default_placement) == 0)
+    if (placement_targets.second.compare(zonegroup.default_placement) == 0)
       formatter.dump_bool("default", true);
     formatter.dump_string("name", placement_targets.second.name.c_str());
+    auto sc = placement_targets.second.get_storage_class();
+    formatter.dump_string("storage_class", sc.c_str());
     formatter.close_section();
   }
   formatter.close_section();

@@ -1165,6 +1165,9 @@ struct RGWZonePlacementInfo {
   }
   const rgw_pool& get_data_pool(const string& storage_class) const {
     auto iter = data_pools.find(storage_class);
+    if (iter == data_pools.end() && storage_class.empty()) {
+      iter = data_pools.find(RGW_STORAGE_CLASS_STANDARD);
+    }
     if (iter == data_pools.end()) {
       return standard_data_pool;
     }
@@ -1327,7 +1330,7 @@ struct RGWZoneParams : RGWSystemMetaObj {
   /*
    * return data pool of the head object
    */
-  bool get_head_data_pool(const string& placement_id, const rgw_obj& obj, rgw_pool *pool) const {
+  bool get_head_data_pool(const rgw_placement_rule& placement_rule, const rgw_obj& obj, rgw_pool *pool) const {
     const rgw_data_placement_target& explicit_placement = obj.bucket.explicit_placement;
     if (!explicit_placement.data_pool.empty()) {
       if (!obj.in_extra_data) {
@@ -1337,15 +1340,15 @@ struct RGWZoneParams : RGWSystemMetaObj {
       }
       return true;
     }
-    if (placement_id.empty()) {
+    if (placement_rule.empty()) {
       return false;
     }
-    auto iter = placement_pools.find(placement_id);
+    auto iter = placement_pools.find(placement_rule.name);
     if (iter == placement_pools.end()) {
       return false;
     }
     if (!obj.in_extra_data) {
-      *pool = iter->second.standard_data_pool;
+      *pool = iter->second.get_data_pool(placement_rule.storage_class);
     } else {
       *pool = iter->second.get_data_extra_pool();
     }
@@ -1502,7 +1505,7 @@ struct RGWZoneGroup : public RGWSystemMetaObj {
   map<string, RGWZone> zones;
 
   map<string, RGWZoneGroupPlacementTarget> placement_targets;
-  string default_placement;
+  rgw_placement_rule default_placement;
 
   list<string> hostnames;
   list<string> hostnames_s3website;
@@ -2672,7 +2675,7 @@ public:
   int select_new_bucket_location(RGWUserInfo& user_info, const string& zonegroup_id,
                                  const rgw_placement_rule& rule,
                                  rgw_placement_rule *pselected_rule_name, RGWZonePlacementInfo *rule_info);
-  int select_bucket_location_by_rule(const string& location_rule, const string& storage_class, RGWZonePlacementInfo *rule_info);
+  int select_bucket_location_by_rule(const rgw_placement_rule& location_rule, RGWZonePlacementInfo *rule_info);
   void create_bucket_id(string *bucket_id);
 
   bool get_obj_data_pool(const rgw_placement_rule& placement_rule, const rgw_obj& obj, rgw_pool *pool);
