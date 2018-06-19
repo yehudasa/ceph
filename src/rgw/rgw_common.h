@@ -678,7 +678,6 @@ struct rgw_placement_rule {
     ceph::decode(s, bl);
     from_str(s);
   } 
-  void dump(Formatter *f) const;
 
   std::string to_str() const {
     if (standard_storage_class()) {
@@ -704,6 +703,9 @@ struct rgw_placement_rule {
   }
 };
 WRITE_CLASS_ENCODER(rgw_placement_rule)
+
+void encode_json(const char *name, const rgw_placement_rule& val, ceph::Formatter *f);
+void decode_json_obj(rgw_placement_rule& v, JSONObj *obj);
 
 inline ostream& operator<<(ostream& out, const rgw_placement_rule& rule) {
   return out << rule.to_str();

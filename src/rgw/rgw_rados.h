@@ -1464,6 +1464,7 @@ WRITE_CLASS_ENCODER(RGWDefaultZoneGroupInfo)
 struct RGWZoneGroupPlacementTarget {
   string name;
   set<string> tags;
+  set<string> storage_classes;
 
   bool user_permitted(list<string>& user_tags) const {
     if (tags.empty()) {
@@ -1478,16 +1479,23 @@ struct RGWZoneGroupPlacementTarget {
   }
 
   void encode(bufferlist& bl) const {
-    ENCODE_START(1, 1, bl);
+    ENCODE_START(2, 1, bl);
     encode(name, bl);
     encode(tags, bl);
+    encode(storage_classes, bl);
     ENCODE_FINISH(bl);
   }
 
   void decode(bufferlist::const_iterator& bl) {
-    DECODE_START(1, bl);
+    DECODE_START(2, bl);
     decode(name, bl);
     decode(tags, bl);
+    if (struct_v >= 2) {
+      decode(storage_classes, bl);
+    }
+    if (storage_classes.empty()) {
+      storage_classes.insert(RGW_STORAGE_CLASS_STANDARD);
+    }
     DECODE_FINISH(bl);
   }
   void dump(Formatter *f) const;
