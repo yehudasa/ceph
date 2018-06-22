@@ -4688,19 +4688,14 @@ int main(int argc, const char **argv)
           RGWZonePlacementInfo& info = zone.placement_pools[placement_id];
 
           info.index_pool = *index_pool;
-          if (storage_class.empty()) {
-            info.data_pools[RGW_STORAGE_CLASS_STANDARD] = *data_pool;
-          } else {
-            info.data_pools[storage_class] = *data_pool;
-          }
+          rgw_pool dp = data_pool.get();
+          info.storage_classes.set_storage_class(storage_class, &dp, compression_type.get_ptr());
+
           if (data_extra_pool) {
             info.data_extra_pool = *data_extra_pool;
           }
           if (index_type_specified) {
             info.index_type = placement_index_type;
-          }
-          if (compression_type) {
-            info.compression_type = *compression_type;
           }
 
           ret = check_pool_support_omap(info.get_data_extra_pool());
@@ -4720,21 +4715,14 @@ int main(int argc, const char **argv)
           if (index_pool && !index_pool->empty()) {
             info.index_pool = *index_pool;
           }
-          if (data_pool && !data_pool->empty()) {
-            if (storage_class.empty()) {
-              info.data_pools[RGW_STORAGE_CLASS_STANDARD] = *data_pool;
-            } else {
-              info.data_pools[storage_class] = *data_pool;
-            }
-          }
+          rgw_pool dp = data_pool.get();
+          info.storage_classes.set_storage_class(storage_class, &dp, compression_type.get_ptr());
+
           if (data_extra_pool) {
             info.data_extra_pool = *data_extra_pool;
           }
           if (index_type_specified) {
             info.index_type = placement_index_type;
-          }
-          if (compression_type) {
-            info.compression_type = *compression_type;
           }
           
           ret = check_pool_support_omap(info.get_data_extra_pool());
