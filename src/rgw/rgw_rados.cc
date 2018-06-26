@@ -2218,10 +2218,13 @@ int RGWObjManifest::generator::create_begin(CephContext *cct, RGWObjManifest *_m
   manifest = _m;
 
   if (!tail_placement_rule) {
-    tail_placement_rule = &head_placement_rule;
+    manifest->set_tail_placement(head_placement_rule, _b);
+  } else {
+    rgw_placement_rule new_tail_rule = *tail_placement_rule;
+    new_tail_rule.inherit_from(head_placement_rule);
+    manifest->set_tail_placement(new_tail_rule, _b);
   }
 
-  manifest->set_tail_placement(*tail_placement_rule, _b);
   manifest->set_head(head_placement_rule, _obj, 0);
   last_ofs = 0;
 
@@ -2750,7 +2753,7 @@ int RGWPutObjProcessor_Atomic::prepare(RGWRados *store, string *oid_rand)
   manifest.set_trivial_rule(max_chunk_size, store->ctx()->_conf->rgw_obj_stripe_size);
 
   r = manifest_gen.create_begin(store->ctx(), &manifest, bucket_info.placement_rule,
-                                ptail_placement_rule, head_obj.bucket, head_obj);
+                                &tail_placement_rule, head_obj.bucket, head_obj);
   if (r < 0) {
     return r;
   }

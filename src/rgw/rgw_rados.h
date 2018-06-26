@@ -4097,7 +4097,7 @@ protected:
   RGWObjManifest manifest;
   RGWObjManifest::generator manifest_gen;
 
-  const rgw_placement_rule *ptail_placement_rule;
+  rgw_placement_rule tail_placement_rule;
 
   int write_data(bufferlist& bl, off_t ofs, void **phandle, rgw_raw_obj *pobj, bool exclusive);
   int do_complete(size_t accounted_size, const string& etag,
@@ -4126,8 +4126,11 @@ public:
                                 versioned_object(versioned),
                                 bucket(_b),
                                 obj_str(_o),
-                                unique_tag(_t),
-                                ptail_placement_rule(_ptail_placement_rule) {}
+                                unique_tag(_t) {
+    if (_ptail_placement_rule) {
+      tail_placement_rule = *_ptail_placement_rule;
+    }
+  }
 
   int prepare(RGWRados *store, string *oid_rand) override;
   virtual bool immutable_head() { return false; }

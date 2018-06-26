@@ -3293,10 +3293,9 @@ int RGWPutObjProcessor_Multipart::prepare(RGWRados *store, string *oid_rand)
 
   manifest.set_multipart_part_rule(store->ctx()->_conf->rgw_obj_stripe_size, num);
 
-#warning tail placement rule
   int r = manifest_gen.create_begin(store->ctx(), &manifest,
                                     s->bucket_info.placement_rule,
-                                    nullptr, /* FIXME: tail placement */
+                                    &s->info.storage_class,
                                     bucket, target_obj);
   if (r < 0) {
     return r;
@@ -3395,13 +3394,14 @@ RGWPutObjProcessor *RGWPutObj::select_processor(RGWObjectCtx& obj_ctx, bool *is_
 
   uint64_t part_size = s->cct->_conf->rgw_obj_stripe_size;
 
+  rgw_placement_rule& tail_placement = s->info.storage_class;
+
   if (!multipart) {
-#warning FIXME: tail placement
-    processor = new RGWPutObjProcessor_Atomic(obj_ctx, s->bucket_info, nullptr, s->bucket, s->object.name, part_size, s->req_id, s->bucket_info.versioning_enabled());
+    processor = new RGWPutObjProcessor_Atomic(obj_ctx, s->bucket_info, &tail_placement, s->bucket, s->object.name, part_size, s->req_id, s->bucket_info.versioning_enabled());
     (static_cast<RGWPutObjProcessor_Atomic *>(processor))->set_olh_epoch(olh_epoch);
     (static_cast<RGWPutObjProcessor_Atomic *>(processor))->set_version_id(version_id);
   } else {
-    processor = new RGWPutObjProcessor_Multipart(obj_ctx, s->bucket_info, nullptr, part_size, s);
+    processor = new RGWPutObjProcessor_Multipart(obj_ctx, s->bucket_info, &tail_placement, part_size, s);
   }
 
   if (is_multipart) {
@@ -3999,10 +3999,11 @@ void RGWPostObj::execute()
       ldpp_dout(this, 15) << "supplied_md5=" << supplied_md5 << dendl;
     }
 
-#warning FIXME tail placement rule
+    rgw_placement_rule& tail_placement = s->info.storage_class;
+
     RGWPutObjProcessor_Atomic processor(*static_cast<RGWObjectCtx *>(s->obj_ctx),
                                         s->bucket_info,
-                                        nullptr,
+                                        &tail_placement,
                                         s->bucket,
                                         get_current_filename(),
                                         /* part size */
@@ -6590,8 +6591,6 @@ int RGWBulkUploadOp::handle_dir(const boost::string_ref path)
   }
 
 
-  rgw_placement_rule placement_rule;
-  placement_rule.storage_class = s->info.storage_class;
   if (bucket_exists) {
     rgw_placement_rule selected_placement_rule;
     rgw_bucket bucket;
@@ -6599,7 +6598,7 @@ int RGWBulkUploadOp::handle_dir(const boost::string_ref path)
     bucket.name = s->bucket_name;
     op_ret = store->select_bucket_placement(*(s->user),
                                             store->get_zonegroup().get_id(),
-                                            placement_rule,
+                                            s->info.storage_class,
                                             &selected_placement_rule,
                                             nullptr);
     if (selected_placement_rule != binfo.placement_rule) {
@@ -6629,7 +6628,7 @@ int RGWBulkUploadOp::handle_dir(const boost::string_ref path)
   op_ret = store->create_bucket(*(s->user),
                                 bucket,
                                 store->get_zonegroup().get_id(),
-                                placement_rule, binfo.swift_ver_location,
+                                s->info.storage_class, binfo.swift_ver_location,
                                 pquota_info, attrs,
                                 out_info, pobjv, &ep_objv, creation_time,
                                 pmaster_bucket, pmaster_num_shards, true);
@@ -6763,10 +6762,11 @@ int RGWBulkUploadOp::handle_file(const boost::string_ref path,
     return op_ret;
   }
 
-#warning FIXME tail placement rule
+  rgw_placement_rule& tail_placement = s->info.storage_class;
+
   RGWPutObjProcessor_Atomic processor(obj_ctx,
                                       binfo,
-                                      nullptr,
+                                      &tail_placement,
                                       binfo.bucket,
                                       object.name,
                                       /* part size */
