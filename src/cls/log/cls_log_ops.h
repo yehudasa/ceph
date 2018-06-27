@@ -89,6 +89,44 @@ struct cls_log_list_ret {
 };
 WRITE_CLASS_ENCODER(cls_log_list_ret)
 
+struct cls_log_get_op {
+  string key;
+
+  cls_log_get_op() {}
+
+  void encode(bufferlist& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(key, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(bufferlist::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(key, bl);
+    DECODE_FINISH(bl);
+  }
+};
+WRITE_CLASS_ENCODER(cls_log_get_op)
+
+struct cls_log_get_ret {
+  cls_log_entry entry;
+
+  cls_log_get_ret() {}
+
+  void encode(bufferlist& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(entry, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(bufferlist::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(entry, bl);
+    DECODE_FINISH(bl);
+  }
+};
+WRITE_CLASS_ENCODER(cls_log_get_ret)
+
 
 /*
  * operation will return 0 when successfully removed but not done. Will return

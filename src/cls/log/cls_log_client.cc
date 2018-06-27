@@ -123,6 +123,38 @@ void cls_log_list(librados::ObjectReadOperation& op, utime_t& from, utime_t& to,
   op.exec("log", "list", inbl, new LogListCtx(&entries, out_marker, truncated));
 }
 
+class LogGetCtx : public ObjectOperationCompletion {
+  cls_log_entry *entry;
+public:
+  LogGetCtx(cls_log_entry *_entry) : entry(_entry) {}
+  void handle_completion(int r, bufferlist& outbl) override {
+    if (r >= 0) {
+      cls_log_get_ret ret;
+      try {
+        auto iter = outbl.cbegin();
+        decode(ret, iter);
+        if (entry)
+          *entry = std::move(ret.entry);
+      } catch (buffer::error& err) {
+        // nothing we can do about it atm
+      }
+    }
+  }
+};
+
+void cls_log_get(librados::ObjectReadOperation& op,
+                  const string& key,
+		  cls_log_entry *entry);
+{
+  bufferlist inbl;
+  cls_log_get call;
+  call.key = key;
+
+  encode(call, inbl);
+
+  op.exec("log", "get", inbl, new LogGetCtx(entry));
+}
+
 class LogInfoCtx : public ObjectOperationCompletion {
   cls_log_header *header;
 public:

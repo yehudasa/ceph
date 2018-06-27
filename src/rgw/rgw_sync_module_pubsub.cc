@@ -164,14 +164,15 @@ static string topic_shard_oid(const string& topic, int shard_id, uint64_t index)
   return string(buf);
 }
 
-class PSTopicShardGetCurIndex : public RGWCoroutine {
+
+class PSTopicWriteCurIndexMeta : public RGWCoroutine {
   RGWDataSyncEnv *sync_env;
   string topic;
   int shard_id;
   PSConfigRef conf;
   string meta_oid;
 public:
-  PSTopicShardGetCurIndex(RGWDataSyncEnv *_sync_env,
+  PSTopicShardPrepare(RGWDataSyncEnv *_sync_env,
                      const string& _topic,
                      int _shard_id,
                      PSConfigRef _conf) : RGWCoroutine(_sync_env->cct),
@@ -183,6 +184,107 @@ public:
 
   int operate() override {
     reenter(this) {
+
+      return set_cr_done();
+    }
+    return 0;
+  }
+};
+
+struct topic_shard_meta_entry_info {
+  ceph::real_time timestamp;
+  uint64_t id;
+
+  void encode(bufferlist& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(timestamp, bl);
+    encode(id, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(bufferlist::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(timestamp, bl);
+    decode(id, bl);
+    DECODE_FINISH(bl);
+  }
+
+  void dump(Formatter *f) const;
+};
+WRITE_CLASS_ENCODER(topic_shard_meta_entry_info)
+
+
+static void prepare_timelog_entry(uint64_t id, cls_log_entry *entry)
+{
+  cls_log_entry entry;
+  string section; /* unused */
+  string name; /* unused */
+
+  topic_shard_meta_entry_info info;
+
+  info.id = id;
+  info.timestamp = real_clock::now();
+  
+  bufferlist bl;
+  encode(info, bl);
+  store->time_log_prepare_entry(*entry, info.timestamp, section, name, bl);
+}
+
+
+class PSTopicShardGetCurIndexMeta : public RGWCoroutine {
+  RGWDataSyncEnv *sync_env;
+  string topic;
+  int shard_id;
+  PSConfigRef conf;
+  string meta_oid;
+  cls_log_header log_header;
+  RGWRados *store;
+public:
+  PSTopicShardGetCurIndex(RGWDataSyncEnv *_sync_env,
+                     const string& _topic,
+                     int _shard_id,
+                     PSConfigRef _conf,
+                     int *cur_index) : RGWCoroutine(_sync_env->cct),
+                                               sync_env(_sync_env),
+                                               topic(_topic),
+                                               shard_id(_shard_id),
+                                               conf(_conf) {
+    store = sync_env->store;
+  }
+
+  int operate() override {
+    reenter(this) {
+
+      yield {
+        call (new RGWRadosTimeLogInfoCR(store,
+                                        rgw_raw_obj(store->get_zone_params().log_pool, topic_shard_meta_oid(topic, shard_id)),
+                                        &log_header));
+      }
+      if (retcode < 0 && ret != -ENOENT) {
+        return set_cr_error(retcode);
+      }
+
+      if (ret != -ENOENT) {
+        yield {
+          cls_log_entry entry;
+
+          prepare_timelog_entry(0, &entry);
+
+          call (new RGWRadosTimeLogAddCR(store,
+                                          rgw_raw_obj(store->get_zone_params().log_pool, topic_shard_meta_oid(topic, shard_id)),
+                                          entry));
+        }
+
+        if (retcode < 0) {
+          return set_cr_error(retcode);
+        }
+
+        *cur_index = 0;
+
+        return set_cr_done();
+      }
+
+     ... 
 
       return set_cr_done();
     }

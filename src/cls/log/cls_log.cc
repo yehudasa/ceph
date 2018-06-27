@@ -355,6 +355,7 @@ CLS_INIT(log)
   cls_register_cxx_method(h_class, "list", CLS_METHOD_RD, cls_log_list, &h_log_list);
   cls_register_cxx_method(h_class, "trim", CLS_METHOD_RD | CLS_METHOD_WR, cls_log_trim, &h_log_trim);
   cls_register_cxx_method(h_class, "info", CLS_METHOD_RD, cls_log_info, &h_log_info);
+  cls_register_cxx_method(h_class, "get", CLS_METHOD_RD, cls_log_info, &h_log_info);
 
   return;
 }

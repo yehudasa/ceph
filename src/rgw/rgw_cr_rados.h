@@ -1131,6 +1131,25 @@ class RGWRadosTimelogTrimCR : public RGWSimpleCoroutine {
   int request_complete() override;
 };
 
+class RGWRadosTimelogGetCR : public RGWSimpleCoroutine {
+  RGWRados *store;
+  cls_log_entry result;
+  cls_log_entry *presult;
+
+  string oid;
+
+  boost::intrusive_ptr<RGWAioCompletionNotifier> cn;
+
+  librados::IoCtx ioctx;
+
+public:
+  RGWRadosTimelogGetCR(RGWRados *_store, const string& _oid,
+		        cls_log_entry *result);
+
+  int send_request() override;
+  int request_complete() override;
+};
+
 class RGWRadosTimelogInfoCR : public RGWSimpleCoroutine {
   RGWRados *store;
   cls_log_header result;
