@@ -17,6 +17,15 @@ CLS_NAME(log)
 static string log_index_prefix = "1_";
 
 
+static void add_to_count(cls_log_header& header, int to_add)
+{
+  if (header.count < 0) {
+    return;
+  }
+  header.count += to_add;
+}
+
+
 static int write_log_entry(cls_method_context_t hctx, string& index, cls_log_entry& entry)
 {
   bufferlist bl;
@@ -66,8 +75,10 @@ static int write_header(cls_method_context_t hctx, cls_log_header& header)
   encode(header, header_bl);
 
   int ret = cls_cxx_map_write_header(hctx, &header_bl);
-  if (ret < 0)
+  if (ret < 0) {
+    CLS_LOG(0, "ERROR: write_header(): failed to write header (ret=%d)", ret);
     return ret;
+  }
 
   return 0;
 }
@@ -103,6 +114,7 @@ static int cls_log_add(cls_method_context_t hctx, bufferlist *in, bufferlist *ou
 
   for (list<cls_log_entry>::iterator iter = op.entries.begin();
        iter != op.entries.end(); ++iter) {
+    bool existed = false;
     cls_log_entry& entry = *iter;
 
     string index;
@@ -117,6 +129,17 @@ static int cls_log_add(cls_method_context_t hctx, bufferlist *in, bufferlist *ou
       get_index(hctx, timestamp, index);
       entry.id = index;
     } else {
+      /* this is never called really,
+       * but need to check if entry exists so that
+       * we can maintain a correct count if someone
+       * decides to use this api
+       */
+      bufferlist k;
+      ret = cls_cxx_map_get_val(hctx, index, &k);
+      if (ret < 0 && ret != -ENOENT) {
+        return ret;
+      }
+      existed = (ret == 0);
       index = entry.id;
     }
 
@@ -129,6 +152,10 @@ static int cls_log_add(cls_method_context_t hctx, bufferlist *in, bufferlist *ou
     ret = write_log_entry(hctx, index, entry);
     if (ret < 0)
       return ret;
+
+    if (!existed) {
+      add_to_count(header, 1);
+    }
   }
 
   ret = write_header(hctx, header);
@@ -220,6 +247,12 @@ static int cls_log_trim(cls_method_context_t hctx, bufferlist *in, bufferlist *o
     return -EINVAL;
   }
 
+  cls_log_header header;
+
+  int ret = read_header(hctx, header);
+  if (ret < 0)
+    return ret;
+
   map<string, bufferlist> keys;
 
   string from_index;
@@ -262,11 +295,18 @@ static int cls_log_trim(cls_method_context_t hctx, bufferlist *in, bufferlist *o
       CLS_LOG(1, "ERROR: cls_cxx_map_remove_key failed rc=%d", rc);
       return -EINVAL;
     }
+
+    add_to_count(header, -1);
+
     removed = true;
   }
 
   if (!removed)
     return -ENODATA;
+
+  ret = write_header(hctx, header);
+  if (ret < 0)
+    return ret;
 
   return 0;
 }

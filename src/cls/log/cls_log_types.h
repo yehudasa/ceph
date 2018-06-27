@@ -44,18 +44,26 @@ WRITE_CLASS_ENCODER(cls_log_entry)
 struct cls_log_header {
   string max_marker;
   utime_t max_time;
+  int64_t count{0};
 
   void encode(bufferlist& bl) const {
-    ENCODE_START(1, 1, bl);
+    ENCODE_START(2, 1, bl);
     encode(max_marker, bl);
     encode(max_time, bl);
+    encode(count, bl);
     ENCODE_FINISH(bl);
   }
 
   void decode(bufferlist::const_iterator& bl) {
-    DECODE_START(1, bl);
+    DECODE_START(2, bl);
     decode(max_marker, bl);
     decode(max_time, bl);
+    if (struct_v >= 2) {
+      decode(count, bl);
+    } else {
+      /* count is not supported */
+      count = -1;
+    }
     DECODE_FINISH(bl);
   }
 };
