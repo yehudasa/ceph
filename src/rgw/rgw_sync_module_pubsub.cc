@@ -6,6 +6,7 @@
 #include "rgw_rest_conn.h"
 #include "rgw_cr_rest.h"
 #include "rgw_op.h"
+#include "rgw_pubsub.h"
 
 #include <boost/asio/yield.hpp>
 
@@ -15,6 +16,8 @@
 #define PS_NUM_PUB_SHARDS_DEFAULT 64
 #define PS_NUM_PUB_SHARDS_MIN     16
 
+#define PS_NUM_TOPIC_SHARDS_DEFAULT 16
+#define PS_NUM_TOPIC_SHARDS_MIN     8
 
 struct PSSubConfig { /* subscription config */
   string name;
@@ -54,6 +57,7 @@ struct PSConfig {
   string id{"pubsub"};
   uint64_t sync_instance{0};
   uint32_t num_pub_shards{0};
+  uint32_t num_topic_shards{0};
   uint64_t max_id{0};
 
   /* FIXME: no hard coded buckets, we'll have configurable topics */
@@ -67,6 +71,10 @@ struct PSConfig {
       num_pub_shards = PS_NUM_PUB_SHARDS_MIN;
     }
 
+    num_topic_shards = config["num_topic_shards"](PS_NUM_TOPIC_SHARDS_DEFAULT);
+    if (num_topic_shards < PS_NUM_TOPIC_SHARDS_MIN) {
+      num_topic_shards = PS_NUM_TOPIC_SHARDS_MIN;
+    }
     /* FIXME: this will be dynamically configured */
     for (auto& c : config["notifications"].array()) {
       PSNotificationConfig nc;
@@ -121,18 +129,6 @@ struct PSConfig {
 
 using PSConfigRef = std::shared_ptr<PSConfig>;
 
-struct es_index_settings {
-  uint32_t num_replicas;
-  uint32_t num_shards;
-
-  es_index_settings(uint32_t _replicas, uint32_t _shards) : num_replicas(_replicas), num_shards(_shards) {}
-
-  void dump(Formatter *f) const {
-    encode_json("number_of_replicas", num_replicas, f);
-    encode_json("number_of_shards", num_shards, f);
-  }
-};
-
 class RGWPSInitConfigCBCR : public RGWCoroutine {
   RGWDataSyncEnv *sync_env;
   PSConfigRef conf;
@@ -146,6 +142,114 @@ public:
       ldout(sync_env->cct, 0) << ": init pubsub config zone=" << sync_env->source_zone << dendl;
 
       /* nothing to do here right now */
+
+      return set_cr_done();
+    }
+    return 0;
+  }
+};
+
+
+static string topic_shard_meta_oid(const string& topic, int shard_id)
+{
+  char buf[64 + topic.size()];
+  snprintf(buf, sizeof(buf), "pubsub.topic.meta/%s.%d", topic.c_str(), shard_id);
+  return string(buf);
+}
+
+static string topic_shard_oid(const string& topic, int shard_id, uint64_t index)
+{
+  char buf[64 + topic.size()];
+  snprintf(buf, sizeof(buf), "pubsub.topic/%s.%d.%lld", topic.c_str(), shard_id, (long long)index);
+  return string(buf);
+}
+
+class PSTopicShardGetCurIndex : public RGWCoroutine {
+  RGWDataSyncEnv *sync_env;
+  string topic;
+  int shard_id;
+  PSConfigRef conf;
+  string meta_oid;
+public:
+  PSTopicShardGetCurIndex(RGWDataSyncEnv *_sync_env,
+                     const string& _topic,
+                     int _shard_id,
+                     PSConfigRef _conf) : RGWCoroutine(_sync_env->cct),
+                                               sync_env(_sync_env),
+                                               topic(_topic),
+                                               shard_id(_shard_id),
+                                               conf(_conf) {
+  }
+
+  int operate() override {
+    reenter(this) {
+
+      return set_cr_done();
+    }
+    return 0;
+  }
+};
+
+class PSTopicShardAddLogEntry : public RGWCoroutine {
+  RGWDataSyncEnv *sync_env;
+  string topic;
+  int shard_id;
+  std::shared_ptr<rgw_pubsub_event> event;
+  PSConfigRef conf;
+  string meta_oid;
+public:
+  PSTopicShardAddLogEntry(RGWDataSyncEnv *_sync_env,
+                          const string& _topic,
+                          int _shard_id,
+                          std::shared_ptr<rgw_pubsub_event>& _event,
+                          PSConfigRef _conf) : RGWCoroutine(_sync_env->cct),
+                                               sync_env(_sync_env),
+                                               topic(_topic),
+                                               shard_id(_shard_id),
+                                               event(_event),
+                                               conf(_conf) {
+  }
+
+  int operate() override {
+    reenter(this) {
+      ldout(sync_env->cct, 0) << ": init pubsub config zone=" << sync_env->source_zone << dendl;
+
+#warning implement me      
+
+      return set_cr_done();
+    }
+    return 0;
+  }
+};
+
+class PSTopicAddLogEntry : public RGWCoroutine {
+  static std::atomic<int> counter;
+  RGWDataSyncEnv *sync_env;
+  string topic;
+  std::shared_ptr<rgw_pubsub_event> event;
+  PSConfigRef conf;
+public:
+  PSTopicAddLogEntry(RGWDataSyncEnv *_sync_env,
+                     const string& _topic,
+                     std::shared_ptr<rgw_pubsub_event>& _event,
+                     PSConfigRef _conf) : RGWCoroutine(_sync_env->cct),
+                                               sync_env(_sync_env),
+                                               topic(_topic),
+                                               event(_event),
+                                               conf(_conf) {}
+  int operate() override {
+    reenter(this) {
+      ldout(sync_env->cct, 20) << "PSTopicAddLogEntry: " << sync_env->source_zone << dendl;
+
+      
+      yield {
+        int shard_id = ++counter % conf->num_topic_shards;
+        call(new PSTopicShardAddLogEntry(sync_env, topic, shard_id, event, conf));
+      }
+      if (retcode < 0) {
+        ldout(sync_env->cct, 0) << "ERROR: PSTopicShardAddLogEntry() returned " << retcode << dendl;
+        return set_cr_error(retcode);
+      }
 
       return set_cr_done();
     }
