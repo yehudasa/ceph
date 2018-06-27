@@ -154,6 +154,10 @@ static int cls_log_add(cls_method_context_t hctx, bufferlist *in, bufferlist *ou
       return ret;
 
     if (!existed) {
+      if (op.size_limit > 0 && header.count >= op.size_limit) {
+        CLS_LOG(20, "log omap is full: header.count=%lld", (long long)header.count);
+        return -ENOSPC;
+      }
       add_to_count(header, 1);
     }
   }

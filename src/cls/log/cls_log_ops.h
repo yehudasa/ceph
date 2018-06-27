@@ -9,21 +9,26 @@
 struct cls_log_add_op {
   list<cls_log_entry> entries;
   bool monotonic_inc;
+  int64_t size_limit{-1}; /* if >= 0, check that header.count will not exceed this number */
 
   cls_log_add_op() : monotonic_inc(true) {}
 
   void encode(bufferlist& bl) const {
-    ENCODE_START(2, 1, bl);
+    ENCODE_START(3, 1, bl);
     encode(entries, bl);
     encode(monotonic_inc, bl);
+    encode(size_limit, bl);
     ENCODE_FINISH(bl);
   }
 
   void decode(bufferlist::const_iterator& bl) {
-    DECODE_START(2, bl);
+    DECODE_START(3, bl);
     decode(entries, bl);
     if (struct_v >= 2) {
       decode(monotonic_inc, bl);
+    }
+    if (struct_v >= 3) {
+      decode(size_limit, bl);
     }
     DECODE_FINISH(bl);
   }
