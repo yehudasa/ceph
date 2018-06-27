@@ -778,6 +778,36 @@ int RGWRadosTimelogTrimCR::request_complete()
   return r;
 }
 
+RGWRadosTimelogInfoCR::RGWRadosTimelogInfoCR(RGWRados *_store, const string& _oid,
+                      cls_log_header *_presult) : RGWSimpleCoroutine(_store->ctx()),
+                                                store(_store),
+                                                presult(_presult),
+                                                oid(_oid), cn(NULL)
+{
+  stringstream& s = set_description();
+  s << "timelog get info oid=" <<  oid;
+}
+
+int RGWRadosTimelogInfoCR::send_request()
+{
+  set_status() << "sending request";
+
+  cn = stack->create_completion_notifier();
+  return store->time_log_info_async(ioctx, oid, &result, cn->completion());
+}
+
+int RGWRadosTimelogInfoCR::request_complete()
+{
+  int r = cn->completion()->get_return_value();
+
+  set_status() << "request complete; ret=" << r;
+
+  *presult = result;
+#warning aio needs cancellation if cr killed before request finished
+
+  return r;
+}
+
 
 RGWSyncLogTrimCR::RGWSyncLogTrimCR(RGWRados *store, const std::string& oid,
                                    const std::string& to_marker,
