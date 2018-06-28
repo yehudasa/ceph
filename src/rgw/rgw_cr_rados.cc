@@ -778,11 +778,62 @@ int RGWRadosTimelogTrimCR::request_complete()
   return r;
 }
 
+RGWRadosTimelogListCR::RGWRadosTimelogListCR(RGWRados *_store, const string& _oid,
+                                           const ceph::real_time& _start_time,
+                                           const ceph::real_time& _end_time,
+                                           const string& _marker,
+                                           int _max_entries,
+                                           list<cls_log_entry> *_presult,
+                                           string *_pout_marker,
+                                           bool *_ptruncated) : RGWSimpleCoroutine(_store->ctx()), store(_store),
+                                                                oid(_oid),
+                                                                start_time(_start_time),
+                                                                end_time(_end_time),
+                                                                marker(_marker),
+                                                                max_entries(_max_entries),
+                                                                presult(_presult),
+                                                                pout_marker(_pout_marker),
+                                                                ptruncated(_ptruncated)
+{
+  stringstream& s = set_description();
+  s << "timelog list oid=" <<  oid;
+}
+
+int RGWRadosTimelogListCR::send_request()
+{
+  set_status() << "sending request";
+
+  cn = stack->create_completion_notifier();
+  return store->time_log_list_async(ioctx, oid, start_time, end_time,
+                                    max_entries, result, marker,
+                                    &out_marker, &truncated);
+}
+
+int RGWRadosTimelogListCR::request_complete()
+{
+  int r = cn->completion()->get_return_value();
+
+  set_status() << "request complete; ret=" << r;
+
+  if (presult) {
+    *presult = result;
+  }
+  if (pout_marker) {
+    *pout_marker = out_marker;
+  }
+  if (ptruncated) {
+    *ptruncated = truncated;
+  }
+#warning aio needs cancellation if cr killed before request finished
+
+  return r;
+}
 RGWRadosTimelogGetCR::RGWRadosTimelogGetCR(RGWRados *_store, const string& _oid,
-                      cls_log_entry *_presult) : RGWSimpleCoroutine(_store->ctx()),
+                                           const string& _key,
+                                           cls_log_entry *_presult) : RGWSimpleCoroutine(_store->ctx()),
                                                 store(_store),
                                                 presult(_presult),
-                                                oid(_oid), cn(NULL)
+                                                oid(_oid), key(_key), cn(NULL)
 {
   stringstream& s = set_description();
   s << "timelog get info oid=" <<  oid;
@@ -793,7 +844,7 @@ int RGWRadosTimelogGetCR::send_request()
   set_status() << "sending request";
 
   cn = stack->create_completion_notifier();
-  return store->time_log_get_async(ioctx, oid, &result, cn->completion());
+  return store->time_log_get_async(ioctx, oid, key, &result, cn->completion());
 }
 
 int RGWRadosTimelogGetCR::request_complete()

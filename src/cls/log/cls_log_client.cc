@@ -144,10 +144,10 @@ public:
 
 void cls_log_get(librados::ObjectReadOperation& op,
                   const string& key,
-		  cls_log_entry *entry);
+		  cls_log_entry *entry)
 {
   bufferlist inbl;
-  cls_log_get call;
+  cls_log_get_op call;
   call.key = key;
 
   encode(call, inbl);

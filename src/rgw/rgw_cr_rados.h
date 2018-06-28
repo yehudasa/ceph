@@ -1137,6 +1137,7 @@ class RGWRadosTimelogGetCR : public RGWSimpleCoroutine {
   cls_log_entry *presult;
 
   string oid;
+  string key;
 
   boost::intrusive_ptr<RGWAioCompletionNotifier> cn;
 
@@ -1144,7 +1145,45 @@ class RGWRadosTimelogGetCR : public RGWSimpleCoroutine {
 
 public:
   RGWRadosTimelogGetCR(RGWRados *_store, const string& _oid,
-		        cls_log_entry *result);
+                       const string& key,
+                       cls_log_entry *result);
+
+  int send_request() override;
+  int request_complete() override;
+};
+
+class RGWRadosTimelogListCR : public RGWSimpleCoroutine {
+  RGWRados *store;
+  string oid;
+
+  ceph::real_time start_time;
+  ceph::real_time end_time;
+
+  string marker;
+  int max_entries;
+
+  list<cls_log_entry> result;
+  list<cls_log_entry> *presult;
+
+  string out_marker;
+  string *pout_marker;
+
+  bool truncated;
+  bool *ptruncated;
+
+  boost::intrusive_ptr<RGWAioCompletionNotifier> cn;
+
+  librados::IoCtx ioctx;
+
+public:
+  RGWRadosTimelogListCR(RGWRados *_store, const string& _oid,
+                       const ceph::real_time& _start_time,
+                       const ceph::real_time& _end_time,
+                       const string& _marker,
+                       int _max_entries,
+                       list<cls_log_entry> *_presult,
+                       string *_pout_marker,
+                       bool *_ptruncated);
 
   int send_request() override;
   int request_complete() override;

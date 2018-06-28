@@ -129,17 +129,19 @@ static int cls_log_add(cls_method_context_t hctx, bufferlist *in, bufferlist *ou
       get_index(hctx, timestamp, index);
       entry.id = index;
     } else {
-      /* this is never called really,
-       * but need to check if entry exists so that
-       * we can maintain a correct count if someone
-       * decides to use this api
-       */
-      bufferlist k;
-      ret = cls_cxx_map_get_val(hctx, index, &k);
-      if (ret < 0 && ret != -ENOENT) {
-        return ret;
+      if (op.strict_accounting) {
+        /* this is never called really,
+         * but need to check if entry exists so that
+         * we can maintain a correct count if someone
+         * decides to use this api
+         */
+        bufferlist k;
+        ret = cls_cxx_map_get_val(hctx, index, &k);
+        if (ret < 0 && ret != -ENOENT) {
+          return ret;
+        }
+        existed = (ret == 0);
       }
-      existed = (ret == 0);
       index = entry.id;
     }
 

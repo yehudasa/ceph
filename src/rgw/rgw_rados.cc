@@ -5396,6 +5396,31 @@ int RGWRados::time_log_list(const string& oid, const real_time& start_time, cons
   return 0;
 }
 
+int RGWRados::time_log_list_async(librados::IoCtx& io_ctx,
+                                  const string& oid, const real_time& start_time, const real_time& end_time,
+                                  int max_entries, list<cls_log_entry>& entries,
+                                  const string& marker,
+                                  string *out_marker,
+                                  bool *truncated)
+{
+  int r = rgw_init_ioctx(get_rados_handle(), get_zone_params().log_pool, io_ctx);
+  if (r < 0)
+    return r;
+  librados::ObjectReadOperation op;
+
+  utime_t st(start_time);
+  utime_t et(end_time);
+
+  cls_log_list(op, st, et, marker, max_entries, entries,
+	       out_marker, truncated);
+
+  int ret = io_ctx.aio_operate(oid, completion, &op, nullptr);
+  if (ret < 0)
+    return ret;
+
+  return 0;
+}
+
 int RGWRados::time_log_get(const string& oid, const string& key, cls_log_entry *entry)
 {
   librados::IoCtx io_ctx;
@@ -5425,7 +5450,7 @@ int RGWRados::time_log_get_async(librados::IoCtx& io_ctx, const string& oid, con
 
   cls_log_get(op, key, entry);
 
-  int ret = io_ctx.aio_operate(oid, completion,&op, nullptr);
+  int ret = io_ctx.aio_operate(oid, completion, &op, nullptr);
   if (ret < 0)
     return ret;
 

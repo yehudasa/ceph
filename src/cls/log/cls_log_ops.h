@@ -10,6 +10,7 @@ struct cls_log_add_op {
   list<cls_log_entry> entries;
   bool monotonic_inc;
   int64_t size_limit{-1}; /* if >= 0, check that header.count will not exceed this number */
+  bool strict_accounting{false};
 
   cls_log_add_op() : monotonic_inc(true) {}
 
@@ -18,6 +19,7 @@ struct cls_log_add_op {
     encode(entries, bl);
     encode(monotonic_inc, bl);
     encode(size_limit, bl);
+    encode(strict_accounting, bl);
     ENCODE_FINISH(bl);
   }
 
@@ -30,6 +32,7 @@ struct cls_log_add_op {
     if (struct_v >= 3) {
       decode(size_limit, bl);
     }
+    decode(strict_accounting, bl);
     DECODE_FINISH(bl);
   }
 };

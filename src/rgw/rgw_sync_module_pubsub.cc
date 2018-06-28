@@ -4,7 +4,7 @@
 #include "rgw_data_sync.h"
 #include "rgw_sync_module_pubsub.h"
 #include "rgw_rest_conn.h"
-#include "rgw_cr_rest.h"
+#include "rgw_cr_rados.h"
 #include "rgw_op.h"
 #include "rgw_pubsub.h"
 
@@ -150,20 +150,709 @@ public:
 };
 
 
-static string topic_shard_meta_oid(const string& topic, int shard_id)
+/*
+ * scaling timelog cr
+ */
+
+struct slog_part {
+  string key; /* key in meta log for this part's entry */
+  uint64_t id; /* id of part, used for part oid */
+
+  void encode(bufferlist& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(key, bl);
+    encode(id, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(bufferlist::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(key, bl);
+    decode(id, bl);
+    DECODE_FINISH(bl);
+  }
+};
+WRITE_CLASS_ENCODER(slog_part)
+
+
+struct slog_meta_entry {
+  ceph::real_time timestamp;
+  slog_part part;
+
+  void encode(bufferlist& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(timestamp, bl);
+    encode(part, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(bufferlist::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(timestamp, bl);
+    decode(part, bl);
+    DECODE_FINISH(bl);
+  }
+};
+WRITE_CLASS_ENCODER(slog_meta_entry)
+
+class ScalingTimelog {
+  RGWRados *store;
+
+  string subsystem;
+  string name;
+
+  slog_part cur_part;
+  atomic<int> cur_part_id;
+
+  atomic<long long> counter;
+
+public:
+  ScalingTimelog(RGWRados *_store, const string& _subsystem, const string& _name) :
+    store(_store), subsystem(_subsystem), name(_name) {}
+
+  string meta_oid() {
+    char buf[64 + subsystem.size() + name.size()];
+    snprintf(buf, sizeof(buf), "stimelog.%s.meta/%s", subsystem.c_str(), name.c_str());
+    return string(buf);
+  }
+
+  int get_cur_part_id() {
+    return cur_part_id;
+  }
+
+  string part_oid(uint64_t index) {
+    char buf[64 + subsystem.size() + name.size()];
+    snprintf(buf, sizeof(buf), "stimelog.%s/%s.%lld", subsystem.c_str(), name.c_str(), (long long)index);
+    return string(buf);
+  }
+
+  void prepare_meta_entry(int part_id, cls_log_entry *entry) {
+    string section; /* unused */
+    string name; /* unused */
+
+    slog_meta_entry info;
+
+    info.timestamp = real_clock::now();
+  
+    bufferlist bl;
+    encode(info, bl);
+    store->time_log_prepare_entry(*entry, info.timestamp, section, name, bl);
+
+    generate_meta_entry_id(part_id, &entry->id);
+  }
+
+  int decode_meta_entry(const cls_log_entry& entry, slog_meta_entry *info) {
+    auto iter = entry.data.begin();
+
+    try {
+      decode(*info, iter);
+    } catch (buffer::error& err) {
+      return -EIO;
+    }
+    
+    return 0;
+  }
+
+  template <class T>
+  void encode_log_entry(const string& section, const string& name, cls_log_entry *entry) {
+    bufferlist bl;
+    T info;
+    encode(info, bl);
+
+    ceph::real_time timestamp = real_clock::now();
+
+    store->time_log_prepare_entry(*entry, timestamp, section, name, bl);
+
+    generate_entry_id(timestamp, &entry->id);
+  }
+
+  template <class T>
+  int decode_log_entry(const cls_log_entry& entry,
+                        T *info) {
+    auto iter = entry.data.begin();
+    try {
+      decode(*info, iter);
+    } catch (buffer::error& err) {
+      ldout(store->ctx(), 0) << "ERROR: " << __func__ << "(): failed to decode entry" << dendl;
+      return -EIO;
+    }
+
+    return 0;
+  }
+
+  void registered_part(const slog_part& new_cur_part) {
+    cur_part = new_cur_part;
+  }
+
+  /* internal */
+  RGWCoroutine *get_cur_part_cr(int *pcur_part);
+  RGWCoroutine *register_part_cr(int part);
+
+  void generate_meta_entry_id(int part_id, string *id) {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "1_%06d", part_id);
+
+    *id = buf;
+  }
+
+  void generate_entry_id(const ceph::real_time& timestamp, string *id) {
+    utime_t ts(timestamp);
+    char buf[64];
+    snprintf(buf, sizeof(buf), "1_%010ld.%06ld_%lld", (long)ts.sec(), (long)ts.usec(), ++counter); /* log_index_prefix = "1_" */
+
+    *id = buf;
+  }
+
+  void get_slog_id(int part_num, const string& entry_id, string *slog_id) {
+    char buf[16 + entry_id.size()];
+    snprintf(buf, sizeof(buf), "%d:%s", part_num, entry_id.c_str());
+    *slog_id = buf;
+  }
+
+  void get_slog_id(int part_num, const cls_log_entry& entry, string *slog_id) {
+    get_slog_id(part_num, entry.id, slog_id);
+  }
+
+  int parse_slog_id(const string& slog_id, int *part_id, string *entry_id) {
+    size_t pos = slog_id.find(":");
+    if (pos == string::npos ||
+        pos >= slog_id.size()) {
+      return -EINVAL;
+    }
+
+    string first = slog_id.substr(0, pos);
+    *entry_id = slog_id.substr(pos + 1);
+
+    string err;
+    *part_id = (int)strict_strtoll(first.c_str(), 10, &err);
+    if (!err.empty()) {
+      ldout(store->ctx(), 20) << "bad slog id: " << slog_id << ": failed to parse: " << err << dendl;
+      return -EINVAL;
+    }
+
+    return 0;
+  }
+
+  template <class T>
+  struct list_result {
+    string key;
+    string section;
+    string name;
+    T entry;
+  };
+
+  RGWCoroutine *list_parts_cr(const slog_part& part_marker, int max_parts, deque<slog_meta_entry> *parts, bool *truncated);
+
+
+  /* external */
+  RGWCoroutine *init_cr();
+
+  template <class T>
+  RGWCoroutine *log_entry_cr(const string& section, const string& name, T& info, string *slog_id);
+
+  template <class T>
+  RGWCoroutine *get_entry_cr(const string& slog_id, string *section, string *name, T *info);
+
+  template <class T>
+  RGWCoroutine *list_entries_cr(const string& marker, int max_entries,
+                                vector<list_result<T> > *result,
+                                string *end_marker,
+                                bool *truncated);
+};
+
+
+class ScalingTimelogGetCurPartCR : public RGWCoroutine {
+  RGWDataSyncEnv *sync_env;
+  ScalingTimelog *slog;
+  slog_part *cur_part;
+
+  RGWRados *store;
+  cls_log_header log_header;
+  cls_log_entry entry;
+  slog_meta_entry meta_info;
+public:
+  ScalingTimelogGetCurPartCR(RGWDataSyncEnv *_sync_env,
+                           ScalingTimelog *_slog,
+                           slog_part *_cur_part) : RGWCoroutine(_sync_env->cct),
+                                       sync_env(_sync_env),
+                                       slog(_slog),
+                                       cur_part(_cur_part) {
+    store = sync_env->store;
+  }
+
+  int operate() override {
+    reenter(this) {
+
+      yield call (new RGWRadosTimelogInfoCR(store,
+                                            slog->meta_oid(),
+                                            &log_header));
+      if (retcode < 0) {
+        if (retcode != -ENOENT) {
+          ldout(store->ctx(), 0) << "ERROR: failed to read timelog header: oid=" <<  slog->meta_oid() << " ret=" << retcode << dendl;
+        }
+        return set_cr_error(retcode);
+      }
+
+      yield call (new RGWRadosTimelogGetCR(store,
+                                         slog->meta_oid(),
+                                         log_header.max_marker,
+                                         &entry));
+
+      if (retcode < 0) {
+        ldout(store->ctx(), 0) << "ERROR: failed to read timelog entry: oid=" <<  slog->meta_oid() << " key=" << log_header.max_marker << " ret=" << retcode << dendl;
+        return set_cr_error(retcode);
+      }
+
+      retcode = slog->decode_meta_entry(entry, &meta_info);
+      if (retcode < 0) {
+        ldout(store->ctx(), 0) << "ERROR: failed to decode read timelog entry: oid=" <<  slog->meta_oid() << " key=" << log_header.max_marker << " ret=" << retcode << dendl;
+        return set_cr_error(retcode);
+      }
+
+      cur_part->key = entry.id;
+      cur_part->id = meta_info.part.id;
+
+      return set_cr_done();
+    }
+    return 0;
+  }
+};
+
+class ScalingTimelogRegisterPartCR : public RGWCoroutine {
+  RGWDataSyncEnv *sync_env;
+  ScalingTimelog *slog;
+  int part_id;
+  slog_part cur_part;
+
+  RGWRados *store;
+  cls_log_header log_header;
+public:
+  ScalingTimelogRegisterPartCR(RGWDataSyncEnv *_sync_env,
+                     ScalingTimelog *_slog,
+                     int _part_id) : RGWCoroutine(_sync_env->cct),
+                                               sync_env(_sync_env),
+                                               slog(_slog),
+                                               part_id(_part_id) {
+    store = sync_env->store;
+  }
+
+  int operate() override {
+    reenter(this) {
+      yield {
+        cls_log_entry entry;
+
+        slog->prepare_meta_entry(part_id, &entry);
+        cur_part.key = entry.id;
+        cur_part.id = part_id;
+
+        call (new RGWRadosTimelogAddCR(store, slog->meta_oid(), entry));
+      }
+      if (retcode < 0) {
+        ldout(store->ctx(), 0) << "ERROR: failed to set timelog entry: oid=" << slog->meta_oid() << " ret=" << retcode << dendl;
+        return set_cr_error(retcode);
+      }
+
+      slog->registered_part(cur_part);
+
+      return set_cr_done();
+    }
+    return 0;
+  }
+};
+
+class ScalingTimelogInitCR : public RGWCoroutine {
+  RGWDataSyncEnv *sync_env;
+  ScalingTimelog *slog;
+  int *cur_part;
+
+  RGWRados *store;
+public:
+  ScalingTimelogInitCR(RGWDataSyncEnv *_sync_env,
+                     ScalingTimelog *_slog,
+                     int *_cur_part,
+                     bool *_pinitialied) : RGWCoroutine(_sync_env->cct),
+                                               sync_env(_sync_env),
+                                               slog(_slog),
+                                               cur_part(_cur_part) {
+    store = sync_env->store;
+  }
+
+  int operate() override {
+    reenter(this) {
+      yield call (slog->get_cur_part_cr(cur_part));
+      if (retcode < 0 && retcode != -ENOENT) {
+        return set_cr_error(retcode);
+      }
+
+      if (retcode >= 0) {
+        return set_cr_done();
+      }
+
+      yield call(slog->register_part_cr(1));
+      if (retcode < 0) {
+        return set_cr_error(retcode);
+      }
+
+      *cur_part = 0;
+
+      return set_cr_done();
+    }
+    return 0;
+  }
+};
+
+class ScalingTimelogListPartsCR : public RGWCoroutine {
+  RGWDataSyncEnv *sync_env;
+  ScalingTimelog *slog;
+  slog_part part_marker;
+  int max_entries;
+  deque<slog_meta_entry> *result;
+  bool *truncated;
+
+  list<cls_log_entry> entries;
+
+  RGWRados *store;
+  ceph::real_time start_time;
+  ceph::real_time end_time;
+
+public:
+  ScalingTimelogListPartsCR(RGWDataSyncEnv *_sync_env,
+                           ScalingTimelog *_slog,
+                           const slog_part& _part_marker,
+                           int _max_entries,
+                           deque<slog_meta_entry> *_result,
+                           bool *_truncated) : RGWCoroutine(_sync_env->cct),
+                                       sync_env(_sync_env),
+                                       slog(_slog),
+                                       part_marker(_part_marker),
+                                       max_entries(_max_entries),
+                                       result(_result),
+                                       truncated(_truncated) {
+    store = sync_env->store;
+  }
+
+  int operate() override {
+    reenter(this) {
+      result->clear();
+
+      yield call(new RGWRadosTimelogListCR(store,
+                                           slog->meta_oid(),
+                                           start_time, end_time,
+                                           part_marker.key, /* marker */
+                                           max_entries,
+                                           &entries,
+                                           nullptr,
+                                           truncated));
+
+      if (retcode < 0 && retcode != -ENOENT) {
+        ldout(store->ctx(), 0) << "ERROR: failed to list timelog entries: oid=" <<  slog->meta_oid() << " marker=" << part_marker.key << " ret=" << retcode << dendl;
+        return set_cr_error(retcode);
+      }
+
+      if (retcode == -ENOENT) {
+        *truncated = false;
+        return set_cr_done();
+      }
+
+      for (auto& entry : entries) {
+        slog_meta_entry meta_info;
+        retcode = slog->decode_meta_entry(entry, &meta_info);
+        if (retcode < 0) {
+          ldout(store->ctx(), 0) << "ERROR: failed to decode read timelog entry: oid=" <<  slog->meta_oid() << " key=" << entry.id << " ret=" << retcode << dendl;
+          return set_cr_error(retcode);
+        }
+
+        result->push_back(meta_info);
+      }
+
+      return set_cr_done();
+    }
+    return 0;
+  }
+};
+
+template <class T>
+class ScalingTimelogLogEntryCR : public RGWCoroutine {
+  RGWDataSyncEnv *sync_env;
+  ScalingTimelog *slog;
+  string section;
+  string name;
+  T info;
+  cls_log_entry entry;
+  int cur_part;
+  string *slog_id;
+
+  RGWRados *store;
+  int i;
+public:
+  ScalingTimelogLogEntryCR(RGWDataSyncEnv *_sync_env,
+                     ScalingTimelog *_slog,
+                     const string& _section,
+                     const string& _name,
+                     const T& _info,
+                     string *_slog_id) : RGWCoroutine(_sync_env->cct),
+                                               sync_env(_sync_env),
+                                               slog(_slog),
+                                               section(_section),
+                                               name(_name),
+                                               info(_info),
+                                               slog_id(_slog_id) {
+    store = sync_env->store;
+  }
+
+  int operate() override {
+    reenter(this) {
+      retcode = slog->encode_log_entry(section, name, info, &entry);
+      if (retcode < 0) {
+        ldout(store->ctx(), 0) << "ERROR: failed to encode log entry" << dendl;
+        return set_cr_error(retcode);
+      }
+#define MAX_RACE_LOOP 10
+      for (i = 0; i < MAX_RACE_LOOP; i++) {
+        cur_part = slog->get_cur_part_id();
+        yield call (new RGWRadosTimelogAddCR(store, slog->part_oid(cur_part), entry));
+        if (retcode >= 0) {
+          break;
+        }
+
+        if (retcode == -ENOSPC) {
+          ++cur_part;
+          yield call(slog->register_part_cr(cur_part));
+          if (retcode < 0) {
+            ldout(store->ctx(), 0) << "ERROR: " << __func__ << "(): failed to register a new log part ret=" << retcode << dendl;
+            return set_cr_error(retcode);
+          }
+
+          continue;
+        }
+      }
+      if (i == MAX_RACE_LOOP) {
+        ldout(store->ctx(), 0) << "ERROR: " << __func__ << "(): too many iterations, probably a bug!" << dendl;
+        return -EIO;
+      }
+
+      slog->get_slog_id(cur_part, entry, slog_id);
+
+      return set_cr_done();
+    }
+    return 0;
+  }
+};
+
+template <class T>
+class ScalingTimelogGetEntryCR : public RGWCoroutine {
+  RGWDataSyncEnv *sync_env;
+  ScalingTimelog *slog;
+  string slog_id;
+
+  int part_id;
+  string entry_id;
+
+  string *section;
+  string *name;
+  T *info;
+
+  RGWRados *store;
+
+  cls_log_entry entry;
+public:
+  ScalingTimelogGetEntryCR(RGWDataSyncEnv *_sync_env,
+                     ScalingTimelog *_slog,
+                     const string& _slog_id,
+                     string *_section,
+                     string *_name,
+                     T *_info) : RGWCoroutine(_sync_env->cct),
+                                               sync_env(_sync_env),
+                                               slog(_slog),
+                                               slog_id(_slog_id),
+                                               section(_section),
+                                               name(_name),
+                                               info(_info) {
+    store = sync_env->store;
+  }
+
+  int operate() override {
+    reenter(this) {
+      retcode = slog->parse_slog_id(slog_id, &part_id, &entry_id);
+
+      yield {
+        call(new RGWRadosTimelogGetCR(store, slog->part_oid(part_id), entry_id, &entry));
+      }
+      if (retcode < 0) {
+        ldout(store->ctx(), 0) << "ERROR: failed to read timelog entry: oid=" << slog->part_oid(part_id) << " entry_id=" << entry_id << " ret=" << retcode << dendl;
+        return set_cr_error(retcode);
+      }
+
+      *section = entry.section;
+      *name = entry.name;
+      slog->decode_log_entry(entry, info);
+
+      return set_cr_done();
+    }
+    return 0;
+  }
+};
+
+template <class T>
+class ScalingTimelogListEntriesCR : public RGWCoroutine {
+  RGWDataSyncEnv *sync_env;
+  ScalingTimelog *slog;
+  string marker;
+  int max_entries;
+
+  vector<ScalingTimelog::list_result<T> > *result;
+  string *out_marker;
+  bool *ptruncated;
+
+  int cur_part;
+  string part_marker;
+  bool truncated;
+  list<cls_log_entry> entries;
+  string meta_marker;
+
+  deque<slog_meta_entry> next_parts;
+
+  RGWRados *store;
+public:
+  ScalingTimelogListEntriesCR(RGWDataSyncEnv *_sync_env,
+                     ScalingTimelog *_slog,
+                     const string& _marker,
+                     int _max_entries,
+                     vector<ScalingTimelog::list_result<T> > *_result,
+                     string *_out_marker,
+                     bool *_ptruncated) : RGWCoroutine(_sync_env->cct),
+                                               sync_env(_sync_env),
+                                               slog(_slog),
+                                               marker(_marker),
+                                               max_entries(_max_entries),
+                                               result(_result) {
+    store = sync_env->store;
+  }
+
+  int operate() override {
+    reenter(this) {
+      ceph::real_time start_time;
+      ceph::real_time end_time;
+
+      if (!marker.empty()) {
+        retcode = slog->parse_slog_id(marker, &cur_part, &part_marker);
+        if (retcode < 0) {
+          ldout(store->ctx(), 0) << "ERROR: failed to parse marker: marker=" << marker << dendl;
+          return set_cr_error(retcode);
+        }
+      }
+
+      do {
+        entries.clear();
+
+        yield call (new RGWRadosTimelogListCR(store,
+                                              slog->part_oid(cur_part),
+                                              start_time, end_time,
+                                              max_entries,
+                                              entries,
+                                              part_marker,
+                                              &part_marker,
+                                              &truncated));
+
+        if (retcode == -ENOENT) {
+          retcode = 0;
+          truncated = false;
+        }
+        if (retcode < 0) {
+          ldout(store->ctx(), 0) << "ERROR: failed to list timelog entries: oid=" <<  slog->part_oid(cur_part) << " marker=" << part_marker << " ret=" << retcode << dendl;
+          return set_cr_error(retcode);
+        }
+
+        for (auto& entry : entries) {
+          ScalingTimelog::list_result<T> e;
+          retcode = slog->decode_log_entry(entry, &e.entry);
+          if (retcode < 0) {
+            ldout(store->ctx(), 0) << "ERROR: failed to decode read timelog entry: oid=" <<  slog->part_oid(cur_part) << " key=" << entry.id << " ret=" << retcode << dendl;
+            return set_cr_error(retcode);
+          }
+
+          e.key = entry.id;
+          e.section = entry.section;
+          e.name = entry.name;
+
+          result->push_back(e);
+        }
+
+        max_entries -= entries.size();
+
+        if (!truncated) {
+          if (next_parts.empty()) {
+            slog->generate_meta_entry_id(cur_part, &meta_marker);
+#define NUM_PARTS 16
+            yield call(slog->list_parts_cr(meta_marker, 16, &next_parts, &truncated));
+            if (retcode > 0) {
+              ldout(store->ctx(), 0) << "ERROR: failed to fetch next parts: retcode=" << retcode << dendl;
+            }
+            if (next_parts.empty()) {
+              /* we read everything! */
+              *ptruncated = false;
+              return set_cr_done();
+            }
+          }
+          slog_part next_part = next_parts.front();
+          next_parts.pop_front();
+          cur_part = next_part.id;
+          part_marker.clear();
+        }
+      } while (max_entries > 0);
+
+      *truncated = true; /* maybe */
+      slog->get_slog_id(cur_part, part_marker, out_marker);
+
+      return set_cr_done();
+    }
+    return 0;
+  }
+};
+
+
+RGWCoroutine ScalingTimelog::list_parts_cr(const slog_part& part_marker, int max_parts, deque<slog_meta_entry> *parts, bool *truncated)
 {
-  char buf[64 + topic.size()];
-  snprintf(buf, sizeof(buf), "pubsub.topic.meta/%s.%d", topic.c_str(), shard_id);
-  return string(buf);
+  return new ScalingTimelogListPartsCR(sync_env, this, part_marker, max_parts, parts, truncated);
 }
 
-static string topic_shard_oid(const string& topic, int shard_id, uint64_t index)
+RGWCoroutine ScalingTimelog::get_cur_part_cr(int *pcur_part)
 {
-  char buf[64 + topic.size()];
-  snprintf(buf, sizeof(buf), "pubsub.topic/%s.%d.%lld", topic.c_str(), shard_id, (long long)index);
-  return string(buf);
+  return new ScalingTimelogGetCurPartCR(sync_env, this, pcur_part);
 }
 
+RGWCoroutine *register_part_cr(int part_id)
+{
+  return new ScalingTimelogRegisterPartCR(sync_env, this, part_id);
+}
+
+RGWCoroutine ScalingTimelog::init_cr()
+{
+  return new ScalingTimelogInitCR(sync_env, this, &cur_part);
+}
+
+template <class T>
+RGWCoroutine *ScalingTimelog::log_entry_cr(const string& section, const string& name, const T& info, string *slog_id)
+{
+  return new ScalingTimelogLogEntryCR(sync_env, this, section, name, info, slog_id);
+}
+
+template <class T>
+RGWCoroutine *ScalingTimelog::get_entry_cr(const string& slog_id, string *section, string *name, T *info)
+{
+  return new ScalingTimelogGetEntryCR(sync_env, this, slog_id, section, name, info);
+}
+
+template <class T>
+RGWCoroutine *ScalingTimelog::list_entries_cr(const string& marker, int max_entries,
+                                              vector<list_result<T> > *result,
+                                              string *end_marker,
+                                              bool *truncated)
+{
+  return new ScalingTimelogListEntriesCR(sync_env, this, marker,
+                                       max_entries, result,
+                                       end_marker, truncated);
+}
 
 class PSTopicWriteCurIndexMeta : public RGWCoroutine {
   RGWDataSyncEnv *sync_env;
@@ -191,44 +880,6 @@ public:
   }
 };
 
-struct topic_shard_meta_entry_info {
-  ceph::real_time timestamp;
-  uint64_t id;
-
-  void encode(bufferlist& bl) const {
-    ENCODE_START(1, 1, bl);
-    encode(timestamp, bl);
-    encode(id, bl);
-    ENCODE_FINISH(bl);
-  }
-
-  void decode(bufferlist::const_iterator& bl) {
-    DECODE_START(1, bl);
-    decode(timestamp, bl);
-    decode(id, bl);
-    DECODE_FINISH(bl);
-  }
-
-  void dump(Formatter *f) const;
-};
-WRITE_CLASS_ENCODER(topic_shard_meta_entry_info)
-
-
-static void prepare_timelog_entry(uint64_t id, cls_log_entry *entry)
-{
-  cls_log_entry entry;
-  string section; /* unused */
-  string name; /* unused */
-
-  topic_shard_meta_entry_info info;
-
-  info.id = id;
-  info.timestamp = real_clock::now();
-  
-  bufferlist bl;
-  encode(info, bl);
-  store->time_log_prepare_entry(*entry, info.timestamp, section, name, bl);
-}
 
 
 class PSTopicShardGetCurIndexMeta : public RGWCoroutine {
@@ -256,7 +907,7 @@ public:
     reenter(this) {
 
       yield {
-        call (new RGWRadosTimeLogInfoCR(store,
+        call (new RGWRadosTimelogInfoCR(store,
                                         rgw_raw_obj(store->get_zone_params().log_pool, topic_shard_meta_oid(topic, shard_id)),
                                         &log_header));
       }
@@ -270,7 +921,7 @@ public:
 
           prepare_timelog_entry(0, &entry);
 
-          call (new RGWRadosTimeLogAddCR(store,
+          call (new RGWRadosTimelogAddCR(store,
                                           rgw_raw_obj(store->get_zone_params().log_pool, topic_shard_meta_oid(topic, shard_id)),
                                           entry));
         }
