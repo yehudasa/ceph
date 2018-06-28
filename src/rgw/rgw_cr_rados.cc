@@ -806,7 +806,7 @@ int RGWRadosTimelogListCR::send_request()
   cn = stack->create_completion_notifier();
   return store->time_log_list_async(ioctx, oid, start_time, end_time,
                                     max_entries, result, marker,
-                                    &out_marker, &truncated);
+                                    &out_marker, &truncated, cn->completion());
 }
 
 int RGWRadosTimelogListCR::request_complete()
