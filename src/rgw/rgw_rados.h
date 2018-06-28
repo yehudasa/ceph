@@ -3600,7 +3600,8 @@ public:
                           int max_entries, list<cls_log_entry>& entries,
                           const string& marker,
                           string *out_marker,
-                          bool *truncated);
+                          bool *truncated,
+                          librados::AioCompletion *completion);
   int time_log_get(const string& oid, const string& key, cls_log_entry *entry);
   int time_log_get_async(librados::IoCtx& io_ctx, const string& oid, const string& key, cls_log_entry *entry, librados::AioCompletion *completion);
   int time_log_info(const string& oid, cls_log_header *header);

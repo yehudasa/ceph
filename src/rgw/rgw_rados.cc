@@ -5401,7 +5401,8 @@ int RGWRados::time_log_list_async(librados::IoCtx& io_ctx,
                                   int max_entries, list<cls_log_entry>& entries,
                                   const string& marker,
                                   string *out_marker,
-                                  bool *truncated)
+                                  bool *truncated,
+                                  librados::AioCompletion *completion)
 {
   int r = rgw_init_ioctx(get_rados_handle(), get_zone_params().log_pool, io_ctx);
   if (r < 0)
