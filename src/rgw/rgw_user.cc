@@ -2359,10 +2359,12 @@ int RGWUserAdminOp_User::info(RGWRados *store, RGWUserAdminOpState& op_state,
     arg_stats = &stats;
   }
 
-  flusher.start(0);
+  if (formatter) {
+    flusher.start(0);
 
-  dump_user_info(formatter, info, arg_stats);
-  flusher.flush();
+    dump_user_info(formatter, info, arg_stats);
+    flusher.flush();
+  }
 
   return 0;
 }
@@ -2389,10 +2391,12 @@ int RGWUserAdminOp_User::create(RGWRados *store, RGWUserAdminOpState& op_state,
   if (ret < 0)
     return ret;
 
-  flusher.start(0);
+  if (formatter) {
+    flusher.start(0);
 
-  dump_user_info(formatter, info);
-  flusher.flush();
+    dump_user_info(formatter, info);
+    flusher.flush();
+  }
 
   return 0;
 }
@@ -2418,10 +2422,12 @@ int RGWUserAdminOp_User::modify(RGWRados *store, RGWUserAdminOpState& op_state,
   if (ret < 0)
     return ret;
 
-  flusher.start(0);
+  if (formatter) {
+    flusher.start(0);
 
-  dump_user_info(formatter, info);
-  flusher.flush();
+    dump_user_info(formatter, info);
+    flusher.flush();
+  }
 
   return 0;
 }
@@ -2465,10 +2471,12 @@ int RGWUserAdminOp_Subuser::create(RGWRados *store, RGWUserAdminOpState& op_stat
   if (ret < 0)
     return ret;
 
-  flusher.start(0);
+  if (formatter) {
+    flusher.start(0);
 
-  dump_subusers_info(formatter, info);
-  flusher.flush();
+    dump_subusers_info(formatter, info);
+    flusher.flush();
+  }
 
   return 0;
 }
@@ -2494,11 +2502,13 @@ int RGWUserAdminOp_Subuser::modify(RGWRados *store, RGWUserAdminOpState& op_stat
   ret = user.info(info, NULL);
   if (ret < 0)
     return ret;
-  
-  flusher.start(0);
+ 
+  if (formatter) {
+    flusher.start(0);
 
-  dump_subusers_info(formatter, info);
-  flusher.flush();
+    dump_subusers_info(formatter, info);
+    flusher.flush();
+  }
 
   return 0;
 }
@@ -2545,17 +2555,19 @@ int RGWUserAdminOp_Key::create(RGWRados *store, RGWUserAdminOpState& op_state,
   if (ret < 0)
     return ret;
 
-  flusher.start(0);
+  if (formatter) {
+    flusher.start(0);
 
-  int key_type = op_state.get_key_type();
+    int key_type = op_state.get_key_type();
 
-  if (key_type == KEY_TYPE_SWIFT)
-    dump_swift_keys_info(formatter, info);
+    if (key_type == KEY_TYPE_SWIFT)
+      dump_swift_keys_info(formatter, info);
 
-  else if (key_type == KEY_TYPE_S3)
-    dump_access_keys_info(formatter, info);
+    else if (key_type == KEY_TYPE_S3)
+      dump_access_keys_info(formatter, info);
 
-  flusher.flush();
+    flusher.flush();
+  }
 
   return 0;
 }
@@ -2602,10 +2614,12 @@ int RGWUserAdminOp_Caps::add(RGWRados *store, RGWUserAdminOpState& op_state,
   if (ret < 0)
     return ret;
 
-  flusher.start(0);
+  if (formatter) {
+    flusher.start(0);
 
-  info.caps.dump(formatter);
-  flusher.flush();
+    info.caps.dump(formatter);
+    flusher.flush();
+  }
 
   return 0;
 }
@@ -2633,10 +2647,12 @@ int RGWUserAdminOp_Caps::remove(RGWRados *store, RGWUserAdminOpState& op_state,
   if (ret < 0)
     return ret;
 
-  flusher.start(0);
+  if (formatter) {
+    flusher.start(0);
 
-  info.caps.dump(formatter);
-  flusher.flush();
+    info.caps.dump(formatter);
+    flusher.flush();
+  }
 
   return 0;
 }
