@@ -708,7 +708,7 @@ class ScalingTimelogListEntriesCR : public RGWCoroutine {
   string part_marker;
   bool truncated;
   list<cls_log_entry> entries;
-  string meta_marker;
+  slog_part meta_marker;
 
   deque<slog_meta_entry> next_parts;
 
@@ -748,9 +748,9 @@ public:
         yield call (new RGWRadosTimelogListCR(store,
                                               slog->part_oid(cur_part),
                                               start_time, end_time,
+                                              part_marker,
                                               max_entries,
                                               entries,
-                                              part_marker,
                                               &part_marker,
                                               &truncated));
 
@@ -782,7 +782,7 @@ public:
 
         if (!truncated) {
           if (next_parts.empty()) {
-            slog->generate_meta_entry_id(cur_part, &meta_marker);
+            slog->generate_meta_entry_id(cur_part, &meta_marker.id);
 #define NUM_PARTS 16
             yield call(slog->list_parts_cr(meta_marker, 16, &next_parts, &truncated));
             if (retcode > 0) {
