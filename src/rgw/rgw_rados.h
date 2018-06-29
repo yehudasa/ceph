@@ -3971,7 +3971,7 @@ protected:
                           rgw_zone_set* zones_trace = nullptr) = 0;
 
 public:
-  RGWPutObjProcessor(RGWObjectCtx& _obj_ctx, RGWBucketInfo& _bi) : store(NULL), 
+  RGWPutObjProcessor(RGWObjectCtx& _obj_ctx, const RGWBucketInfo& _bi) : store(NULL), 
                                                                    obj_ctx(_obj_ctx), 
                                                                    is_complete(false), 
                                                                    bucket_info(_bi), 
@@ -4030,7 +4030,7 @@ public:
   int prepare(RGWRados *store, string *oid_rand) override;
   int throttle_data(void *handle, const rgw_raw_obj& obj, uint64_t size, bool need_to_wait) override;
 
-  RGWPutObjProcessor_Aio(RGWObjectCtx& obj_ctx, RGWBucketInfo& bucket_info) : RGWPutObjProcessor(obj_ctx, bucket_info) {}
+  RGWPutObjProcessor_Aio(RGWObjectCtx& obj_ctx, const RGWBucketInfo& bucket_info) : RGWPutObjProcessor(obj_ctx, bucket_info) {}
   ~RGWPutObjProcessor_Aio() override;
 }; /* RGWPutObjProcessor_Aio */
 
@@ -4074,8 +4074,8 @@ protected:
 
 public:
   ~RGWPutObjProcessor_Atomic() override {}
-  RGWPutObjProcessor_Atomic(RGWObjectCtx& obj_ctx, RGWBucketInfo& bucket_info,
-                            rgw_bucket& _b, const string& _o, uint64_t _p, const string& _t, bool versioned) :
+  RGWPutObjProcessor_Atomic(RGWObjectCtx& obj_ctx, const RGWBucketInfo& bucket_info,
+                            const rgw_bucket& _b, const string& _o, uint64_t _p, const string& _t, bool versioned) :
                                 RGWPutObjProcessor_Aio(obj_ctx, bucket_info),
                                 part_size(_p),
                                 cur_part_ofs(0),
@@ -4186,7 +4186,7 @@ protected:
                   rgw_zone_set *zones_trace) override;
 public:
   bool immutable_head() { return true; }
-  RGWPutObjProcessor_Multipart(RGWObjectCtx& obj_ctx, RGWBucketInfo& bucket_info, uint64_t _p, req_state *_s) :
+  RGWPutObjProcessor_Multipart(RGWObjectCtx& obj_ctx, const RGWBucketInfo& bucket_info, uint64_t _p, req_state *_s) :
                    RGWPutObjProcessor_Atomic(obj_ctx, bucket_info, _s->bucket, _s->object.name, _p, _s->req_id, false), s(_s) {}
   void get_mp(RGWMPObj** _mp);
 }; /* RGWPutObjProcessor_Multipart */
