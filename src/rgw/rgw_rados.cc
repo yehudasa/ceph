@@ -5965,7 +5965,7 @@ void RGWRados::create_bucket_id(string *bucket_id)
   *bucket_id = buf;
 }
 
-int RGWRados::create_bucket(RGWUserInfo& owner, rgw_bucket& bucket,
+int RGWRados::create_bucket(const RGWUserInfo& owner, rgw_bucket& bucket,
                             const string& zonegroup_id,
                             const string& placement_rule,
                             const string& swift_ver_location,
@@ -6079,7 +6079,7 @@ int RGWRados::create_bucket(RGWUserInfo& owner, rgw_bucket& bucket,
   return -ENOENT;
 }
 
-int RGWRados::select_new_bucket_location(RGWUserInfo& user_info, const string& zonegroup_id, const string& request_rule,
+int RGWRados::select_new_bucket_location(const RGWUserInfo& user_info, const string& zonegroup_id, const string& request_rule,
                                          string *pselected_rule_name, RGWZonePlacementInfo *rule_info)
 
 {
@@ -6175,7 +6175,7 @@ int RGWRados::select_bucket_location_by_rule(const string& location_rule, RGWZon
   return 0;
 }
 
-int RGWRados::select_bucket_placement(RGWUserInfo& user_info, const string& zonegroup_id, const string& placement_rule,
+int RGWRados::select_bucket_placement(const RGWUserInfo& user_info, const string& zonegroup_id, const string& placement_rule,
                                       string *pselected_rule_name, RGWZonePlacementInfo *rule_info)
 {
   if (!get_zone_params().placement_pools.empty()) {

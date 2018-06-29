@@ -1445,7 +1445,7 @@ struct RGWZoneGroupPlacementTarget {
   string name;
   set<string> tags;
 
-  bool user_permitted(list<string>& user_tags) const {
+  bool user_permitted(const list<string>& user_tags) const {
     if (tags.empty()) {
       return true;
     }
@@ -2645,10 +2645,10 @@ public:
   int create_pool(const rgw_pool& pool);
 
   int init_bucket_index(RGWBucketInfo& bucket_info, int num_shards);
-  int select_bucket_placement(RGWUserInfo& user_info, const string& zonegroup_id, const string& rule,
+  int select_bucket_placement(const RGWUserInfo& user_info, const string& zonegroup_id, const string& rule,
                               string *pselected_rule_name, RGWZonePlacementInfo *rule_info);
   int select_legacy_bucket_placement(RGWZonePlacementInfo *rule_info);
-  int select_new_bucket_location(RGWUserInfo& user_info, const string& zonegroup_id, const string& rule,
+  int select_new_bucket_location(const RGWUserInfo& user_info, const string& zonegroup_id, const string& rule,
                                  string *pselected_rule_name, RGWZonePlacementInfo *rule_info);
   int select_bucket_location_by_rule(const string& location_rule, RGWZonePlacementInfo *rule_info);
   void create_bucket_id(string *bucket_id);
@@ -2656,7 +2656,7 @@ public:
   bool get_obj_data_pool(const string& placement_rule, const rgw_obj& obj, rgw_pool *pool);
   bool obj_to_raw(const string& placement_rule, const rgw_obj& obj, rgw_raw_obj *raw_obj);
 
-  int create_bucket(RGWUserInfo& owner, rgw_bucket& bucket,
+  int create_bucket(const RGWUserInfo& owner, rgw_bucket& bucket,
                             const string& zonegroup_id,
                             const string& placement_rule,
                             const string& swift_ver_location,
