@@ -131,7 +131,12 @@ class RGWSimpleWriteOnlyAsyncCR : public RGWSimpleCoroutine {
   ~RGWSimpleWriteOnlyAsyncCR() override {
     request_cleanup();
   }
-  void request_cleanup() override;
+  void request_cleanup() override {
+    if (req) {
+      req->finish();
+      req = NULL;
+    }
+  }
 
   int send_request() override {
     req = new Request(this,
@@ -186,7 +191,12 @@ class RGWSimpleAsyncCR : public RGWSimpleCoroutine {
   ~RGWSimpleAsyncCR() override {
     request_cleanup();
   }
-  void request_cleanup() override;
+  void request_cleanup() override {
+    if (req) {
+      req->finish();
+      req = NULL;
+    }
+  }
 
   int send_request() override {
     req = new Request(this,
