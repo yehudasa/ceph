@@ -186,6 +186,7 @@ class PSSubscription : public RefCountedObject {
   PSSubConfigRef sub_conf;
   shared_ptr<rgw_get_bucket_info_result> get_bucket_info_result;
   RGWBucketInfo *bucket_info{nullptr};
+  RGWDataAccessRef data_access;
 
 public:
 
@@ -201,7 +202,8 @@ public:
     InitCR(RGWDataSyncEnv *_sync_env,
            PSSubscription *_sub) : RGWCoroutine(_sync_env->cct),
                                     sync_env(_sync_env),
-                                    sub(_sub), conf(sub->env->conf), sub_conf(sub->sub_conf) {
+                                    sub(_sub), conf(sub->env->conf),
+                                    sub_conf(sub->sub_conf) {
       sub->get();
     }
 
@@ -258,7 +260,8 @@ public:
                  PSEnvRef _env,
                  PSSubConfigRef& _sub_conf) : sync_env(_sync_env),
                                       env(_env),
-                                      sub_conf(_sub_conf) {}
+                                      sub_conf(_sub_conf),
+                                      data_access(std::make_shared<RGWDataAccess>(sync_env->store)) {}
 
   RGWCoroutine *init_cr() {
     return new InitCR(sync_env, this);

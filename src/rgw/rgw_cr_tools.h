@@ -2,6 +2,7 @@
 #define CEPH_RGW_CR_TOOLS_H
 
 #include "rgw_cr_rados.h"
+#include "rgw_tools.h"
 
 
 struct rgw_user_create_params {
@@ -48,6 +49,15 @@ struct rgw_bucket_create_local_params {
 };
 
 using RGWBucketCreateLocalCR = RGWSimpleWriteOnlyAsyncCR<rgw_bucket_create_local_params>;
+
+struct rgw_object_simple_put_params {
+  RGWDataAccess::BucketRef bucket;
+  rgw_obj_key key;
+  bufferlist data;
+  map<string, bufferlist> attrs;
+};
+
+using RGWObjectSimplePut = RGWSimpleWriteOnlyAsyncCR<rgw_object_simple_put_params>;
 
 
 
