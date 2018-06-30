@@ -91,7 +91,7 @@ int RGWGetBucketInfoCR::Request::_send_request()
 {
   RGWObjectCtx obj_ctx(store);
   return store->get_bucket_info(obj_ctx, params.tenant, params.bucket_name,
-                                result->bucket_info, &result->mtime);
+                                result->bucket_info, &result->mtime, &result->attrs);
 }
 
 template<>
