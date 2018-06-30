@@ -38,6 +38,7 @@ struct rgw_get_bucket_info_params {
 struct rgw_get_bucket_info_result {
   ceph::real_time mtime;
   RGWBucketInfo bucket_info;
+  map<string, bufferlist> attrs;
 };
 
 using RGWGetBucketInfoCR = RGWSimpleAsyncCR<rgw_get_bucket_info_params, rgw_get_bucket_info_result>;
@@ -57,7 +58,7 @@ struct rgw_object_simple_put_params {
   map<string, bufferlist> attrs;
 };
 
-using RGWObjectSimplePut = RGWSimpleWriteOnlyAsyncCR<rgw_object_simple_put_params>;
+using RGWObjectSimplePutCR = RGWSimpleWriteOnlyAsyncCR<rgw_object_simple_put_params>;
 
 
 

@@ -222,7 +222,7 @@ int RGWBucketCreateLocalCR::Request::_send_request()
 }
 
 template<>
-int RGWObjectSimplePut::Request::_send_request()
+int RGWObjectSimplePutCR::Request::_send_request()
 {
   RGWDataAccess::ObjectRef obj;
 
