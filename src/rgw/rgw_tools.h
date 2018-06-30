@@ -29,6 +29,43 @@ int rgw_tools_init(CephContext *cct);
 void rgw_tools_cleanup();
 const char *rgw_find_mime_by_ext(string& ext);
 
+template<class H, size_t S>
+class RGWEtag
+{
+  H hash;
+
+public:
+  RGWEtag() {}
+
+  void update(const char *buf, size_t len) {
+    hash.Update((const unsigned char *)buf, len);
+  }
+
+  void update(bufferlist& bl) {
+    if (bl.length() > 0) {
+      update(bl.c_str(), bl.length());
+    }
+  }
+
+  void update(const string& s) {
+    if (!s.empty()) {
+      update(s.c_str(), s.size());
+    }
+  }
+  void finish(string *etag) {
+    char etag_buf[S];
+    char etag_buf_str[S * 2 + 16];
+
+    hash.Final((unsigned char *)etag_buf);
+    buf_to_hex((const unsigned char *)etag_buf, S,
+	       etag_buf_str);
+
+    *etag = etag_buf_str;
+  }
+};
+
+using RGWMD5Etag = RGWEtag<MD5, CEPH_CRYPTO_MD5_DIGESTSIZE>;
+
 class RGWDataAccess
 {
   RGWRados *store;
@@ -58,6 +95,7 @@ public:
     map<std::string, bufferlist> attrs;
 
     RGWAccessControlPolicy policy;
+    int finish_init();
     
     Bucket(RGWDataAccess *_sd,
 	   const string& _tenant,
@@ -66,8 +104,10 @@ public:
                                        tenant(_tenant),
                                        name(_name),
 				       bucket_id(_bucket_id) {}
-  public:
+    Bucket(RGWDataAccess *_sd) : sd(_sd) {}
     int init();
+    int init(const RGWBucketInfo& _bucket_info, const map<string, bufferlist>& _attrs);
+  public:
     int get_object(const rgw_obj_key& key,
 		   ObjectRef *obj);
 
@@ -124,6 +164,13 @@ public:
     return (*bucket)->init();
   }
 
+  int get_bucket(const RGWBucketInfo& bucket_info,
+		 const map<string, bufferlist>& attrs,
+		 BucketRef *bucket) {
+    bucket->reset(new Bucket(this));
+    (*bucket)->self_ref = *bucket;
+    return (*bucket)->init(bucket_info, attrs);
+  }
   friend class Bucket;
   friend class Object;
 };

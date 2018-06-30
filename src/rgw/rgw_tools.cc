@@ -192,55 +192,14 @@ const char *rgw_find_mime_by_ext(string& ext)
 }
 
 
-template<class H, size_t S>
-class RGWEtag
-{
-  H hash;
-
-public:
-  RGWEtag() {}
-
-  void update(const char *buf, size_t len) {
-    hash.Update((const unsigned char *)buf, len);
-  }
-
-  void update(bufferlist& bl) {
-    update(bl.c_str(), bl.length());
-  }
-
-  void finish(string *etag) {
-    char etag_buf[S];
-    char etag_buf_str[S * 2 + 16];
-
-    hash.Final((unsigned char *)etag_buf);
-    buf_to_hex((const unsigned char *)etag_buf, S,
-	       etag_buf_str);
-
-    *etag = etag_buf_str;
-  }
-};
-
-using RGWMD5Etag = RGWEtag<MD5, CEPH_CRYPTO_MD5_DIGESTSIZE>;
-
-
-
 RGWDataAccess::RGWDataAccess(RGWRados *_store) : store(_store)
 {
   obj_ctx = std::make_unique<RGWObjectCtx>(store);
 }
 
 
-int RGWDataAccess::Bucket::init()
+int RGWDataAccess::Bucket::finish_init()
 {
-  int ret = sd->store->get_bucket_info(*sd->obj_ctx,
-				       tenant, name,
-				       bucket_info,
-				       &mtime,
-				       &attrs);
-  if (ret < 0) {
-    return ret;
-  }
-
   auto iter = attrs.find(RGW_ATTR_ACL);
   if (iter == attrs.end()) {
     return 0;
@@ -254,6 +213,29 @@ int RGWDataAccess::Bucket::init()
   }
 
   return 0;
+}
+
+int RGWDataAccess::Bucket::init()
+{
+  int ret = sd->store->get_bucket_info(*sd->obj_ctx,
+				       tenant, name,
+				       bucket_info,
+				       &mtime,
+				       &attrs);
+  if (ret < 0) {
+    return ret;
+  }
+
+  return finish_init();
+}
+
+int RGWDataAccess::Bucket::init(const RGWBucketInfo& _bucket_info,
+				const map<string, bufferlist>& _attrs)
+{
+  bucket_info = _bucket_info;
+  attrs = _attrs;
+
+  return finish_init();
 }
 
 int RGWDataAccess::Bucket::get_object(const rgw_obj_key& key,
