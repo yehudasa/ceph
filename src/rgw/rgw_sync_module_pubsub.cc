@@ -43,8 +43,8 @@ config:
             "name": <subscription-name>,
             "topic": <topic>,
             "push_endpoint": <endpoint>,
-            "data_bucket": <bucket>,       # name of bucket where subscription data will be store
-            "data_oid_prefix": <prefix>    # prefix for subscription data object ids
+            "data_bucket": <bucket>,       # override name of bucket where subscription data will be store
+            "data_oid_prefix": <prefix>    # set prefix for subscription data object ids
         },
         ...
     ]
@@ -59,6 +59,14 @@ struct PSSubConfig { /* subscription config */
 
   string data_bucket_name;
   string data_oid_prefix;
+
+  void dump(Formatter *f) const {
+    encode_json("name", name, f);
+    encode_json("topic", topic, f);
+    encode_json("push_endpoint", push_endpoint, f);
+    encode_json("data_bucket_name", data_bucket_name, f);
+    encode_json("data_oid_prefix", data_oid_prefix, f);
+  }
 
   void init(CephContext *cct, const JSONFormattable& config,
             const string& data_bucket_prefix) {
@@ -77,14 +85,26 @@ using  PSSubConfigRef = std::shared_ptr<PSSubConfig>;
 struct PSTopicConfig {
   string name;
   set<string> subs;
+
+  void dump(Formatter *f) const {
+    encode_json("name", name, f);
+    encode_json("subs", subs, f);
+  }
 };
 
 struct PSNotificationConfig {
+  uint64_t id{0};
   string path; /* a path or a path prefix that would trigger the event (prefix: if ends with a wildcard) */
   string topic;
-
-  uint64_t id{0};
   bool is_prefix{false};
+
+
+  void dump(Formatter *f) const {
+    encode_json("id", id, f);
+    encode_json("path", path, f);
+    encode_json("topic", topic, f);
+    encode_json("is_prefix", is_prefix, f);
+  }
 
   void init(CephContext *cct, const JSONFormattable& config) {
     path = config["path"];
@@ -96,6 +116,18 @@ struct PSNotificationConfig {
   }
 };
 
+template<class T>
+static string json_str(const char *name, const T& obj, bool pretty = false)
+{
+  stringstream ss;
+  JSONFormatter f(pretty);
+
+  encode_json(name, obj, &f);
+  f.flush(ss);
+
+  return ss.str();
+}
+
 
 struct PSConfig {
   string id{"pubsub"};
@@ -105,11 +137,48 @@ struct PSConfig {
   uint64_t sync_instance{0};
   uint64_t max_id{0};
 
-
   /* FIXME: no hard coded buckets, we'll have configurable topics */
   map<string, PSSubConfigRef> subs;
   map<string, PSTopicConfig> topics;
   multimap<string, PSNotificationConfig> notifications;
+
+  void dump(Formatter *f) const {
+    encode_json("id", id, f);
+    encode_json("user", user, f);
+    encode_json("data_bucket_prefix", data_bucket_prefix, f);
+    encode_json("sync_instance", sync_instance, f);
+    encode_json("max_id", max_id, f);
+    {
+      Formatter::ArraySection section(*f, "subs");
+      for (auto& sub : subs) {
+        encode_json("sub", *sub.second, f);
+      }
+    }
+    {
+      Formatter::ArraySection section(*f, "topics");
+      for (auto& topic : topics) {
+        encode_json("topic", topic.second, f);
+      }
+    }
+    {
+      Formatter::ObjectSection section(*f, "notifications");
+      string last;
+      for (auto& notif : notifications) {
+        const string& n = notif.first;
+        if (n != last) {
+          if (!last.empty()) {
+            f->close_section();
+          }
+          f->open_array_section(n.c_str());
+        }
+        last = n;
+        encode_json("notifications", notif.second, f);
+      }
+      if (!last.empty()) {
+        f->close_section();
+      }
+    }
+  }
 
   void init(CephContext *cct, const JSONFormattable& config) {
     string uid = config["uid"]("pubsub");
@@ -132,6 +201,8 @@ struct PSConfig {
       subs[sc->name] = sc;
       topics[sc->topic].subs.insert(sc->name);
     }
+
+    ldout(cct, 5) << "pubsub: module config (parsed representation):\n" << json_str("config", *this, true) << dendl;
   }
 
   void init_instance(RGWRealm& realm, uint64_t instance_id) {
@@ -148,8 +219,8 @@ struct PSConfig {
       return;
     }
 
-    --iter;
     do {
+      --iter;
       if (iter->first.size() > path.size()) {
         break;
       }
@@ -192,11 +263,12 @@ static void make_event_ref(EventRef *event) {
 }
 
 class PSManager;
+using PSManagerRef = std::shared_ptr<PSManager>;
 
 struct PSEnv {
   PSConfigRef conf;
   shared_ptr<RGWUserInfo> data_user_info;
-  PSManager *manager{nullptr};
+  PSManagerRef manager;
 
   PSEnv() : conf(make_shared<PSConfig>()),
             data_user_info(make_shared<RGWUserInfo>()) {}
@@ -205,9 +277,7 @@ struct PSEnv {
     conf->init(cct, config);
   }
 
-  void init_instance(RGWRealm& realm, uint64_t instance_id) {
-    conf->init_instance(realm, instance_id);
-  }
+  void init_instance(RGWRealm& realm, uint64_t instance_id, PSManagerRef& mgr);
 };
 
 using PSEnvRef = std::shared_ptr<PSEnv>;
@@ -238,18 +308,16 @@ public:
   }
 
   void format(bufferlist *bl) {
-    stringstream ss;
-    JSONFormatter f;
-
-    encode_json("event", *event, &f);
-    f.flush(ss);
-
-    bl->append(ss.str());
+    bl->append(json_str("event", *event));
   }
         
 };
 
-class PSSubscription : public RefCountedObject {
+class PSSubscription;
+using PSSubscriptionRef = std::shared_ptr<PSSubscription>;
+
+class PSSubscription {
+  PSSubscriptionRef self;
   RGWDataSyncEnv *sync_env;
   PSEnvRef env;
   PSSubConfigRef sub_conf;
@@ -262,7 +330,7 @@ public:
 
   class InitCR : public RGWCoroutine {
     RGWDataSyncEnv *sync_env;
-    PSSubscription *sub;
+    PSSubscriptionRef sub;
     rgw_get_bucket_info_params get_bucket_info;
     rgw_bucket_create_local_params create_bucket;
     PSConfigRef& conf;
@@ -270,15 +338,10 @@ public:
     int i;
   public:
     InitCR(RGWDataSyncEnv *_sync_env,
-           PSSubscription *_sub) : RGWCoroutine(_sync_env->cct),
+           PSSubscriptionRef& _sub) : RGWCoroutine(_sync_env->cct),
                                     sync_env(_sync_env),
                                     sub(_sub), conf(sub->env->conf),
                                     sub_conf(sub->sub_conf) {
-      sub->get();
-    }
-
-    virtual ~InitCR() {
-      sub->put();
     }
 
     int operate() override {
@@ -310,6 +373,7 @@ public:
 
           create_bucket.user_info = sub->env->data_user_info;
           create_bucket.bucket_name = sub_conf->data_bucket_name;
+          ldout(sync_env->cct, 20) << "pubsub: bucket create: using user info: " << json_str("obj", *sub->env->data_user_info, true) << dendl;
           yield call(new RGWBucketCreateLocalCR(sync_env->async_rados,
                                                 sync_env->store,
                                                 create_bucket));
@@ -318,6 +382,7 @@ public:
               << get_bucket_info.tenant << " name=" << get_bucket_info.bucket_name << ": ret=" << retcode << dendl;
             return set_cr_error(retcode);
           }
+ldout(sync_env->cct, 20) << "pubsub: bucket create: after user info: " << json_str("obj", *sub->env->data_user_info, true) << dendl;
 
           /* second iteration: we got -ENOENT and created a bucket */
         }
@@ -333,7 +398,7 @@ public:
 
   class StoreEventCR : public RGWCoroutine {
     RGWDataSyncEnv *sync_env;
-    PSSubscription *sub;
+    PSSubscriptionRef sub;
     PSEvent pse;
     PSConfigRef& conf;
     PSSubConfigRef& sub_conf;
@@ -341,18 +406,13 @@ public:
     int i;
   public:
     StoreEventCR(RGWDataSyncEnv *_sync_env,
-                 PSSubscription *_sub,
+                 PSSubscriptionRef& _sub,
                  EventRef& _event) : RGWCoroutine(_sync_env->cct),
                                      sync_env(_sync_env),
                                      sub(_sub),
                                      pse(_event),
                                      conf(sub->env->conf),
                                      sub_conf(sub->sub_conf) {
-      sub->get();
-    }
-
-    virtual ~StoreEventCR() {
-      sub->put();
     }
 
     int operate() override {
@@ -366,35 +426,48 @@ public:
         yield call(new RGWObjectSimplePutCR(sync_env->async_rados,
                                             sync_env->store,
                                             put_obj));
+        if (retcode < 0) {
+          ldout(sync_env->cct, 0) << "ERROR: failed to store event: " << put_obj.bucket << "/" << put_obj.key << " ret=" << retcode << dendl;
+          return set_cr_error(retcode);
+        }
+
+        return set_cr_done();
       }
       return 0;
     }
   };
 
-public:
   PSSubscription(RGWDataSyncEnv *_sync_env,
                  PSEnvRef _env,
                  PSSubConfigRef& _sub_conf) : sync_env(_sync_env),
                                       env(_env),
                                       sub_conf(_sub_conf),
                                       data_access(std::make_shared<RGWDataAccess>(sync_env->store)) {}
+public:
+  static PSSubscriptionRef& get_shared(RGWDataSyncEnv *_sync_env,
+                                PSEnvRef _env,
+                                PSSubConfigRef& _sub_conf) {
+    auto sub = new PSSubscription(_sync_env, _env, _sub_conf);
+    sub->self = std::shared_ptr<PSSubscription>(sub);
+    return sub->self;
+  }
 
   RGWCoroutine *init_cr() {
-    return new InitCR(sync_env, this);
+    return new InitCR(sync_env, self);
   }
 
   RGWCoroutine *store_event_cr(EventRef& event) {
-    return new StoreEventCR(sync_env, this, event);
+    return new StoreEventCR(sync_env, self, event);
   }
 
   friend class InitCR;
 };
 
-using PSSubscriptionRef = std::shared_ptr<PSSubscription>;
 
-
-class PSManager : public RefCountedObject
+class PSManager
 {
+  PSManagerRef self;
+
   RGWDataSyncEnv *sync_env;
   PSEnvRef env;
 
@@ -402,7 +475,7 @@ class PSManager : public RefCountedObject
 
   class GetSubCR : public RGWCoroutine {
     RGWDataSyncEnv *sync_env;
-    PSManager *mgr;
+    PSManagerRef mgr;
     const string& sub_name;
     PSSubscriptionRef *ref;
 
@@ -411,18 +484,14 @@ class PSManager : public RefCountedObject
     PSSubConfigRef sub_conf;
   public:
     GetSubCR(RGWDataSyncEnv *_sync_env,
-                      PSManager *_mgr,
+                      PSManagerRef& _mgr,
                       const string& _sub_name,
                       PSSubscriptionRef *_ref) : RGWCoroutine(_sync_env->cct),
                                                  sync_env(_sync_env),
                                                  mgr(_mgr),
                                                  sub_name(_sub_name),
+                                                 ref(_ref),
                                                  conf(mgr->env->conf) {
-      mgr->get();
-    }
-
-    virtual ~GetSubCR() {
-      mgr->put();
     }
 
     int operate() override {
@@ -432,7 +501,7 @@ class PSManager : public RefCountedObject
           return set_cr_error(-ENOENT);
         }
 
-        *ref = make_shared<PSSubscription>(sync_env, mgr->env, sub_conf);
+        *ref = PSSubscription::get_shared(sync_env, mgr->env, sub_conf);
 
         yield call((*ref)->init_cr());
         if (retcode < 0) {
@@ -457,21 +526,33 @@ class PSManager : public RefCountedObject
     return false;
   }
 
-public:
   PSManager(RGWDataSyncEnv *_sync_env,
             PSEnvRef _env) : sync_env(_sync_env),
                              env(_env) {}
+
+public:
+  static PSManagerRef& get_shared(RGWDataSyncEnv *_sync_env,
+                                 PSEnvRef _env) {
+    auto mgr = new PSManager(_sync_env, _env);
+    mgr->self = std::shared_ptr<PSManager>(mgr);
+    return mgr->self;
+  }
 
   RGWCoroutine *get_subscription_cr(const string& sub_name, PSSubscriptionRef *ref) {
     if (find_sub_instance(sub_name, ref)) {
       /* found it! nothing to execute */
       return nullptr;
     }
-    return new GetSubCR(sync_env, this, sub_name, ref);
+    return new GetSubCR(sync_env, self, sub_name, ref);
   }
 
   friend class GetSubCR;
 };
+
+void PSEnv::init_instance(RGWRealm& realm, uint64_t instance_id, PSManagerRef& mgr) {
+  manager = mgr;
+  conf->init_instance(realm, instance_id);
+}
 
 class RGWPSInitEnvCBCR : public RGWCoroutine {
   RGWDataSyncEnv *sync_env;
@@ -493,6 +574,7 @@ public:
       create_user.user = conf->user;
       create_user.max_buckets = 0; /* unlimited */
       create_user.display_name = "pubsub";
+      create_user.generate_key = false;
       yield call(new RGWUserCreateCR(sync_env->async_rados, sync_env->store, create_user));
       if (retcode < 0) {
         ldout(sync_env->store->ctx(), 0) << "ERROR: failed to create rgw user: ret=" << retcode << dendl;
@@ -505,6 +587,9 @@ public:
         ldout(sync_env->store->ctx(), 0) << "ERROR: failed to create rgw user: ret=" << retcode << dendl;
         return set_cr_error(retcode);
       }
+
+      ldout(sync_env->cct, 20) << "pubsub: get user info cr returned: " << json_str("obj", *env->data_user_info, true) << dendl;
+
 
       return set_cr_done();
     }
@@ -541,6 +626,8 @@ public:
       event->key = key;
       event->event = OBJECT_CREATE;
       event->timestamp = real_clock::now();
+
+      ldout(sync_env->cct, 20) << "pubsub: " << topics.size() << " topics found for path" << dendl;
 #warning more event init
 
       for (titer = topics.begin(); titer != topics.end(); ++titer) {
@@ -640,7 +727,8 @@ public:
   ~RGWPSDataSyncModule() override {}
 
   void init(RGWDataSyncEnv *sync_env, uint64_t instance_id) override {
-    env->init_instance(sync_env->store->get_realm(), instance_id);
+    PSManagerRef mgr = PSManager::get_shared(sync_env, env);
+    env->init_instance(sync_env->store->get_realm(), instance_id, mgr);
   }
 
   RGWCoroutine *init_sync(RGWDataSyncEnv *sync_env) override {

@@ -123,7 +123,7 @@ class RGWSimpleWriteOnlyAsyncCR : public RGWSimpleCoroutine {
  public:
   RGWSimpleWriteOnlyAsyncCR(RGWAsyncRadosProcessor *_async_rados,
 			    RGWRados *_store,
-			    const P& _params) : RGWSimpleCoroutine(store->ctx()),
+			    const P& _params) : RGWSimpleCoroutine(_store->ctx()),
                                                 async_rados(_async_rados),
                                                 store(_store),
 				                params(_params) {}
@@ -170,10 +170,10 @@ class RGWSimpleAsyncCR : public RGWSimpleCoroutine {
   public:
     Request(RGWCoroutine *caller,
             RGWAioCompletionNotifier *cn,
-            RGWRados *store,
+            RGWRados *_store,
             const P& _params,
             std::shared_ptr<R>& _result) : RGWAsyncRadosRequest(caller, cn),
-                                           store(store),
+                                           store(_store),
                                            params(_params),
                                            result(_result) {}
   } *req{nullptr};
@@ -182,7 +182,7 @@ class RGWSimpleAsyncCR : public RGWSimpleCoroutine {
   RGWSimpleAsyncCR(RGWAsyncRadosProcessor *_async_rados,
                    RGWRados *_store,
                    const P& _params,
-                   std::shared_ptr<R>& _result) : RGWSimpleCoroutine(store->ctx()),
+                   std::shared_ptr<R>& _result) : RGWSimpleCoroutine(_store->ctx()),
                                                   async_rados(_async_rados),
                                                   store(_store),
                                                   params(_params),

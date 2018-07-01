@@ -2,6 +2,7 @@
 #include "rgw_bucket.h"
 #include "rgw_user.h"
 #include "rgw_op.h"
+#include "rgw_acl_s3.h"
 
 #define dout_context g_ceph_context
 #define dout_subsys ceph_subsys_rgw
@@ -166,7 +167,8 @@ int RGWBucketCreateLocalCR::Request::_send_request()
   /* Encode special metadata first as we're using std::map::emplace under
    * the hood. This method will add the new items only if the map doesn't
    * contain such keys yet. */
-  RGWAccessControlPolicy policy;
+  RGWAccessControlPolicy_S3 policy(cct);
+  policy.create_canned(bucket_owner, bucket_owner, string()); /* default private policy */
   bufferlist aclbl;
   policy.encode(aclbl);
   map<string, buffer::list> attrs;
