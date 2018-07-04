@@ -327,6 +327,10 @@ public:
   void format(bufferlist *bl) {
     bl->append(json_str("event", *event));
   }
+
+  void encode_event(bufferlist& bl) const {
+    encode(*event, bl);
+  }
         
 };
 
@@ -532,10 +536,12 @@ class PSSubscription {
         put_obj.key = rgw_obj_key(oid_prefix + pse.generate_message_id());
 
         pse.format(&put_obj.data);
-
+       
         {
+          bufferlist bl;
+          pse.encode_event(bl);
           bufferlist bl64;
-          put_obj.data.encode_base64(bl64);
+          bl.encode_base64(bl64);
           put_obj.user_data = bl64.to_str();
         }
         
