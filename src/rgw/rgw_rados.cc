@@ -4459,6 +4459,8 @@ int RGWRados::init_complete()
 
   zone_short_id = current_period.get_map().get_zone_short_id(zone_params.get_id());
 
+  bool tier_writes = false;
+
   if (run_sync_thread) {
     ret = sync_modules_manager->create_instance(cct, zone_public_config.tier_type, zone_params.tier_config, &sync_module);
     if (ret < 0) {
@@ -4471,9 +4473,10 @@ int RGWRados::init_complete()
       }
       return ret;
     }
+    tier_writes = sync_module->supports_user_writes();
   }
 
-  writeable_zone = (zone_public_config.tier_type.empty() || zone_public_config.tier_type == "rgw");
+  writeable_zone = zone_public_config.tier_type.empty() || tier_writes;
 
   init_unique_trans_id_deps();
 
