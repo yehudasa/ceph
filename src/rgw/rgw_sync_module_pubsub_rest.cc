@@ -516,7 +516,7 @@ void RGWPSAckSubEventOp::execute()
     return;
   }
   ups = make_unique<RGWUserPubSub>(store, s->owner.get_id());
-  op_ret = ups->remove_sub(sub_name, event_id);
+  op_ret = ups->remove_event(sub_name, event_id);
   if (op_ret < 0) {
     ldout(s->cct, 20) << "failed to remove event, ret=" << op_ret << dendl;
     return;
