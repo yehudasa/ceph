@@ -429,9 +429,11 @@ public:
       return;
     }
 
-    s->formatter->open_object_section("result");
-    encode_json("topic", result.topic, s->formatter);
-    encode_json("push_endpoint", result.dest.push_endpoint, s->formatter);
+    {
+      Formatter::ObjectSection section(*s->formatter, "result");
+      encode_json("topic", result.topic, s->formatter);
+      encode_json("push_endpoint", result.dest.push_endpoint, s->formatter);
+    }
     rgw_flush_formatter_and_reset(s, s->formatter);
   }
 };
