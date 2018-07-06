@@ -606,6 +606,9 @@ public:
 
 class RGWHandler_REST_PSSub_S3 : public RGWHandler_REST_S3 {
 protected:
+  bool supports_quota() override {
+    return false;
+  }
   RGWOp *op_get() override {
     if (s->object.empty()) {
       return nullptr;
