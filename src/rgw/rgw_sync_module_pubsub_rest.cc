@@ -678,10 +678,6 @@ RGWHandler_REST* RGWRESTMgr_PubSub_S3::get_handler(struct req_state* const s,
     handler = new RGWHandler_REST_PSSub_S3(auth_registry);
   }
 
-  if (!handler && next) {
-    handler = next->get_handler(s, auth_registry, frontend_prefix);
-  }
-
   ldout(s->cct, 20) << __func__ << " handler=" << (handler ? typeid(*handler).name() : "<null>") << dendl;
   return handler;
 }
