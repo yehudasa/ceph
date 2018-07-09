@@ -4461,20 +4461,21 @@ int RGWRados::init_complete()
 
   bool tier_writes = false;
 
-  if (run_sync_thread) {
-    ret = sync_modules_manager->create_instance(cct, zone_public_config.tier_type, zone_params.tier_config, &sync_module);
-    if (ret < 0) {
-      lderr(cct) << "ERROR: failed to init sync module instance, ret=" << ret << dendl;
-      if (ret == -ENOENT) {
-        lderr(cct) << "ERROR: " << zone_public_config.tier_type 
-                   << " sync module does not exist. valid sync modules: " 
-                   << sync_modules_manager->get_registered_module_names()
-                   << dendl;
-      }
-      return ret;
+  /* 
+   * create sync module instance even if we don't run sync thread, might need it for radosgw-admin
+   */
+  ret = sync_modules_manager->create_instance(cct, zone_public_config.tier_type, zone_params.tier_config, &sync_module);
+  if (ret < 0) {
+    lderr(cct) << "ERROR: failed to init sync module instance, ret=" << ret << dendl;
+    if (ret == -ENOENT) {
+      lderr(cct) << "ERROR: " << zone_public_config.tier_type 
+        << " sync module does not exist. valid sync modules: " 
+        << sync_modules_manager->get_registered_module_names()
+        << dendl;
     }
-    tier_writes = sync_module->supports_user_writes();
+    return ret;
   }
+  tier_writes = sync_module->supports_user_writes();
 
   writeable_zone = zone_public_config.tier_type.empty() || tier_writes;
 

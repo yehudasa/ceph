@@ -51,6 +51,7 @@
 #include "rgw_reshard.h"
 #include "rgw_http_client_curl.h"
 #include "rgw_pubsub.h"
+#include "rgw_sync_module_pubsub.h"
 
 #define dout_context g_ceph_context
 #define dout_subsys ceph_subsys_rgw
@@ -8250,18 +8251,19 @@ next:
       return EINVAL;
     }
 
-    auto& tier_config = get_tier_config(store);
-
     rgw_pubsub_sub_dest dest_config;
     dest_config.bucket_name = sub_dest_bucket;
     dest_config.oid_prefix = sub_oid_prefix;
     dest_config.push_endpoint = sub_push_endpoint;
 
+    auto psmodule = static_cast<RGWPSSyncModuleInstance *>(store->get_sync_module().get());
+    auto conf = psmodule->get_effective_conf();
+
     if (dest_config.bucket_name.empty()) {
-      dest_config.bucket_name = string(tier_config["data_bucket_prefix"]) + user_info.user_id.to_str() + "-" + topic.topic.name;
+      dest_config.bucket_name = string(conf["data_bucket_prefix"]) + user_info.user_id.to_str() + "-" + topic.topic.name;
     }
     if (dest_config.oid_prefix.empty()) {
-      dest_config.oid_prefix = tier_config["data_oid_prefix"];
+      dest_config.oid_prefix = conf["data_oid_prefix"];
     }
     auto sub = ups.get_sub(sub_name);
     ret = sub->subscribe(topic_name, dest_config);
