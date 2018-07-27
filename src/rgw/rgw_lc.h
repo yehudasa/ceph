@@ -380,6 +380,11 @@ class RGWLC {
   void start_processor();
   void stop_processor();
 
+  int set_bucket_config(RGWBucketInfo& bucket_info,
+                        const map<string, bufferlist>& bucket_attrs,
+                        RGWLifecycleConfiguration *config);
+  int remove_bucket_config(RGWBucketInfo& bucket_info,
+                           const map<string, bufferlist>& bucket_attrs);
   private:
   int remove_expired_obj(RGWBucketInfo& bucket_info, rgw_obj_key obj_key, const string& owner, const string& owner_display_name, bool remove_indeed = true);
   bool obj_has_expired(ceph::real_time mtime, int days);
