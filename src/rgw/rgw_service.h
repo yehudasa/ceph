@@ -12,12 +12,18 @@
 class CephContext;
 class JSONFormattable;
 class RGWServiceInstance;
+class RGWServiceRegistry;
 
 using RGWServiceInstanceRef = std::shared_ptr<RGWServiceInstance>;
+using RGWServiceRegistryRef = std::shared_ptr<RGWServiceRegistry>;
 
 class RGWService
 {
+  friend class RGWServiceRegistry;
+  friend class RGWServiceInstance;
+
 protected:
+  RGWServiceRegistryRef svc_registry;
   CephContext *cct;
   std::string svc_type;
 
@@ -39,36 +45,46 @@ using RGWServiceRef = std::shared_ptr<RGWService>;
 
 class RGWServiceInstance
 {
+  friend class RGWServiceRegistry;
 protected:
   CephContext *cct;
-  string svc_type;
+  std::shared_ptr<RGWService> svc;
   string svc_instance;
+  uint64_t svc_id{0};
 
-  virtual int do_init(JSONFormattable& conf) = 0;
 public:
-  RGWServiceInstance(RGWService *svc, CephContext *_cct) : cct(_cct) {
-    svc_type = svc->type();
-  }
+  RGWServiceInstance(RGWService *svc, CephContext *_cct) : cct(_cct) {}
 
-  virtual ~RGWServiceInstance() = default;
+  virtual ~RGWServiceInstance();
+  virtual int init(JSONFormattable& conf) = 0;
 
-  int init(JSONFormattable& conf) {
-    int r = do_init(conf);
-    if (r < 0) {
-      return r;
-    }
-    assert(!svc_instance.empty());
-    return 0;
-  }
-
-  string get_id() {
-    return svc_type + ":" + svc_instance;
+  string get_title() {
+    return svc->type() + ":" + svc_instance;
   }
 };
 
-struct RGWServiceRegistry {
-  static void init(CephContext *cct);
-  static bool find(const string& name, RGWServiceRef *svc);
+class RGWServiceRegistry : std::enable_shared_from_this<RGWServiceRegistry> {
+  map<string, RGWServiceRef> services;
+
+  struct instance_info {
+    uint64_t id;
+    string title;
+    JSONFormattable conf;
+    RGWServiceInstanceRef ref;
+  };
+  map<uint64_t, instance_info> instances; /* registry_id -> instance */
+
+  std::atomic<uint64_t> max_registry_id;
+
+  void register_all(CephContext *cct);
+public:
+  RGWServiceRegistry(CephContext *cct) {
+    register_all(cct);
+  }
+  bool find(const string& name, RGWServiceRef *svc);
+
+  int instantiate(RGWServiceRegistryRef& registry, RGWServiceRef& svc, JSONFormattable& conf);
+  void remove_instance(RGWServiceInstance *instance);
 };
 
 #endif
