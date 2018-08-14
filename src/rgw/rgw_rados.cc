@@ -2789,7 +2789,7 @@ int RGWRados::init_complete()
     return ret;
   }
 
-  if (is_meta_master()) {
+  if (zone_svc->is_meta_master()) {
     auto md_log = meta_mgr->get_log(current_period.get_id());
     meta_notifier = new RGWMetaNotifier(this, md_log);
     meta_notifier->start();
@@ -2912,6 +2912,17 @@ int RGWRados::initialize()
   inject_notify_timeout_probability =
     cct->_conf.get_val<double>("rgw_inject_notify_timeout_probability");
   max_notify_retries = cct->_conf.get_val<uint64_t>("rgw_max_notify_retries");
+
+  svc_registry = std::make_unique<RGWServiceRegistry>();
+  svc_registry->register_all();
+
+  JSONFormattable zone_svc_conf;
+  ret = svc_registry->get_instance("zone", zone_svc_conf, &zone_svc);
+  if (ret < 0) {
+    return ret;
+  }
+
+  host_id = zone_svc->gen_host_id();
 
   ret = init_rados();
   if (ret < 0)
@@ -6833,15 +6844,6 @@ int RGWRados::copy_obj_data(RGWObjectCtx& obj_ctx,
   }
 
   return processor.complete(accounted_size, etag, mtime, set_mtime, attrs, delete_at);
-}
-
-bool RGWRados::is_meta_master()
-{
-  if (!get_zonegroup().is_master_zonegroup()) {
-    return false;
-  }
-
-  return (get_zonegroup().master_zone == zone_public_config.id);
 }
 
 /**
@@ -12388,8 +12390,7 @@ string RGWStateLog::get_oid(const string& object) {
 }
 
 int RGWStateLog::open_ioctx(librados::IoCtx& ioctx) {
-  rgw_pool pool;
-  store->get_log_pool(pool);
+  auto& pool = store->get_zone_params().log_pook;
   int r = rgw_init_ioctx(store->get_rados_handle(), pool, ioctx);
   if (r < 0) {
     lderr(store->ctx()) << "ERROR: could not open rados pool" << dendl;
