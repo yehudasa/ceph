@@ -29,6 +29,7 @@
 #include "rgw_sync_log_trim.h"
 
 #include "services/svc_zone.h"
+#include "services/svc_rados.h"
 
 class RGWWatcher;
 class SafeTimer;
@@ -996,26 +997,6 @@ struct RGWListRawObjsCtx {
   RGWListRawObjsCtx() : initialized(false) {}
 };
 
-struct RGWDefaultSystemMetaObjInfo {
-  string default_id;
-
-  void encode(bufferlist& bl) const {
-    ENCODE_START(1, 1, bl);
-    encode(default_id, bl);
-    ENCODE_FINISH(bl);
-  }
-
-  void decode(bufferlist::const_iterator& bl) {
-    DECODE_START(1, bl);
-    decode(default_id, bl);
-    DECODE_FINISH(bl);
-  }
-
-  void dump(Formatter *f) const;
-  void decode_json(JSONObj *obj);
-};
-WRITE_CLASS_ENCODER(RGWDefaultSystemMetaObjInfo)
-
 struct RGWNameToId {
   string obj_id;
 
@@ -1173,13 +1154,6 @@ public:
 
 class RGWGetDirHeader_CB;
 class RGWGetUserHeader_CB;
-
-struct rgw_rados_ref {
-  rgw_pool pool;
-  string oid;
-  string key;
-  librados::IoCtx ioctx;
-};
 
 class RGWChainedCache {
 public:
@@ -1449,7 +1423,7 @@ protected:
   RGWSyncModuleInstanceRef sync_module;
   bool writeable_zone{false};
 
-
+  RGWServiceRegistryRef svc_registry;
   std::shared_ptr<RGWSI_Zone> zone_svc;
 
   RGWIndexCompletionManager *index_completion_manager{nullptr};
@@ -1500,8 +1474,6 @@ public:
   }
 
   string host_id;
-
-  RGWRealm realm;
 
   RGWRESTConn *rest_master_conn;
   map<string, RGWRESTConn *> zone_conn_map;
@@ -1676,12 +1648,6 @@ public:
   int create_pool(const rgw_pool& pool);
 
   int init_bucket_index(RGWBucketInfo& bucket_info, int num_shards);
-  int select_bucket_placement(RGWUserInfo& user_info, const string& zonegroup_id, const string& rule,
-                              string *pselected_rule_name, RGWZonePlacementInfo *rule_info);
-  int select_legacy_bucket_placement(RGWZonePlacementInfo *rule_info);
-  int select_new_bucket_location(RGWUserInfo& user_info, const string& zonegroup_id, const string& rule,
-                                 string *pselected_rule_name, RGWZonePlacementInfo *rule_info);
-  int select_bucket_location_by_rule(const string& location_rule, RGWZonePlacementInfo *rule_info);
   void create_bucket_id(string *bucket_id);
 
   bool get_obj_data_pool(const string& placement_rule, const rgw_obj& obj, rgw_pool *pool);

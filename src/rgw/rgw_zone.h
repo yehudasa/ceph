@@ -1,6 +1,26 @@
 #ifndef CEPH_RGW_ZONE_H
 #define CEPH_RGW_ZONE_H
 
+struct RGWDefaultSystemMetaObjInfo {
+  string default_id;
+
+  void encode(bufferlist& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(default_id, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(bufferlist::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(default_id, bl);
+    DECODE_FINISH(bl);
+  }
+
+  void dump(Formatter *f) const;
+  void decode_json(JSONObj *obj);
+};
+WRITE_CLASS_ENCODER(RGWDefaultSystemMetaObjInfo)
+
 class RGWSystemMetaObj {
 protected:
   string id;

@@ -1,5 +1,22 @@
 #include "svc_zone.h"
-#include "rgw_zone.h"
+
+#include "rgw/rgw_zone.h"
+
+std::map<string, RGWServiceInstance::dependency> RGWSI_Zone::get_deps()
+{
+  RGWServiceInstance::dependency dep = { .name = "rados",
+                                         .conf = "{}" };
+  map<string, RGWServiceInstance::dependency> deps;
+  deps["rados_dep"] = dep;
+  return deps;
+}
+
+int RGWSI_Zone::init(const string& conf, std::map<std::string, RGWServiceInstanceRef>& dep_refs)
+{
+  svc_rados = dep_refs["rados_dep"];
+  assert(svc_rados);
+  return 0;
+}
 
 RGWZoneParams& RGWSI_Zone::get_zone_params()
 {
@@ -29,7 +46,7 @@ int RGWSI_Zone::get_zonegroup(const string& id, RGWZoneGroup& zonegroup)
 
 RGWRealm& RGWSI_Zone::get_realm()
 {
-  return realm;
+  return *realm;
 }
 
 bool RGWSI_Zone::zone_is_writeable()

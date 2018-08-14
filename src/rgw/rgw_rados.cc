@@ -2909,9 +2909,18 @@ int RGWRados::initialize()
 {
   int ret;
 
+  svc_registry = std::make_unique<RGWServiceRegistry>();
+  svc_registry->register_all();
+
   inject_notify_timeout_probability =
     cct->_conf.get_val<double>("rgw_inject_notify_timeout_probability");
   max_notify_retries = cct->_conf.get_val<uint64_t>("rgw_max_notify_retries");
+
+  JSONFormattable zone_svc_conf;
+  ret = svc_registry->get_instance("zone", zone_svc_conf, &zone_svc);
+  if (ret < 0) {
+    return ret;
+  }
 
   ret = init_rados();
   if (ret < 0)
