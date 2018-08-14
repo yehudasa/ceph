@@ -39,15 +39,20 @@ public:
   RGWSI_Zone(RGWService *svc, CephContext *cct): RGWServiceInstance(svc, cct) {}
 
   RGWZoneParams& get_zone_params();
+  RGWPeriod& get_current_period();
   RGWRealm& get_realm();
   RGWZoneGroup& get_zonegroup();
+  int get_zonegroup(const string& id, RGWZoneGroup& zonegroup);
   RGWZone& get_zone();
 
   const string& zone_name();
   const string& zone_id();
   uint32_t get_zone_short_id() const;
 
-  int get_zonegroup(const string& id, RGWZoneGroup& zonegroup);
+  const string& get_current_period_id();
+  bool has_zonegroup_api(const std::string& api) const;
+
+  string gen_host_id();
 
   bool zone_is_writeable();
   bool zone_syncs_from(RGWZone& target_zone, RGWZone& source_zone);

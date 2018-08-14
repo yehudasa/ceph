@@ -1463,16 +1463,6 @@ public:
    * AmazonS3 errors contain a HostId string, but is an opaque base64 blob; we
    * try to be more transparent. This has a wrapper so we can update it when zonegroup/zone are changed.
    */
-  void init_host_id() {
-    /* uint64_t needs 16, two '-' separators and a trailing null */
-    const string& zone_name = get_zone().name;
-    const string& zonegroup_name = zonegroup.get_name();
-    char charbuf[16 + zone_name.size() + zonegroup_name.size() + 2 + 1];
-    snprintf(charbuf, sizeof(charbuf), "%llx-%s-%s", (unsigned long long)instance_id(), zone_name.c_str(), zonegroup_name.c_str());
-    string s(charbuf);
-    host_id = s;
-  }
-
   string host_id;
 
   RGWRESTConn *rest_master_conn;
@@ -1512,26 +1502,21 @@ public:
   }
 
   const RGWQuotaInfo& get_bucket_quota() {
-    return current_period.get_config().bucket_quota;
+    return zone_svc->get_current_period().get_config().bucket_quota;
   }
 
   const RGWQuotaInfo& get_user_quota() {
     return current_period.get_config().user_quota;
   }
 
+/* SVC FIXME: clean this up */
   const string& get_current_period_id() {
-    return current_period.get_id();
+    return zone_svc->get_current_period_id();
   }
 
+/* SVC FIXME */
   bool has_zonegroup_api(const std::string& api) const {
-    if (!current_period.get_id().empty()) {
-      const auto& zonegroups_by_api = current_period.get_map().zonegroups_by_api;
-      if (zonegroups_by_api.find(api) != zonegroups_by_api.end())
-        return true;
-    } else if (zonegroup.api_name == api) {
-        return true;
-    }
-    return false;
+    return zone_svc->has_zonegroup_api(api);
   }
 
   // pulls missing periods for period_history
@@ -2690,10 +2675,7 @@ public:
   uint64_t instance_id();
 
   string unique_id(uint64_t unique_num) {
-    char buf[32];
-    snprintf(buf, sizeof(buf), ".%llu.%llu", (unsigned long long)instance_id(), (unsigned long long)unique_num);
-    string s = get_zone_params().get_id() + buf;
-    return s;
+    return zone_svc->unique_id(unique_num);
   }
 
   void init_unique_trans_id_deps() {
@@ -2723,10 +2705,6 @@ public:
              (unsigned long long)timestamp);
 
     return string(buf) + trans_id_suffix;
-  }
-
-  void get_log_pool(rgw_pool& pool) {
-    pool = get_zone_params().log_pool;
   }
 
   bool need_to_log_data() {

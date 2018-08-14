@@ -2909,18 +2909,20 @@ int RGWRados::initialize()
 {
   int ret;
 
-  svc_registry = std::make_unique<RGWServiceRegistry>();
-  svc_registry->register_all();
-
   inject_notify_timeout_probability =
     cct->_conf.get_val<double>("rgw_inject_notify_timeout_probability");
   max_notify_retries = cct->_conf.get_val<uint64_t>("rgw_max_notify_retries");
+
+  svc_registry = std::make_unique<RGWServiceRegistry>();
+  svc_registry->register_all();
 
   JSONFormattable zone_svc_conf;
   ret = svc_registry->get_instance("zone", zone_svc_conf, &zone_svc);
   if (ret < 0) {
     return ret;
   }
+
+  host_id = zone_svc->gen_host_id();
 
   ret = init_rados();
   if (ret < 0)
@@ -12397,8 +12399,7 @@ string RGWStateLog::get_oid(const string& object) {
 }
 
 int RGWStateLog::open_ioctx(librados::IoCtx& ioctx) {
-  rgw_pool pool;
-  store->get_log_pool(pool);
+  auto& pool = store->get_zone_params().log_pook;
   int r = rgw_init_ioctx(store->get_rados_handle(), pool, ioctx);
   if (r < 0) {
     lderr(store->ctx()) << "ERROR: could not open rados pool" << dendl;
