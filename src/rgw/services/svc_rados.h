@@ -38,6 +38,8 @@ public:
   RGWSI_RADOS(RGWService *svc, CephContext *cct): RGWServiceInstance(svc, cct),
                                                   handle_lock("rados_handle_lock") {}
 
+  uint64_t instance_id();
+
   class Obj {
     friend class RGWSI_RADOS;
 

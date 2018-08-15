@@ -1,4 +1,5 @@
 #include "svc_zone.h"
+#include "svc_rados.h"
 
 #include "rgw/rgw_zone.h"
 
@@ -13,8 +14,8 @@ std::map<string, RGWServiceInstance::dependency> RGWSI_Zone::get_deps()
 
 int RGWSI_Zone::init(const string& conf, std::map<std::string, RGWServiceInstanceRef>& dep_refs)
 {
-  svc_rados = dep_refs["rados_dep"];
-  assert(svc_rados);
+  rados_svc = static_pointer_cast<RGWSI_RADOS>(dep_refs["rados_dep"]);
+  assert(rados_svc);
   return 0;
 }
 
@@ -73,16 +74,17 @@ bool RGWSI_Zone::has_zonegroup_api(const std::string& api) const
 
 string RGWSI_Zone::gen_host_id() {
   /* uint64_t needs 16, two '-' separators and a trailing null */
-  const string& zone_name = zone->name;
+  const string& zone_name = zone_public_config->name;
   const string& zonegroup_name = zonegroup->get_name();
   char charbuf[16 + zone_name.size() + zonegroup_name.size() + 2 + 1];
-  snprintf(charbuf, sizeof(charbuf), "%llx-%s-%s", (unsigned long long)instance_id(), zone_name.c_str(), zonegroup_name.c_str());
+  snprintf(charbuf, sizeof(charbuf), "%llx-%s-%s", (unsigned long long)rados_svc->instance_id(), zone_name.c_str(), zonegroup_name.c_str());
   return string(charbuf);
 }
 
-string RGWSI_Zone::unique_id(uint64_t unique_num) {
+string RGWSI_Zone::unique_id(uint64_t unique_num)
+{
   char buf[32];
-  snprintf(buf, sizeof(buf), ".%llu.%llu", (unsigned long long)instance_id(), (unsigned long long)unique_num);
+  snprintf(buf, sizeof(buf), ".%llu.%llu", (unsigned long long)rados_svc->instance_id(), (unsigned long long)unique_num);
   string s = zone_params->get_id() + buf;
   return s;
 }
@@ -105,3 +107,30 @@ const string& RGWSI_Zone::zone_id()
 {
   return get_zone_params().get_id();
 }
+
+bool RGWSI_Zone::need_to_log_data() const
+{
+  return zone_public_config->log_data;
+}
+
+bool RGWSI_Zone::is_meta_master() const
+{
+  if (!zonegroup->is_master_zonegroup()) {
+    return false;
+  }
+
+  return (zonegroup->master_zone == zone_public_config->id);
+}
+
+bool RGWSI_Zone::need_to_log_metadata() const
+{
+  return is_meta_master() &&
+    (zonegroup->zones.size() > 1 || current_period->is_multi_zonegroups_with_zones());
+}
+
+bool RGWSI_Zone::can_reshard() const
+{
+  return current_period->get_id().empty() ||
+    (zonegroup->zones.size() == 1 && current_period->is_single_zonegroup());
+}
+

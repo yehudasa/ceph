@@ -2789,7 +2789,7 @@ int RGWRados::init_complete()
     return ret;
   }
 
-  if (is_meta_master()) {
+  if (zone_svc->is_meta_master()) {
     auto md_log = meta_mgr->get_log(current_period.get_id());
     meta_notifier = new RGWMetaNotifier(this, md_log);
     meta_notifier->start();
@@ -6844,15 +6844,6 @@ int RGWRados::copy_obj_data(RGWObjectCtx& obj_ctx,
   }
 
   return processor.complete(accounted_size, etag, mtime, set_mtime, attrs, delete_at);
-}
-
-bool RGWRados::is_meta_master()
-{
-  if (!get_zonegroup().is_master_zonegroup()) {
-    return false;
-  }
-
-  return (get_zonegroup().master_zone == zone_public_config.id);
 }
 
 /**

@@ -997,25 +997,39 @@ struct RGWListRawObjsCtx {
   RGWListRawObjsCtx() : initialized(false) {}
 };
 
-struct RGWNameToId {
-  string obj_id;
+struct objexp_hint_entry {
+  string tenant;
+  string bucket_name;
+  string bucket_id;
+  rgw_obj_key obj_key;
+  ceph::real_time exp_time;
 
   void encode(bufferlist& bl) const {
-    ENCODE_START(1, 1, bl);
-    encode(obj_id, bl);
+    ENCODE_START(2, 1, bl);
+    encode(bucket_name, bl);
+    encode(bucket_id, bl);
+    encode(obj_key, bl);
+    encode(exp_time, bl);
+    encode(tenant, bl);
     ENCODE_FINISH(bl);
   }
 
   void decode(bufferlist::const_iterator& bl) {
-    DECODE_START(1, bl);
-    decode(obj_id, bl);
+    // XXX Do we want DECODE_START_LEGACY_COMPAT_LEN(2, 1, 1, bl); ?
+    DECODE_START(2, bl);
+    decode(bucket_name, bl);
+    decode(bucket_id, bl);
+    decode(obj_key, bl);
+    decode(exp_time, bl);
+    if (struct_v >= 2) {
+      decode(tenant, bl);
+    } else {
+      tenant.clear();
+    }
     DECODE_FINISH(bl);
   }
-
-  void dump(Formatter *f) const;
-  void decode_json(JSONObj *obj);
 };
-WRITE_CLASS_ENCODER(RGWNameToId)
+WRITE_CLASS_ENCODER(objexp_hint_entry)
 
 class RGWDataChangesLog;
 class RGWMetaSyncStatusManager;
@@ -1506,17 +1520,7 @@ public:
   }
 
   const RGWQuotaInfo& get_user_quota() {
-    return current_period.get_config().user_quota;
-  }
-
-/* SVC FIXME: clean this up */
-  const string& get_current_period_id() {
-    return zone_svc->get_current_period_id();
-  }
-
-/* SVC FIXME */
-  bool has_zonegroup_api(const std::string& api) const {
-    return zone_svc->has_zonegroup_api(api);
+    return zone_svc->current_period.get_config().user_quota;
   }
 
   // pulls missing periods for period_history
@@ -2244,8 +2248,6 @@ public:
    */
   int delete_bucket(RGWBucketInfo& bucket_info, RGWObjVersionTracker& objv_tracker, bool check_empty = true);
 
-  bool is_meta_master();
-
   /**
    * Check to see if the bucket metadata is synced
    */
@@ -2705,20 +2707,6 @@ public:
              (unsigned long long)timestamp);
 
     return string(buf) + trans_id_suffix;
-  }
-
-  bool need_to_log_data() {
-    return get_zone().log_data;
-  }
-
-  bool need_to_log_metadata() {
-    return is_meta_master() &&
-      (get_zonegroup().zones.size() > 1 || current_period.is_multi_zonegroups_with_zones());
-  }
-
-  bool can_reshard() const {
-    return current_period.get_id().empty() ||
-      (zonegroup.zones.size() == 1 && current_period.is_single_zonegroup());
   }
 
   librados::Rados* get_rados_handle();

@@ -12,6 +12,8 @@ struct RGWPeriod;
 struct RGWRealm;
 struct RGWZonePlacementInfo;
 
+class RGWSI_RADOS;
+
 class RGWS_Zone : public RGWService
 {
 public:
@@ -22,7 +24,7 @@ public:
 
 class RGWSI_Zone : public RGWServiceInstance
 {
-  RGWServiceInstanceRef svc_rados;
+  std::shared_ptr<RGWSI_RADOS> rados_svc;
 
   std::unique_ptr<RGWRealm> realm;
   std::unique_ptr<RGWZoneGroup> zonegroup;
@@ -53,6 +55,7 @@ public:
   bool has_zonegroup_api(const std::string& api) const;
 
   string gen_host_id();
+  string unique_id(uint64_t unique_num);
 
   bool zone_is_writeable();
   bool zone_syncs_from(RGWZone& target_zone, RGWZone& source_zone);
@@ -64,6 +67,12 @@ public:
   int select_new_bucket_location(RGWUserInfo& user_info, const string& zonegroup_id, const string& rule,
                                  string *pselected_rule_name, RGWZonePlacementInfo *rule_info);
   int select_bucket_location_by_rule(const string& location_rule, RGWZonePlacementInfo *rule_info);
+
+  bool is_meta_master() const;
+
+  bool need_to_log_data() const;
+  bool need_to_log_metadata() const;
+  bool can_reshard() const;
 };
 
 #endif
