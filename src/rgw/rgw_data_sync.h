@@ -232,6 +232,7 @@ struct rgw_bucket_entry_owner {
 };
 
 class RGWSyncErrorLogger;
+class RGWRESTConn;
 
 struct RGWDataSyncEnv {
   CephContext *cct{nullptr};
