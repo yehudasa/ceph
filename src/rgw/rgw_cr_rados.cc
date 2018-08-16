@@ -1,6 +1,10 @@
 #include "rgw_rados.h"
+#include "rgw_zone.h"
 #include "rgw_coroutine.h"
 #include "rgw_cr_rados.h"
+
+#include "services/svc_zone.h"
+#include "services/svc_zone_utils.h"
 
 #include "cls/lock/cls_lock_client.h"
 #include "cls/rgw/cls_rgw_client.h"
@@ -542,8 +546,8 @@ int RGWAsyncFetchRemoteObj::_send_request()
   string user_id;
   char buf[16];
   snprintf(buf, sizeof(buf), ".%lld", (long long)store->instance_id());
-  string client_id = store->zone_id() + buf;
-  string op_id = store->unique_id(store->get_new_req_id());
+  string client_id = store->svc.zone->zone_id() + buf;
+  string op_id = store->svc.zone_utils->unique_id(store->get_new_req_id());
   map<string, bufferlist> attrs;
 
   rgw_obj src_obj(bucket_info.bucket, key);
@@ -594,8 +598,8 @@ int RGWAsyncStatRemoteObj::_send_request()
   string user_id;
   char buf[16];
   snprintf(buf, sizeof(buf), ".%lld", (long long)store->instance_id());
-  string client_id = store->zone_id() + buf;
-  string op_id = store->unique_id(store->get_new_req_id());
+  string client_id = store->svc.zone->zone_id() + buf;
+  string op_id = store->svc.zone_utils->unique_id(store->get_new_req_id());
 
   rgw_obj src_obj(bucket_info.bucket, key);
 
