@@ -21,6 +21,7 @@
 #include "common/Finisher.h"
 
 #include "rgw_rados.h"
+#include "rgw_zone.h"
 #include "rgw_cache.h"
 #include "rgw_acl.h"
 #include "rgw_acl_s3.h" /* for dumping s3policy in debug log */
@@ -525,9 +526,9 @@ int RGWObjManifest::append(RGWObjManifest& m, RGWZoneGroup& zonegroup, RGWZonePa
   return 0;
 }
 
-int RGWObjManifest::append(RGWObjManifest& m, RGWRados *store)
+int RGWObjManifest::append(RGWObjManifest& m, RGWSI_Zone *zone_svc)
 {
-  return append(m, store->get_zonegroup(), store->get_zone_params());
+  return append(m, zone_svc->get_zonegroup(), zone_svc->get_zone_params());
 }
 
 void RGWObjManifest::append_rules(RGWObjManifest& m, map<uint64_t, RGWObjManifestRule>::iterator& miter,
@@ -2683,8 +2684,6 @@ int RGWRados::init_complete()
 
   writeable_zone = (zone_public_config.tier_type.empty() || zone_public_config.tier_type == "rgw");
 
-  init_unique_trans_id_deps();
-
   finisher = new Finisher(cct);
   finisher->start();
 
@@ -2792,7 +2791,7 @@ int RGWRados::init_complete()
     return ret;
   }
 
-  if (zone_svc->is_meta_master()) {
+  if (svc.zone->is_meta_master()) {
     auto md_log = meta_mgr->get_log(current_period.get_id());
     meta_notifier = new RGWMetaNotifier(this, md_log);
     meta_notifier->start();
@@ -2920,12 +2919,24 @@ int RGWRados::initialize()
   svc_registry->register_all();
 
   JSONFormattable zone_svc_conf;
-  ret = svc_registry->get_instance("zone", zone_svc_conf, &zone_svc);
+  ret = svc_registry->get_instance("zone", zone_svc_conf, &svc.zone);
   if (ret < 0) {
     return ret;
   }
 
-  host_id = zone_svc->gen_host_id();
+  JSONFormattable zone_utils_svc_conf;
+  ret = svc_registry->get_instance("zone_utils", zone_utils_svc_conf, &svc.zone_utils);
+  if (ret < 0) {
+    return ret;
+  }
+
+  JSONFormattable quota_svc_conf;
+  ret = svc_registry->get_instance("quota", quota_svc_conf, &svc.quota);
+  if (ret < 0) {
+    return ret;
+  }
+
+  host_id = svc.zone_utils->gen_host_id();
 
   ret = init_rados();
   if (ret < 0)

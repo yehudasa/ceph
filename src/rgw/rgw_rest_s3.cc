@@ -43,6 +43,10 @@
 #include "rgw_crypt.h"
 #include "rgw_crypt_sanitize.h"
 #include "rgw_rest_user_policy.h"
+#include "rgw_zone.h"
+
+#include "services/svc_zone.h"
+
 #include "include/ceph_assert.h"
 
 #define dout_context g_ceph_context
@@ -859,7 +863,7 @@ void RGWGetBucketLocation_ObjStore_S3::send_response()
   RGWZoneGroup zonegroup;
   string api_name;
 
-  int ret = store->get_zonegroup(s->bucket_info.zonegroup, zonegroup);
+  int ret = store->svc.zone->get_zonegroup(s->bucket_info.zonegroup, zonegroup);
   if (ret >= 0) {
     api_name = zonegroup.api_name;
   } else  {
@@ -959,7 +963,7 @@ int RGWSetBucketVersioning_ObjStore_S3::get_params()
     return -EINVAL;
   }
 
-  if (!store->is_meta_master()) {
+  if (!store->svc.zone->is_meta_master()) {
     /* only need to keep this data around if we're not meta master */
     in_data.append(data, len);
   }
@@ -2404,7 +2408,7 @@ int RGWPutCORS_ObjStore_S3::get_params()
   }
 
   // forward bucket cors requests to meta master zone
-  if (!store->is_meta_master()) {
+  if (!store->svc.zone->is_meta_master()) {
     /* only need to keep this data around if we're not meta master */
     in_data.append(data, len);
   }
