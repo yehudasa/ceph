@@ -49,20 +49,20 @@ struct RGWSysObjState {
 };
 
 template <class T, class S>
-class RGWObjectCtxImpl {
+class RGWSysObjectCtxImpl {
   RGWSI_SysObj *sysobj_svc;
   std::map<T, S> objs_state;
   RWLock lock;
 
 public:
-  explicit RGWObjectCtxImpl(RGWSI_SysObj *_sysobj_svc) : sysobj_svc(_sysobj_svc), lock("RGWObjectCtxImpl") {}
+  explicit RGWSysObjectCtxImpl(RGWSI_SysObj *_sysobj_svc) : sysobj_svc(_sysobj_svc), lock("RGWSysObjectCtxImpl") {}
 
-  RGWObjectCtxImpl(const RGWObjectCtxImpl& rhs) : sysobj_svc(rhs.sysobj_svc),
+  RGWSysObjectCtxImpl(const RGWSysObjectCtxImpl& rhs) : sysobj_svc(rhs.sysobj_svc),
                                                   objs_state(rhs.objs_state),
-                                                  lock("RGWObjectCtxImpl") {}
-  RGWObjectCtxImpl(const RGWObjectCtxImpl&& rhs) : sysobj_svc(rhs.sysobj_svc),
+                                                  lock("RGWSysObjectCtxImpl") {}
+  RGWSysObjectCtxImpl(const RGWSysObjectCtxImpl&& rhs) : sysobj_svc(rhs.sysobj_svc),
                                                    objs_state(std::move(rhs.objs_state)),
-                                                   lock("RGWObjectCtxImpl") {}
+                                                   lock("RGWSysObjectCtxImpl") {}
 
   S *get_state(const T& obj) {
     S *result;
@@ -111,7 +111,7 @@ public:
   }
 };
 
-using RGWSysObjectCtx = RGWObjectCtxImpl<rgw_raw_obj, RGWSysObjState>;
+using RGWSysObjectCtx = RGWSysObjectCtxImpl<rgw_raw_obj, RGWSysObjState>;
 
 class RGWS_SysObj : public RGWService
 {

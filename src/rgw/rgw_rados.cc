@@ -2057,25 +2057,6 @@ int RGWRados::update_service_map(std::map<std::string, std::string>&& status)
   return 0;
 }
 
-/**
- * Add new connection to connections map
- * @param zonegroup_conn_map map which new connection will be added to
- * @param zonegroup zonegroup which new connection will connect to
- * @param new_connection pointer to new connection instance
- */
-static void add_new_connection_to_map(map<string, RGWRESTConn *> &zonegroup_conn_map,
-				      const RGWZoneGroup &zonegroup, RGWRESTConn *new_connection)
-{
-  // Delete if connection is already exists
-  map<string, RGWRESTConn *>::iterator iterZoneGroup = zonegroup_conn_map.find(zonegroup.get_id());
-  if (iterZoneGroup != zonegroup_conn_map.end()) {
-    delete iterZoneGroup->second;
-  }
-    
-  // Add new connection to connections map
-  zonegroup_conn_map[zonegroup.get_id()] = new_connection;
-}
-
 bool RGWRados::zone_syncs_from(RGWZone& target_zone, RGWZone& source_zone)
 {
   return target_zone.syncs_from(source_zone.name) &&
