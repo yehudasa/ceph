@@ -310,12 +310,6 @@ public:
   virtual ~RGWGetDataCB() {}
 };
 
-class RGWAccessListFilter {
-public:
-  virtual ~RGWAccessListFilter() {}
-  virtual bool filter(string& name, string& key) = 0;
-};
-
 struct RGWCloneRangeInfo {
   rgw_obj src;
   off_t src_ofs;

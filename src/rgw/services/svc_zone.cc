@@ -30,21 +30,15 @@ int RGWS_Zone::create_instance(const string& conf, RGWServiceInstanceRef *instan
 
 std::map<string, RGWServiceInstance::dependency> RGWSI_Zone::get_deps()
 {
-  RGWServiceInstance::dependency dep1 = { .name = "rados",
-                                          .conf = "{}" };
-  RGWServiceInstance::dependency dep2 = { .name = "sys_obj",
-                                          .conf = "{}" };
+  RGWServiceInstance::dependency dep = { .name = "sys_obj",
+                                         .conf = "{}" };
   map<string, RGWServiceInstance::dependency> deps;
-  deps["rados_dep"] = dep1;
-  deps["sys_obj_dep"] = dep2;
+  deps["sys_obj_dep"] = dep;
   return deps;
 }
 
 int RGWSI_Zone::load(const string& conf, std::map<std::string, RGWServiceInstanceRef>& dep_refs)
 {
-  rados_svc = static_pointer_cast<RGWSI_RADOS>(dep_refs["rados_dep"]);
-  assert(rados_svc);
-
   sysobj_svc = static_pointer_cast<RGWSI_SysObj>(dep_refs["sys_obj_dep"]);
   assert(sysobj_svc);
 
@@ -170,35 +164,41 @@ void RGWSI_Zone::shutdown()
 int RGWSI_Zone::list_regions(list<string>& regions)
 {
   RGWZoneGroup zonegroup;
+  RGWSI_SysObj::Pool syspool = sysobj_svc->get_pool(zonegroup.get_pool(cct));
 
-  return list_raw_prefixed_objs(zonegroup.get_pool(cct), region_info_oid_prefix, regions);
+  return syspool.op().list_prefixed_objs(region_info_oid_prefix, &regions);
 }
 
 int RGWSI_Zone::list_zonegroups(list<string>& zonegroups)
 {
   RGWZoneGroup zonegroup;
+  RGWSI_SysObj::Pool syspool = sysobj_svc->get_pool(zonegroup.get_pool(cct));
 
-  return list_raw_prefixed_objs(zonegroup.get_pool(cct), zonegroup_names_oid_prefix, zonegroups);
+  return syspool.op().list_prefixed_objs(zonegroup_names_oid_prefix, &zonegroups);
 }
 
 int RGWSI_Zone::list_zones(list<string>& zones)
 {
   RGWZoneParams zoneparams;
+  RGWSI_SysObj::Pool syspool = sysobj_svc->get_pool(zoneparams.get_pool(cct));
 
-  return list_raw_prefixed_objs(zoneparams.get_pool(cct), zone_names_oid_prefix, zones);
+  return syspool.op().list_prefixed_objs(zonegroup_names_oid_prefix, &zones);
 }
 
 int RGWSI_Zone::list_realms(list<string>& realms)
 {
   RGWRealm realm(cct, sysobj_svc.get());
-  return list_raw_prefixed_objs(realm.get_pool(cct), realm_names_oid_prefix, realms);
+  RGWSI_SysObj::Pool syspool = sysobj_svc->get_pool(realm.get_pool(cct));
+
+  return syspool.op().list_prefixed_objs(zonegroup_names_oid_prefix, &realms);
 }
 
 int RGWSI_Zone::list_periods(list<string>& periods)
 {
   RGWPeriod period;
   list<string> raw_periods;
-  int ret = list_raw_prefixed_objs(period.get_pool(cct), period.get_info_oid_prefix(), raw_periods);
+  RGWSI_SysObj::Pool syspool = sysobj_svc->get_pool(period.get_pool(cct));
+  int ret = syspool.op().list_prefixed_objs(period.get_info_oid_prefix(), &raw_periods);
   if (ret < 0) {
     return ret;
   }
@@ -254,9 +254,8 @@ int RGWSI_Zone::replace_region_with_zonegroup()
 
   RGWSysObjectCtx obj_ctx = sysobj_svc->init_obj_ctx();
   RGWSysObj sysobj = sysobj_svc->get_obj(obj_ctx, rgw_raw_obj(pool, oid));
-  RGWSysObj::Read rop(sysobj);
 
-  int ret = rop.read(&bl);
+  int ret = sysobj.rop().read(&bl);
   if (ret < 0 && ret !=  -ENOENT) {
     ldout(cct, 0) << __func__ << " failed to read converted: ret "<< ret << " " << cpp_strerror(-ret)
 		  << dendl;
@@ -349,12 +348,12 @@ int RGWSI_Zone::replace_region_with_zonegroup()
       ldout(cct, 0) << __func__ << " Error setting realm as default: " << cpp_strerror(-ret)  << dendl;
       return ret;
     }
-    ret = realm.init(cct, this);
+    ret = realm->init(cct, sysobj_svc.get());
     if (ret < 0) {
       ldout(cct, 0) << __func__ << " Error initing realm: " << cpp_strerror(-ret)  << dendl;
       return ret;
     }
-    ret = current_period->init(cct, this, realm->get_id(), realm->get_name());
+    ret = current_period->init(cct, sysobj_svc.get(), realm->get_id(), realm->get_name());
     if (ret < 0) {
       ldout(cct, 0) << __func__ << " Error initing current period: " << cpp_strerror(-ret)  << dendl;
       return ret;
@@ -376,7 +375,7 @@ int RGWSI_Zone::replace_region_with_zonegroup()
     }
     RGWZoneGroup zonegroup(*iter);
     zonegroup.set_id(*iter);
-    int ret = zonegroup.init(cct, this, true, true);
+    int ret = zonegroup.init(cct, sysobj_svc.get(), true, true);
     if (ret < 0) {
       ldout(cct, 0) << __func__ << " failed init zonegroup: ret "<< ret << " " << cpp_strerror(-ret) << dendl;
       return ret;
@@ -463,7 +462,7 @@ int RGWSI_Zone::replace_region_with_zonegroup()
 
   for (auto const& iter : regions) {
     RGWZoneGroup zonegroup(iter);
-    int ret = zonegroup.init(cct, this, true, true);
+    int ret = zonegroup.init(cct, sysobj_svc.get(), true, true);
     if (ret < 0) {
       ldout(cct, 0) << __func__ << " failed init zonegroup" << iter << ": ret "<< ret << " " << cpp_strerror(-ret) << dendl;
       return ret;
@@ -477,8 +476,9 @@ int RGWSI_Zone::replace_region_with_zonegroup()
   }
 
   /* mark as converted */
-  ret = rgw_put_system_obj(this, pool, oid, bl,
-			   true, NULL, real_time(), NULL);
+  ret = sysobj.wop()
+              .set_exclusive(true)
+              .write(bl);
   if (ret < 0 ) {
     ldout(cct, 0) << __func__ << " failed to mark cluster as converted: ret "<< ret << " " << cpp_strerror(-ret)
 		  << dendl;
@@ -668,9 +668,8 @@ int RGWSI_Zone::convert_regionmap()
 
   RGWSysObjectCtx obj_ctx = sysobj_svc->init_obj_ctx();
   RGWSysObj sysobj = sysobj_svc->get_obj(obj_ctx, rgw_raw_obj(pool, oid));
-  RGWSysObj::Read rop(sysobj);
 
-  int ret = rop.read(&bl);
+  int ret = sysobj.rop().read(&bl);
   if (ret < 0 && ret != -ENOENT) {
     return ret;
   } else if (ret == -ENOENT) {
@@ -708,10 +707,9 @@ int RGWSI_Zone::convert_regionmap()
   current_period->set_bucket_quota(zonegroupmap.bucket_quota);
 
   // remove the region_map so we don't try to convert again
-  rgw_raw_obj obj(pool, oid);
-  ret = delete_system_obj(obj);
+  ret = sysobj.wop().remove();
   if (ret < 0) {
-    ldout(cct, 0) << "Error could not remove " << obj
+    ldout(cct, 0) << "Error could not remove " << sysobj.get_obj()
         << " after upgrading to zonegroup map: " << cpp_strerror(ret) << dendl;
     return ret;
   }

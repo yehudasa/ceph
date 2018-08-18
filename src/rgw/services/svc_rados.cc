@@ -99,6 +99,36 @@ int RGWSI_RADOS::open_pool_ctx(const rgw_pool& pool, librados::IoCtx& io_ctx)
   return init_ioctx(cct, get_rados_handle(), pool, io_ctx, create);
 }
 
+int RGWSI_RADOS::pool_iterate(librados::IoCtx& io_ctx,
+                              librados::NObjectIterator& iter,
+                              uint32_t num, vector<rgw_bucket_dir_entry>& objs,
+                              RGWAccessListFilter *filter,
+                              bool *is_truncated)
+{
+  if (iter == io_ctx.nobjects_end())
+    return -ENOENT;
+
+  uint32_t i;
+
+  for (i = 0; i < num && iter != io_ctx.nobjects_end(); ++i, ++iter) {
+    rgw_bucket_dir_entry e;
+
+    string oid = iter->get_oid();
+    ldout(cct, 20) << "RGWRados::pool_iterate: got " << oid << dendl;
+
+    // fill it in with initial values; we may correct later
+    if (filter && !filter->filter(oid, oid))
+      continue;
+
+    e.key = oid;
+    objs.push_back(e);
+  }
+
+  if (is_truncated)
+    *is_truncated = (iter != io_ctx.nobjects_end());
+
+  return objs.size();
+}
 void RGWSI_RADOS::Obj::init(const rgw_raw_obj& obj)
 {
   ref.oid = obj.oid;
@@ -109,8 +139,9 @@ void RGWSI_RADOS::Obj::init(const rgw_raw_obj& obj)
 int RGWSI_RADOS::Obj::open()
 {
   int r = rados_svc->open_pool_ctx(ref.pool, ref.ioctx);
-  if (r < 0)
+  if (r < 0) {
     return r;
+  }
 
   ref.ioctx.locator_set_key(ref.key);
 
@@ -136,3 +167,52 @@ uint64_t RGWSI_RADOS::Obj::get_last_version()
 {
   return ref.ioctx.get_last_version();
 }
+
+int RGWSI_RADOS::Pool::List::init(const string& marker, RGWAccessListFilter *filter)
+{
+  if (ctx.initialized) {
+    return -EINVAL;
+  }
+
+  int r = pool.rados_svc->open_pool_ctx(pool.pool, ctx.ioctx);
+  if (r < 0) {
+    return r;
+  }
+
+  librados::ObjectCursor oc;
+  if (!oc.from_str(marker)) {
+    ldout(pool.rados_svc->cct, 10) << "failed to parse cursor: " << marker << dendl;
+    return -EINVAL;
+  }
+
+  ctx.iter = ctx.ioctx.nobjects_begin(oc);
+  ctx.filter = filter;
+  ctx.initialized = true;
+
+  return 0;
+}
+
+int RGWSI_RADOS::Pool::List::get_next(int max,
+                                      std::list<string> *oids,
+                                      bool *is_truncated)
+{
+  if (!ctx.initialized) {
+    return -EINVAL;
+  }
+  vector<rgw_bucket_dir_entry> objs;
+  int r = pool.rados_svc->pool_iterate(ctx.ioctx, ctx.iter, max, objs, ctx.filter, is_truncated);
+  if (r < 0) {
+    if(r != -ENOENT) {
+      ldout(pool.rados_svc->cct, 10) << "failed to list objects pool_iterate returned r=" << r << dendl;
+    }
+    return r;
+  }
+
+  vector<rgw_bucket_dir_entry>::iterator iter;
+  for (auto& o : objs) {
+    oids->push_back(o.key.name);
+  }
+
+  return oids->size();
+}
+

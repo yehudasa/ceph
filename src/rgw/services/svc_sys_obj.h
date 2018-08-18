@@ -85,7 +85,6 @@ public:
   void set_atomic(T& obj) {
     RWLock::WLocker wl(lock);
     assert (!obj.empty());
-    objs_state[obj].is_atomic = true;
   }
   void set_prefetch_data(T& obj) {
     RWLock::WLocker wl(lock);
@@ -98,16 +97,7 @@ public:
     if (iter == objs_state.end()) {
       return;
     }
-    bool is_atomic = iter->second.is_atomic;
-    bool prefetch_data = iter->second.prefetch_data;
-  
     objs_state.erase(iter);
-
-    if (is_atomic || prefetch_data) {
-      auto& s = objs_state[obj];
-      s.is_atomic = is_atomic;
-      s.prefetch_data = prefetch_data;
-    }
   }
 };
 
@@ -125,7 +115,7 @@ class RGWSI_SysObj : public RGWServiceInstance
 {
 public:
   class Obj {
-    friend class Read;
+    friend class ROp;
 
     RGWSI_SysObj *sysobj_svc;
     RGWSysObjectCtx& ctx;
@@ -150,7 +140,7 @@ public:
       return obj;
     }
 
-    struct Read {
+    struct ROp {
       Obj& source;
 
       struct GetObjState {
@@ -160,61 +150,127 @@ public:
 
         GetObjState() {}
 
-        int get_rados_obj(RGWSI_SysObj *sysobj_svc, rgw_raw_obj& obj, RGWSI_RADOS::Obj **pobj);
+        int get_rados_obj(RGWSI_RADOS *rados_svc,
+                          RGWSI_Zone *zone_svc,
+                          rgw_raw_obj& obj,
+                          RGWSI_RADOS::Obj **pobj);
       } state;
       
-      struct StatParams {
-        RGWObjVersionTracker *objv_tracker{nullptr};
-        ceph::real_time *lastmod{nullptr};
-        uint64_t *obj_size{nullptr};
-        map<string, bufferlist> *attrs{nullptr};
+      RGWObjVersionTracker *objv_tracker{nullptr};
+      map<string, bufferlist> *attrs{nullptr};
+      boost::optional<obj_version> refresh_version{boost::none};
+      ceph::real_time *lastmod{nullptr};
+      uint64_t *obj_size{nullptr};
 
-        StatParams& set_last_mod(ceph::real_time *_lastmod) {
-          lastmod = _lastmod;
-          return *this;
-        }
-        StatParams& set_obj_size(uint64_t *_obj_size) {
-          obj_size = _obj_size;
-          return *this;
-        }
-        StatParams& set_attrs(map<string, bufferlist> *_attrs) {
-          attrs = _attrs;
-          return *this;
-        }
-      } stat_params;
+      ROp& set_last_mod(ceph::real_time *_lastmod) {
+        lastmod = _lastmod;
+        return *this;
+      }
 
-      struct ReadParams {
-        RGWObjVersionTracker *objv_tracker{nullptr};
-        map<string, bufferlist> *attrs{nullptr};
-        boost::optional<obj_version> refresh_version{boost::none};
+      ROp& set_obj_size(uint64_t *_obj_size) {
+        obj_size = _obj_size;
+        return *this;
+      }
 
-        ReadParams& set_attrs(map<string, bufferlist> *_attrs) {
-          attrs = _attrs;
-          return *this;
-        }
-        ReadParams& set_obj_tracker(RGWObjVersionTracker *_objv_tracker) {
-          objv_tracker = _objv_tracker;
-          return *this;
-        }
-        ReadParams& set_refresh_version(const obj_version& rf) {
-          refresh_version = rf;
-          return *this;
-        }
-      } read_params;
+      ROp& set_attrs(map<string, bufferlist> *_attrs) {
+        attrs = _attrs;
+        return *this;
+      }
 
-      Read(Obj& _source) : source(_source) {}
+      ROp& set_refresh_version(const obj_version& rf) {
+        refresh_version = rf;
+        return *this;
+      }
+
+      ROp(Obj& _source) : source(_source) {}
 
       int stat();
       int read(int64_t ofs, int64_t end, bufferlist *pbl);
       int read(bufferlist *pbl) {
         return read(0, -1, pbl);
       }
-      int get_attr(std::string_view name, bufferlist *dest);
+      int get_attr(const char *name, bufferlist *dest);
     };
+
+    struct WOp {
+      Obj& source;
+
+      RGWObjVersionTracker *objv_tracker{nullptr};
+      map<string, bufferlist> attrs;
+      ceph::real_time mtime;
+      ceph::real_time *pmtime;
+      bool exclusive{false};
+
+      WOp& set_attrs(map<string, bufferlist>&& _attrs) {
+        attrs = _attrs;
+        return *this;
+      }
+
+      WOp& set_mtime(const ceph::real_time& _mtime) {
+        mtime = _mtime;
+        return *this;
+      }
+
+      WOp& set_pmtime(ceph::real_time *_pmtime) {
+        pmtime = _pmtime;
+        return *this;
+      }
+
+      WOp& set_exclusive(bool _exclusive = true) {
+        exclusive = _exclusive;
+        return *this;
+      }
+
+      WOp(Obj& _source) : source(_source) {}
+
+      int remove();
+      int write(bufferlist& bl);
+    };
+
+    ROp rop() {
+      return ROp(*this);
+    }
+
+    WOp wop() {
+      return WOp(*this);
+    }
+  };
+
+  class Pool {
+    friend class Op;
+
+    RGWSI_SysObj *sysobj_svc;
+    rgw_pool pool;
+
+    RGWSI_RADOS *get_rados_svc();
+
+  public:
+    Pool(RGWSI_SysObj *_sysobj_svc,
+         const rgw_pool& _pool) : sysobj_svc(_sysobj_svc),
+                                  pool(_pool) {}
+
+    rgw_pool& get_pool() {
+      return pool;
+    }
+
+    struct Op {
+      Pool& source;
+
+      Op(Pool& _source) : source(_source) {}
+
+      int list_prefixed_objs(const std::string& prefix, std::list<std::string> *result);
+    };
+
+    Op op() {
+      return Op(*this);
+    }
   };
 
   friend class Obj;
-  friend class Obj::Read;
+  friend class Obj::ROp;
+  friend class Obj::WOp;
+  friend class Pool;
+  friend class Pool::Op;
 
 private:
   std::shared_ptr<RGWSI_RADOS> rados_svc;
@@ -233,7 +289,7 @@ private:
                RGWObjVersionTracker *objv_tracker);
 
   int stat(RGWSysObjectCtx& obj_ctx,
-           RGWSI_SysObj::Obj::Read::GetObjState& state,
+           RGWSI_SysObj::Obj::ROp::GetObjState& state,
            rgw_raw_obj& obj,
            map<string, bufferlist> *attrs,
            real_time *lastmod,
@@ -241,15 +297,26 @@ private:
            RGWObjVersionTracker *objv_tracker);
 
   int read(RGWSysObjectCtx& obj_ctx,
-           Obj::Read::GetObjState& read_state,
+           Obj::ROp::GetObjState& read_state,
            RGWObjVersionTracker *objv_tracker,
            rgw_raw_obj& obj,
            bufferlist *bl, off_t ofs, off_t end,
            map<string, bufferlist> *attrs,
            boost::optional<obj_version>);
 
-  int get_attr(rgw_raw_obj& obj, std::string_view name, bufferlist *dest);
+  int get_attr(rgw_raw_obj& obj, const char *name, bufferlist *dest);
 
+  int remove(RGWSysObjectCtx& obj_ctx,
+             RGWObjVersionTracker *objv_tracker,
+             rgw_raw_obj& obj);
+
+  int write(rgw_raw_obj& obj,
+            real_time *pmtime,
+            map<std::string, bufferlist>& attrs,
+            bool exclusive,
+            const bufferlist& data,
+            RGWObjVersionTracker *objv_tracker,
+            real_time set_mtime);
 public:
   RGWSI_SysObj(RGWService *svc, CephContext *cct): RGWServiceInstance(svc, cct) {}
 
@@ -259,6 +326,10 @@ public:
 
   Obj&& get_obj(RGWSysObjectCtx& obj_ctx, const rgw_raw_obj& obj) {
     return std::move(Obj(this, obj_ctx, obj));
+  }
+
+  Pool&& get_pool(const rgw_pool& pool) {
+    return std::move(Pool(this, pool));
   }
 
 };

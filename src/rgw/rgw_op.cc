@@ -5672,7 +5672,7 @@ void RGWCompleteMultipart::execute()
         op_ret = -ERR_INVALID_PART;
         return;
       } else {
-        manifest.append(obj_part.manifest, store);
+        manifest.append(obj_part.manifest, store->svc.zone.get());
       }
 
       bool part_compressed = (obj_part.cs_info.compression_type != "none");

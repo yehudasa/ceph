@@ -76,6 +76,8 @@ using namespace librados;
 #include "rgw_realm_watcher.h"
 #include "rgw_reshard.h"
 
+#include "services/svc_zone.h"
+
 #include "compressor/Compressor.h"
 
 #ifdef WITH_LTTNG
@@ -105,10 +107,7 @@ static string log_lock_name = "rgw_log_lock";
 static RGWObjCategory main_category = RGW_OBJ_CATEGORY_MAIN;
 #define RGW_USAGE_OBJ_PREFIX "usage."
 #define FIRST_EPOCH 1
-static string RGW_DEFAULT_ZONE_ROOT_POOL = "rgw.root";
-static string RGW_DEFAULT_ZONEGROUP_ROOT_POOL = "rgw.root";
-static string RGW_DEFAULT_REALM_ROOT_POOL = "rgw.root";
-static string RGW_DEFAULT_PERIOD_ROOT_POOL = "rgw.root";
+
 
 #define RGW_STATELOG_OBJ_PREFIX "statelog."
 
@@ -2029,10 +2028,10 @@ int RGWRados::register_to_service_map(const string& daemon_type, const map<strin
 {
   map<string,string> metadata = meta;
   metadata["num_handles"] = stringify(rados.size());
-  metadata["zonegroup_id"] = zonegroup.get_id();
-  metadata["zonegroup_name"] = zonegroup.get_name();
-  metadata["zone_name"] = zone_name();
-  metadata["zone_id"] = zone_id();;
+  metadata["zonegroup_id"] = svc.zone->get_zonegroup().get_id();
+  metadata["zonegroup_name"] = svc.zone->get_zonegroup().get_name();
+  metadata["zone_name"] = svc.zone->zone_name();
+  metadata["zone_id"] = svc.zone->zone_id();;
   string name = cct->_conf->name.get_id();
   if (name.compare(0, 4, "rgw.") == 0) {
     name = name.substr(4);
@@ -2057,24 +2056,21 @@ int RGWRados::update_service_map(std::map<std::string, std::string>&& status)
   return 0;
 }
 
-bool RGWRados::zone_syncs_from(RGWZone& target_zone, RGWZone& source_zone)
-{
-  return target_zone.syncs_from(source_zone.name) &&
-         sync_modules_manager->supports_data_export(source_zone.tier_type);
-}
-
 /** 
  * Initialize the RADOS instance and prepare to do other ops
  * Returns 0 on success, -ERR# on failure.
  */
 int RGWRados::init_complete()
 {
+  int ret;
+
   if (run_sync_thread) {
-    ret = sync_modules_manager->create_instance(cct, svc.zone->get_zone_public_config()->tier_type, svc.zone->get_zone_params()->tier_config, &sync_module);
+    auto& zone_public_config = svc.zone->get_zone();
+    ret = sync_modules_manager->create_instance(cct, zone_public_config.tier_type, svc.zone->get_zone_params().tier_config, &sync_module);
     if (ret < 0) {
       lderr(cct) << "ERROR: failed to init sync module instance, ret=" << ret << dendl;
       if (ret == -ENOENT) {
-        lderr(cct) << "ERROR: " << zone_public_config->tier_type 
+        lderr(cct) << "ERROR: " << zone_public_config.tier_type 
                    << " sync module does not exist. valid sync modules: " 
                    << sync_modules_manager->get_registered_module_names()
                    << dendl;
@@ -2088,7 +2084,7 @@ int RGWRados::init_complete()
 
   period_puller.reset(new RGWPeriodPuller(this));
   period_history.reset(new RGWPeriodHistory(cct, period_puller.get(),
-                                            current_period));
+                                            svc.zone->get_current_period()));
 
   if (need_watch_notify()) {
     ret = init_watch();
@@ -2099,7 +2095,7 @@ int RGWRados::init_complete()
   }
 
   /* first build all zones index */
-  for (auto ziter : get_zonegroup().zones) {
+  for (auto ziter : svc.zone->get_zonegroup().zones) {
     const string& id = ziter.first;
     RGWZone& z = ziter.second;
     zone_id_by_name[z.name] = id;
@@ -9320,19 +9316,6 @@ void RGWRados::gen_rand_obj_instance_name(rgw_obj *target_obj)
   target_obj->key.set_instance(buf);
 }
 
-static void filter_attrset(map<string, bufferlist>& unfiltered_attrset, const string& check_prefix,
-                           map<string, bufferlist> *attrset)
-{
-  attrset->clear();
-  map<string, bufferlist>::iterator iter;
-  for (iter = unfiltered_attrset.lower_bound(check_prefix);
-       iter != unfiltered_attrset.end(); ++iter) {
-    if (!boost::algorithm::starts_with(iter->first, check_prefix))
-      break;
-    (*attrset)[iter->first] = iter->second;
-  }
-}
-
 int RGWRados::get_olh(const RGWBucketInfo& bucket_info, const rgw_obj& obj, RGWOLHInfo *olh)
 {
   map<string, bufferlist> unfiltered_attrset;
@@ -9348,7 +9331,7 @@ int RGWRados::get_olh(const RGWBucketInfo& bucket_info, const rgw_obj& obj, RGWO
   }
   map<string, bufferlist> attrset;
 
-  filter_attrset(unfiltered_attrset, RGW_ATTR_OLH_PREFIX, &attrset);
+  rgw_filter_attrset(unfiltered_attrset, RGW_ATTR_OLH_PREFIX, &attrset);
 
   map<string, bufferlist>::iterator iter = attrset.find(RGW_ATTR_OLH_INFO);
   if (iter == attrset.end()) { /* not an olh */
@@ -9430,7 +9413,7 @@ int RGWRados::remove_olh_pending_entries(const RGWBucketInfo& bucket_info, RGWOb
 int RGWRados::follow_olh(const RGWBucketInfo& bucket_info, RGWObjectCtx& obj_ctx, RGWObjState *state, const rgw_obj& olh_obj, rgw_obj *target)
 {
   map<string, bufferlist> pending_entries;
-  filter_attrset(state->attrset, RGW_ATTR_OLH_PENDING_PREFIX, &pending_entries);
+  rgw_filter_attrset(state->attrset, RGW_ATTR_OLH_PENDING_PREFIX, &pending_entries);
 
   map<string, bufferlist> rm_pending_entries;
   check_pending_olh_entries(pending_entries, &rm_pending_entries);
@@ -9513,7 +9496,7 @@ int RGWRados::raw_obj_stat(rgw_raw_obj& obj, uint64_t *psize, real_time *pmtime,
   if (pmtime)
     *pmtime = ceph::real_clock::from_timespec(mtime_ts);
   if (attrs) {
-    filter_attrset(unfiltered_attrset, RGW_ATTR_PREFIX, attrs);
+    rgw_filter_attrset(unfiltered_attrset, RGW_ATTR_PREFIX, attrs);
   }
 
   return 0;
@@ -10362,14 +10345,6 @@ int RGWRados::pool_iterate(RGWPoolIterCtx& ctx, uint32_t num, vector<rgw_bucket_
 
   return objs.size();
 }
-struct RGWAccessListFilterPrefix : public RGWAccessListFilter {
-  string prefix;
-
-  explicit RGWAccessListFilterPrefix(const string& _prefix) : prefix(_prefix) {}
-  bool filter(string& name, string& key) override {
-    return (prefix.compare(key.substr(0, prefix.size())) == 0);
-  }
-};
 
 int RGWRados::list_raw_objects_init(const rgw_pool& pool, const string& marker, RGWListRawObjsCtx *ctx)
 {
