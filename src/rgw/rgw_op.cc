@@ -45,6 +45,7 @@
 
 #include "services/svc_zone.h"
 #include "services/svc_quota.h"
+#include "services/svc_sys_obj.h"
 
 #include "cls/lock/cls_lock_client.h"
 #include "cls/rgw/cls_rgw_client.h"
@@ -3384,7 +3385,13 @@ int RGWPutObjProcessor_Multipart::do_complete(size_t accounted_size,
 
   store->obj_to_raw(s->bucket_info.placement_rule, meta_obj, &raw_meta_obj);
   const bool must_exist = true;// detect races with abort
-  r = store->omap_set(raw_meta_obj, p, bl, must_exist);
+
+  auto obj_ctx = store->svc.sysobj->init_obj_ctx();
+  auto sysobj = obj_ctx.get_obj(raw_meta_obj);
+
+  r = sysobj.omap()
+            .set_must_exist(must_exist)
+            .set(p, bl);
   return r;
 }
 
@@ -5795,7 +5802,7 @@ void RGWCompleteMultipart::execute()
         op_ret = -ERR_INVALID_PART;
         return;
       } else {
-        manifest.append(obj_part.manifest, store);
+        manifest.append(obj_part.manifest, store->svc.zone.get());
       }
 
       bool part_compressed = (obj_part.cs_info.compression_type != "none");
