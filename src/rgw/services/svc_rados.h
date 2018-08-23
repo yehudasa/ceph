@@ -104,11 +104,13 @@ public:
     Pool(RGWSI_RADOS *_rados_svc, const rgw_pool& _pool) : rados_svc(_rados_svc),
                                                            pool(_pool) {}
 
+    Pool(RGWSI_RADOS *_rados_svc) : rados_svc(_rados_svc) {}
   public:
     Pool() {}
     Pool(const Pool& p) : rados_svc(p.rados_svc),
                           pool(p.pool) {}
 
+    int create(const std::vector<rgw_pool>& pools, std::vector<int> *retcodes);
 
     struct List {
       Pool& pool;
@@ -137,6 +139,10 @@ public:
 
   Obj obj(const rgw_raw_obj& o) {
     return Obj(this, o);
+  }
+
+  Pool pool() {
+    return Pool(this);
   }
 
   Pool pool(const rgw_pool& p) {

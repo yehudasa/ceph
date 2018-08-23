@@ -49,57 +49,7 @@ struct RGWSysObjState {
 };
 
 template <class T, class S>
-class RGWSysObjectCtxImpl {
-  RGWSI_SysObj *sysobj_svc;
-  std::map<T, S> objs_state;
-  RWLock lock;
-
-public:
-  explicit RGWSysObjectCtxImpl(RGWSI_SysObj *_sysobj_svc) : sysobj_svc(_sysobj_svc), lock("RGWSysObjectCtxImpl") {}
-
-  RGWSysObjectCtxImpl(const RGWSysObjectCtxImpl& rhs) : sysobj_svc(rhs.sysobj_svc),
-                                                  objs_state(rhs.objs_state),
-                                                  lock("RGWSysObjectCtxImpl") {}
-  RGWSysObjectCtxImpl(const RGWSysObjectCtxImpl&& rhs) : sysobj_svc(rhs.sysobj_svc),
-                                                   objs_state(std::move(rhs.objs_state)),
-                                                   lock("RGWSysObjectCtxImpl") {}
-
-  S *get_state(const T& obj) {
-    S *result;
-    typename std::map<T, S>::iterator iter;
-    lock.get_read();
-    assert (!obj.empty());
-    iter = objs_state.find(obj);
-    if (iter != objs_state.end()) {
-      result = &iter->second;
-      lock.unlock();
-    } else {
-      lock.unlock();
-      lock.get_write();
-      result = &objs_state[obj];
-      lock.unlock();
-    }
-    return result;
-  }
-
-  void set_atomic(T& obj) {
-    RWLock::WLocker wl(lock);
-    assert (!obj.empty());
-  }
-  void set_prefetch_data(T& obj) {
-    RWLock::WLocker wl(lock);
-    assert (!obj.empty());
-    objs_state[obj].prefetch_data = true;
-  }
-  void invalidate(T& obj) {
-    RWLock::WLocker wl(lock);
-    auto iter = objs_state.find(obj);
-    if (iter == objs_state.end()) {
-      return;
-    }
-    objs_state.erase(iter);
-  }
-};
+class RGWSysObjectCtxImpl;
 
 using RGWSysObjectCtx = RGWSysObjectCtxImpl<rgw_raw_obj, RGWSysObjState>;
 
@@ -227,12 +177,37 @@ public:
       int write(bufferlist& bl);
     };
 
+    struct OmapOp {
+      Obj& source;
+
+      bool must_exist{false};
+
+      OmapOp& set_must_exist(bool _must_exist = true) {
+        must_exist = _must_exist;
+        return *this;
+      }
+
+      OmapOp(Obj& _source) : source(_source) {}
+
+      int get_all(std::map<string, bufferlist> *m);
+      int get_vals(const string& marker,
+                        uint64_t count,
+                        std::map<string, bufferlist> *m,
+                        bool *pmore);
+      int set(const std::string& key, bufferlist& bl);
+      int set(const map<std::string, bufferlist>& m);
+      int del(const std::string& key);
+    };
     ROp rop() {
       return ROp(*this);
     }
 
     WOp wop() {
       return WOp(*this);
+    }
+
+    OmapOp omap() {
+      return OmapOp(*this);
     }
   };
 
@@ -306,6 +281,16 @@ private:
 
   int get_attr(rgw_raw_obj& obj, const char *name, bufferlist *dest);
 
+  int omap_get_all(rgw_raw_obj& obj, std::map<string, bufferlist> *m);
+  int omap_get_vals(rgw_raw_obj& obj,
+                    const string& marker,
+                    uint64_t count,
+                    std::map<string, bufferlist> *m,
+                    bool *pmore);
+  int omap_set(rgw_raw_obj& obj, const std::string& key, bufferlist& bl, bool must_exist = false);
+  int omap_set(rgw_raw_obj& obj, const map<std::string, bufferlist>& m, bool must_exist = false);
+  int omap_del(rgw_raw_obj& obj, const std::string& key);
+
   int remove(RGWSysObjectCtx& obj_ctx,
              RGWObjVersionTracker *objv_tracker,
              rgw_raw_obj& obj);
@@ -320,13 +305,8 @@ private:
 public:
   RGWSI_SysObj(RGWService *svc, CephContext *cct): RGWServiceInstance(svc, cct) {}
 
-  RGWSysObjectCtx&& init_obj_ctx() {
-    return std::move(RGWSysObjectCtx(this));
-  }
-
-  Obj&& get_obj(RGWSysObjectCtx& obj_ctx, const rgw_raw_obj& obj) {
-    return std::move(Obj(this, obj_ctx, obj));
-  }
+  RGWSysObjectCtx&& init_obj_ctx();
+  Obj&& get_obj(RGWSysObjectCtx& obj_ctx, const rgw_raw_obj& obj);
 
   Pool&& get_pool(const rgw_pool& pool) {
     return std::move(Pool(this, pool));
@@ -335,6 +315,63 @@ public:
 };
 
 using RGWSysObj = RGWSI_SysObj::Obj;
+
+template <class T, class S>
+class RGWSysObjectCtxImpl {
+  RGWSI_SysObj *sysobj_svc;
+  std::map<T, S> objs_state;
+  RWLock lock;
+
+public:
+  explicit RGWSysObjectCtxImpl(RGWSI_SysObj *_sysobj_svc) : sysobj_svc(_sysobj_svc), lock("RGWSysObjectCtxImpl") {}
+
+  RGWSysObjectCtxImpl(const RGWSysObjectCtxImpl& rhs) : sysobj_svc(rhs.sysobj_svc),
+                                                  objs_state(rhs.objs_state),
+                                                  lock("RGWSysObjectCtxImpl") {}
+  RGWSysObjectCtxImpl(const RGWSysObjectCtxImpl&& rhs) : sysobj_svc(rhs.sysobj_svc),
+                                                   objs_state(std::move(rhs.objs_state)),
+                                                   lock("RGWSysObjectCtxImpl") {}
+
+  S *get_state(const T& obj) {
+    S *result;
+    typename std::map<T, S>::iterator iter;
+    lock.get_read();
+    assert (!obj.empty());
+    iter = objs_state.find(obj);
+    if (iter != objs_state.end()) {
+      result = &iter->second;
+      lock.unlock();
+    } else {
+      lock.unlock();
+      lock.get_write();
+      result = &objs_state[obj];
+      lock.unlock();
+    }
+    return result;
+  }
+
+  void set_atomic(T& obj) {
+    RWLock::WLocker wl(lock);
+    assert (!obj.empty());
+  }
+  void set_prefetch_data(T& obj) {
+    RWLock::WLocker wl(lock);
+    assert (!obj.empty());
+    objs_state[obj].prefetch_data = true;
+  }
+  void invalidate(T& obj) {
+    RWLock::WLocker wl(lock);
+    auto iter = objs_state.find(obj);
+    if (iter == objs_state.end()) {
+      return;
+    }
+    objs_state.erase(iter);
+  }
+
+  RGWSI_SysObj::Obj&& get_obj(const rgw_raw_obj& obj) {
+    return sysobj_svc->get_obj(*this, obj);
+  }
+};
 
 #endif
 

@@ -6,6 +6,7 @@
 #include "rgw/rgw_rest_conn.h"
 
 #include "common/errno.h"
+#include "include/random.h"
 
 #define dout_subsys ceph_subsys_rgw
 
@@ -21,6 +22,8 @@ static string RGW_DEFAULT_ZONE_ROOT_POOL = "rgw.root";
 static string RGW_DEFAULT_ZONEGROUP_ROOT_POOL = "rgw.root";
 static string RGW_DEFAULT_REALM_ROOT_POOL = "rgw.root";
 static string RGW_DEFAULT_PERIOD_ROOT_POOL = "rgw.root";
+static string avail_pools = ".pools.avail";
+static string default_storage_pool_suffix = "rgw.buckets.data";
 
 int RGWS_Zone::create_instance(const string& conf, RGWServiceInstanceRef *instance)
 {
@@ -30,10 +33,15 @@ int RGWS_Zone::create_instance(const string& conf, RGWServiceInstanceRef *instan
 
 std::map<string, RGWServiceInstance::dependency> RGWSI_Zone::get_deps()
 {
-  RGWServiceInstance::dependency dep = { .name = "sys_obj",
-                                         .conf = "{}" };
+  RGWServiceInstance::dependency dep1 = { .name = "sys_obj",
+                                          .conf = "{}" };
   map<string, RGWServiceInstance::dependency> deps;
-  deps["sys_obj_dep"] = dep;
+  deps["sys_obj_dep"] = dep1;
+
+  RGWServiceInstance::dependency dep2 = { .name = "rados_obj",
+                                          .conf = "{}" };
+  map<string, RGWServiceInstance::dependency> deps2;
+  deps["rados_dep"] = dep2;
   return deps;
 }
 
@@ -47,6 +55,9 @@ int RGWSI_Zone::load(const string& conf, std::map<std::string, RGWServiceInstanc
   zone_public_config = make_shared<RGWZone>();
   zone_params = make_shared<RGWZoneParams>();
   current_period = make_shared<RGWPeriod>();
+
+  rados_svc = static_pointer_cast<RGWSI_RADOS>(dep_refs["rados_dep"]);
+  assert(rados_svc);
 
   return 0;
 }
@@ -141,6 +152,44 @@ int RGWSI_Zone::init()
   zone_short_id = current_period->get_map().get_zone_short_id(zone_params->get_id());
 
   writeable_zone = (zone_public_config->tier_type.empty() || zone_public_config->tier_type == "rgw");
+
+  /* first build all zones index */
+  for (auto ziter : zonegroup->zones) {
+    const string& id = ziter.first;
+    RGWZone& z = ziter.second;
+    zone_id_by_name[z.name] = id;
+    zone_by_id[id] = z;
+  }
+
+  if (zone_by_id.find(zone_id()) == zone_by_id.end()) {
+    ldout(cct, 0) << "WARNING: could not find zone config in zonegroup for local zone (" << zone_id() << "), will use defaults" << dendl;
+  }
+  *zone_public_config = zone_by_id[zone_id()];
+  for (auto ziter : get_zonegroup().zones) {
+    const string& id = ziter.first;
+    RGWZone& z = ziter.second;
+    if (id == zone_id()) {
+      continue;
+    }
+    if (z.endpoints.empty()) {
+      ldout(cct, 0) << "WARNING: can't generate connection for zone " << z.id << " id " << z.name << ": no endpoints defined" << dendl;
+      continue;
+    }
+    ldout(cct, 20) << "generating connection object for zone " << z.name << " id " << z.id << dendl;
+    RGWRESTConn *conn = new RGWRESTConn(cct, this, z.id, z.endpoints);
+    zone_conn_map[id] = conn;
+    if (zone_syncs_from(*zone_public_config, z) ||
+        zone_syncs_from(z, *zone_public_config)) {
+      if (zone_syncs_from(*zone_public_config, z)) {
+        zone_data_sync_from_map[id] = conn;
+      }
+      if (zone_syncs_from(z, *zone_public_config)) {
+        zone_data_notify_to_map[id] = conn;
+      }
+    } else {
+      ldout(cct, 20) << "NOTICE: not syncing to/from zone " << z.name << " id " << z.id << dendl;
+    }
+  }
 
   return 0;
 }
@@ -852,6 +901,37 @@ bool RGWSI_Zone::can_reshard() const
     (zonegroup->zones.size() == 1 && current_period->is_single_zonegroup());
 }
 
+/**
+  * Check to see if the bucket metadata could be synced
+  * bucket: the bucket to check
+  * Returns false is the bucket is not synced
+  */
+bool RGWSI_Zone::is_syncing_bucket_meta(const rgw_bucket& bucket)
+{
+
+  /* no current period  */
+  if (current_period->get_id().empty()) {
+    return false;
+  }
+
+  /* zonegroup is not master zonegroup */
+  if (!zonegroup->is_master_zonegroup()) {
+    return false;
+  }
+
+  /* single zonegroup and a single zone */
+  if (current_period->is_single_zonegroup() && zonegroup->zones.size() == 1) {
+    return false;
+  }
+
+  /* zone is not master */
+  if (zonegroup->master_zone.compare(zone_public_config->id) != 0) {
+    return false;
+  }
+
+  return true;
+}
+
 
 void RGWSI_Zone::canonicalize_raw_obj(rgw_raw_obj *obj)
 {
@@ -860,3 +940,270 @@ void RGWSI_Zone::canonicalize_raw_obj(rgw_raw_obj *obj)
     obj->pool = zone_params->domain_root;
   }
 }
+
+int RGWSI_Zone::select_new_bucket_location(RGWUserInfo& user_info, const string& zonegroup_id, const string& request_rule,
+                                         string *pselected_rule_name, RGWZonePlacementInfo *rule_info)
+
+{
+  /* first check that zonegroup exists within current period. */
+  RGWZoneGroup zonegroup;
+  int ret = get_zonegroup(zonegroup_id, zonegroup);
+  if (ret < 0) {
+    ldout(cct, 0) << "could not find zonegroup " << zonegroup_id << " in current period" << dendl;
+    return ret;
+  }
+
+  /* find placement rule. Hierarchy: request rule > user default rule > zonegroup default rule */
+  std::map<std::string, RGWZoneGroupPlacementTarget>::const_iterator titer;
+
+  if (!request_rule.empty()) {
+    titer = zonegroup.placement_targets.find(request_rule);
+    if (titer == zonegroup.placement_targets.end()) {
+      ldout(cct, 0) << "could not find requested placement id " << request_rule 
+                    << " within zonegroup " << dendl;
+      return -ERR_INVALID_LOCATION_CONSTRAINT;
+    }
+  } else if (!user_info.default_placement.empty()) {
+    titer = zonegroup.placement_targets.find(user_info.default_placement);
+    if (titer == zonegroup.placement_targets.end()) {
+      ldout(cct, 0) << "could not find user default placement id " << user_info.default_placement
+                    << " within zonegroup " << dendl;
+      return -ERR_INVALID_LOCATION_CONSTRAINT;
+    }
+  } else {
+    if (zonegroup.default_placement.empty()) { // zonegroup default rule as fallback, it should not be empty.
+      ldout(cct, 0) << "misconfiguration, zonegroup default placement id should not be empty." << dendl;
+      return -ERR_ZONEGROUP_DEFAULT_PLACEMENT_MISCONFIGURATION;
+    } else {
+      titer = zonegroup.placement_targets.find(zonegroup.default_placement);
+      if (titer == zonegroup.placement_targets.end()) {
+        ldout(cct, 0) << "could not find zonegroup default placement id " << zonegroup.default_placement
+                      << " within zonegroup " << dendl;
+        return -ERR_INVALID_LOCATION_CONSTRAINT;
+      }
+    }
+  }
+
+  /* now check tag for the rule, whether user is permitted to use rule */
+  const auto& target_rule = titer->second;
+  if (!target_rule.user_permitted(user_info.placement_tags)) {
+    ldout(cct, 0) << "user not permitted to use placement rule " << titer->first  << dendl;
+    return -EPERM;
+  }
+
+  if (pselected_rule_name)
+    *pselected_rule_name = titer->first;
+
+  return select_bucket_location_by_rule(titer->first, rule_info);
+}
+
+int RGWSI_Zone::select_bucket_location_by_rule(const string& location_rule, RGWZonePlacementInfo *rule_info)
+{
+  if (location_rule.empty()) {
+    /* we can only reach here if we're trying to set a bucket location from a bucket
+     * created on a different zone, using a legacy / default pool configuration
+     */
+    if (rule_info) {
+      return select_legacy_bucket_placement(rule_info);
+    }
+
+    return 0;
+  }
+
+  /*
+   * make sure that zone has this rule configured. We're
+   * checking it for the local zone, because that's where this bucket object is going to
+   * reside.
+   */
+  map<string, RGWZonePlacementInfo>::iterator piter = get_zone_params().placement_pools.find(location_rule);
+  if (piter == get_zone_params().placement_pools.end()) {
+    /* couldn't find, means we cannot really place data for this bucket in this zone */
+    if (get_zonegroup().equals(zonegroup->get_id())) {
+      /* that's a configuration error, zone should have that rule, as we're within the requested
+       * zonegroup */
+      ldout(cct, 0) << "ERROR: This zone does not contain placement rule"
+                    << location_rule << " present in the zonegroup!" << dendl;
+      return -EINVAL;
+    } else {
+      /* oh, well, data is not going to be placed here, bucket object is just a placeholder */
+      return 0;
+    }
+  }
+
+  RGWZonePlacementInfo& placement_info = piter->second;
+
+  if (rule_info) {
+    *rule_info = placement_info;
+  }
+
+  return 0;
+}
+
+int RGWSI_Zone::select_bucket_placement(RGWUserInfo& user_info, const string& zonegroup_id, const string& placement_rule,
+                                      string *pselected_rule_name, RGWZonePlacementInfo *rule_info)
+{
+  if (!get_zone_params().placement_pools.empty()) {
+    return select_new_bucket_location(user_info, zonegroup_id, placement_rule,
+                                      pselected_rule_name, rule_info);
+  }
+
+  if (pselected_rule_name) {
+    pselected_rule_name->clear();
+  }
+
+  if (rule_info) {
+    return select_legacy_bucket_placement(rule_info);
+  }
+
+  return 0;
+}
+
+int RGWSI_Zone::select_legacy_bucket_placement(RGWZonePlacementInfo *rule_info)
+{
+  bufferlist map_bl;
+  map<string, bufferlist> m;
+  string pool_name;
+  bool write_map = false;
+
+  rgw_raw_obj obj(get_zone_params().domain_root, avail_pools);
+
+  auto obj_ctx = sysobj_svc->init_obj_ctx();
+  auto sysobj = obj_ctx.get_obj(obj);
+
+  int ret = sysobj.rop().read(&map_bl);
+  if (ret < 0) {
+    goto read_omap;
+  }
+
+  try {
+    auto iter = map_bl.cbegin();
+    decode(m, iter);
+  } catch (buffer::error& err) {
+    ldout(cct, 0) << "ERROR: couldn't decode avail_pools" << dendl;
+  }
+
+read_omap:
+  if (m.empty()) {
+    ret = sysobj.omap().get_all(&m);
+
+    write_map = true;
+  }
+
+  if (ret < 0 || m.empty()) {
+    vector<rgw_pool> pools;
+    string s = string("default.") + default_storage_pool_suffix;
+    pools.push_back(rgw_pool(s));
+    vector<int> retcodes;
+    bufferlist bl;
+    ret = rados_svc->pool().create(pools, &retcodes);
+    if (ret < 0)
+      return ret;
+    ret = sysobj.omap().set(s, bl);
+    if (ret < 0)
+      return ret;
+    m[s] = bl;
+  }
+
+  if (write_map) {
+    bufferlist new_bl;
+    encode(m, new_bl);
+    ret = sysobj.wop().write(new_bl);
+    if (ret < 0) {
+      ldout(cct, 0) << "WARNING: could not save avail pools map info ret=" << ret << dendl;
+    }
+  }
+
+  auto miter = m.begin();
+  if (m.size() > 1) {
+    // choose a pool at random
+    auto r = ceph::util::generate_random_number<size_t>(0, m.size() - 1);
+    std::advance(miter, r);
+  }
+  pool_name = miter->first;
+
+  rule_info->data_pool = pool_name;
+  rule_info->data_extra_pool = pool_name;
+  rule_info->index_pool = pool_name;
+  rule_info->index_type = RGWBIType_Normal;
+
+  return 0;
+}
+
+int RGWSI_Zone::update_placement_map()
+{
+  bufferlist header;
+  map<string, bufferlist> m;
+  rgw_raw_obj obj(zone_params->domain_root, avail_pools);
+
+  auto obj_ctx = sysobj_svc->init_obj_ctx();
+  auto sysobj = obj_ctx.get_obj(obj);
+
+  int ret = sysobj.omap().get_all(&m);
+  if (ret < 0)
+    return ret;
+
+  bufferlist new_bl;
+  encode(m, new_bl);
+  ret = sysobj.wop().write(new_bl);
+  if (ret < 0) {
+    ldout(cct, 0) << "WARNING: could not save avail pools map info ret=" << ret << dendl;
+  }
+
+  return ret;
+}
+
+int RGWSI_Zone::add_bucket_placement(const rgw_pool& new_pool)
+{
+  librados::Rados *rad = rados_svc->get_rados_handle();
+  int ret = rad->pool_lookup(new_pool.name.c_str());
+  if (ret < 0) // DNE, or something
+    return ret;
+
+  rgw_raw_obj obj(zone_params->domain_root, avail_pools);
+  auto obj_ctx = sysobj_svc->init_obj_ctx();
+  auto sysobj = obj_ctx.get_obj(obj);
+
+  bufferlist empty_bl;
+  ret = sysobj.omap().set(new_pool.to_str(), empty_bl);
+
+  // don't care about return value
+  update_placement_map();
+
+  return ret;
+}
+
+int RGWSI_Zone::remove_bucket_placement(const rgw_pool& old_pool)
+{
+  rgw_raw_obj obj(zone_params->domain_root, avail_pools);
+  auto obj_ctx = sysobj_svc->init_obj_ctx();
+  auto sysobj = obj_ctx.get_obj(obj);
+
+  int ret = sysobj.omap().del(old_pool.to_str());
+
+  // don't care about return value
+  update_placement_map();
+
+  return ret;
+}
+
+int RGWSI_Zone::list_placement_set(set<rgw_pool>& names)
+{
+  bufferlist header;
+  map<string, bufferlist> m;
+
+  rgw_raw_obj obj(zone_params->domain_root, avail_pools);
+  auto obj_ctx = sysobj_svc->init_obj_ctx();
+  auto sysobj = obj_ctx.get_obj(obj);
+  int ret = sysobj.omap().get_all(&m);
+  if (ret < 0)
+    return ret;
+
+  names.clear();
+  map<string, bufferlist>::iterator miter;
+  for (miter = m.begin(); miter != m.end(); ++miter) {
+    names.insert(rgw_pool(miter->first));
+  }
+
+  return names.size();
+}
+

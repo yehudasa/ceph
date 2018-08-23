@@ -22,6 +22,7 @@ public:
 class RGWSI_Zone : public RGWServiceInstance
 {
   std::shared_ptr<RGWSI_SysObj> sysobj_svc;
+  std::shared_ptr<RGWSI_RADOS> rados_svc;
 
   std::shared_ptr<RGWRealm> realm;
   std::shared_ptr<RGWZoneGroup> zonegroup;
@@ -50,6 +51,10 @@ class RGWSI_Zone : public RGWServiceInstance
   int init_zg_from_local(bool *creating_defaults);
   int convert_regionmap();
 
+  int update_placement_map();
+  int add_bucket_placement(const rgw_pool& new_pool);
+  int remove_bucket_placement(const rgw_pool& old_pool);
+  int list_placement_set(set<rgw_pool>& names);
 public:
   RGWSI_Zone(RGWService *svc, CephContext *cct): RGWServiceInstance(svc, cct) {}
 
@@ -101,6 +106,7 @@ public:
   bool need_to_log_data() const;
   bool need_to_log_metadata() const;
   bool can_reshard() const;
+  bool is_syncing_bucket_meta(const rgw_bucket& bucket);
 
   int list_zonegroups(list<string>& zonegroups);
   int list_regions(list<string>& regions);
