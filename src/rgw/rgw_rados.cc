@@ -78,6 +78,8 @@ using namespace librados;
 
 #include "services/svc_zone.h"
 #include "services/svc_zone_utils.h"
+#include "services/svc_quota.h"
+#include "services/svc_sys_obj.h"
 
 #include "compressor/Compressor.h"
 
@@ -2196,7 +2198,7 @@ int RGWRados::init_complete()
     }
 
     Mutex::Locker dl(data_sync_thread_lock);
-    for (auto iter : zone_data_sync_from_map) {
+    for (auto iter : svc.zone->get_zone_data_sync_from_map()) {
       ldout(cct, 5) << "starting data sync thread for zone " << iter.first << dendl;
       auto *thread = new RGWDataSyncProcessorThread(this, async_rados, iter.first,
                                                     &*bucket_trim);
@@ -2242,7 +2244,7 @@ int RGWRados::init_complete()
   binfo_cache = new RGWChainedCacheImpl<bucket_info_entry>;
   binfo_cache->init(this);
 
-  bool need_tombstone_cache = !zone_data_notify_to_map.empty(); /* have zones syncing from us */
+  bool need_tombstone_cache = !svc.zone->get_zone_data_notify_to_map().empty(); /* have zones syncing from us */
 
   if (need_tombstone_cache) {
     obj_tombstone_cache = new tombstone_cache_t(cct->_conf->rgw_obj_tombstone_cache_size);
@@ -2276,7 +2278,7 @@ int RGWRados::initialize()
     cct->_conf.get_val<double>("rgw_inject_notify_timeout_probability");
   max_notify_retries = cct->_conf.get_val<uint64_t>("rgw_max_notify_retries");
 
-  svc_registry = std::make_unique<RGWServiceRegistry>();
+  svc_registry = std::make_unique<RGWServiceRegistry>(cct);
 
   JSONFormattable zone_svc_conf;
   ret = svc_registry->get_instance("zone", zone_svc_conf, &svc.zone);
@@ -5153,6 +5155,7 @@ int RGWRados::stat_remote_obj(RGWObjectCtx& obj_ctx,
       /* source is in the master zonegroup */
       conn = svc.zone->get_master_conn();
     } else {
+      auto& zonegroup_conn_map = svc.zone->get_zonegroup_conn_map();
       map<string, RGWRESTConn *>::iterator iter = zonegroup_conn_map.find(src_bucket_info.zonegroup);
       if (iter == zonegroup_conn_map.end()) {
         ldout(cct, 0) << "could not find zonegroup connection to zonegroup: " << source_zone << dendl;
@@ -5161,6 +5164,7 @@ int RGWRados::stat_remote_obj(RGWObjectCtx& obj_ctx,
       conn = iter->second;
     }
   } else {
+    auto& zone_conn_map = svc.zone->get_zone_conn_map();
     map<string, RGWRESTConn *>::iterator iter = zone_conn_map.find(source_zone);
     if (iter == zone_conn_map.end()) {
       ldout(cct, 0) << "could not find zone connection to zone: " << source_zone << dendl;
@@ -5286,6 +5290,8 @@ int RGWRados::fetch_remote_obj(RGWObjectCtx& obj_ctx,
   }
 
   RGWRESTConn *conn;
+  auto& zone_conn_map = svc.zone->get_zone_conn_map();
+  auto& zonegroup_conn_map = svc.zone->get_zonegroup_conn_map();
   if (source_zone.empty()) {
     if (dest_bucket_info.zonegroup.empty()) {
       /* source is in the master zonegroup */
@@ -5519,7 +5525,7 @@ int RGWRados::copy_obj_to_remote_dest(RGWObjState *astate,
 
   RGWRESTStreamS3PutObj *out_stream_req;
 
-  auto rest_master_conn = svc.zone->get_master_zone();
+  auto rest_master_conn = svc.zone->get_master_conn();
 
   int ret = rest_master_conn->put_obj_async(user_id, dest_obj, astate->size, src_attrs, true, &out_stream_req);
   if (ret < 0) {
@@ -5974,7 +5980,7 @@ int RGWRados::delete_bucket(RGWBucketInfo& bucket_info, RGWObjVersionTracker& ob
     return r;
 
   /* if the bucket is not synced we can remove the meta file */
-  if (!is_syncing_bucket_meta(bucket)) {
+  if (!svc.zone->is_syncing_bucket_meta(bucket)) {
     RGWObjVersionTracker objv_tracker;
     string entry = bucket.get_key();
     r= rgw_bucket_instance_remove_entry(this, entry, &objv_tracker);
@@ -8557,7 +8563,7 @@ int RGWRados::bucket_index_link_olh(const RGWBucketInfo& bucket_info, RGWObjStat
   if (_zones_trace) {
     zones_trace = *_zones_trace;
   }
-  zones_trace.insert(get_zone().id);
+  zones_trace.insert(svc.zone->get_zone().id);
 
   BucketShard bs(this);
 
@@ -8568,7 +8574,7 @@ int RGWRados::bucket_index_link_olh(const RGWBucketInfo& bucket_info, RGWObjStat
                     return cls_rgw_bucket_link_olh(bs->index_ctx, op,
                                                    bs->bucket_obj, key, olh_state.olh_tag, delete_marker, op_tag, meta, olh_epoch,
                                                    unmod_since, high_precision_time,
-                                                   get_zone().log_data, zones_trace);
+                                                   svc.zone->get_zone().log_data, zones_trace);
                     });
   if (r < 0) {
     ldout(cct, 20) << "cls_rgw_bucket_link_olh() returned r=" << r << dendl;
@@ -8601,7 +8607,7 @@ int RGWRados::bucket_index_unlink_instance(const RGWBucketInfo& bucket_info, con
   if (_zones_trace) {
     zones_trace = *_zones_trace;
   }
-  zones_trace.insert(get_zone().id);
+  zones_trace.insert(svc.zone->get_zone().id);
 
   BucketShard bs(this);
 
@@ -8610,7 +8616,7 @@ int RGWRados::bucket_index_unlink_instance(const RGWBucketInfo& bucket_info, con
                     librados::ObjectWriteOperation op;
                     cls_rgw_guard_bucket_resharding(op, -ERR_BUSY_RESHARDING);
                     return cls_rgw_bucket_unlink_instance(bs->index_ctx, op, bs->bucket_obj, key, op_tag,
-                                                          olh_tag, olh_epoch, get_zone().log_data, zones_trace);
+                                                          olh_tag, olh_epoch, svc.zone->get_zone().log_data, zones_trace);
                     });
   if (r < 0) {
     ldout(cct, 20) << "cls_rgw_bucket_link_olh() returned r=" << r << dendl;
@@ -9376,11 +9382,11 @@ void RGWRados::get_bucket_meta_oid(const rgw_bucket& bucket, string& oid)
 void RGWRados::get_bucket_instance_obj(const rgw_bucket& bucket, rgw_raw_obj& obj)
 {
   if (!bucket.oid.empty()) {
-    obj.init(get_zone_params().domain_root, bucket.oid);
+    obj.init(svc.zone->get_zone_params().domain_root, bucket.oid);
   } else {
     string oid;
     get_bucket_meta_oid(bucket, oid);
-    obj.init(get_zone_params().domain_root, oid);
+    obj.init(svc.zone->get_zone_params().domain_root, oid);
   }
 }
 
@@ -9415,11 +9421,13 @@ int RGWRados::get_bucket_instance_from_oid(RGWObjectCtx& obj_ctx, const string& 
                                            rgw_cache_entry_info *cache_info,
 					   boost::optional<obj_version> refresh_version)
 {
-  ldout(cct, 20) << "reading from " << get_zone_params().domain_root << ":" << oid << dendl;
+  auto& domain_root = svc.zone->get_zone_params().domain_root;
+
+  ldout(cct, 20) << "reading from " << domain_root << ":" << oid << dendl;
 
   bufferlist epbl;
 
-  int ret = rgw_get_system_obj(this, obj_ctx, get_zone_params().domain_root,
+  int ret = rgw_get_system_obj(this, obj_ctx, domain_root,
 			       oid, epbl, &info.objv_tracker, pmtime, pattrs,
 			       cache_info, refresh_version);
   if (ret < 0) {
@@ -9451,7 +9459,7 @@ int RGWRados::get_bucket_entrypoint_info(RGWObjectCtx& obj_ctx,
   string bucket_entry;
 
   rgw_make_bucket_entry_name(tenant_name, bucket_name, bucket_entry);
-  int ret = rgw_get_system_obj(this, obj_ctx, get_zone_params().domain_root,
+  int ret = rgw_get_system_obj(this, obj_ctx, svc.zone->get_zone_params().domain_root,
 			       bucket_entry, bl, objv_tracker, pmtime, pattrs,
 			       cache_info, refresh_version);
   if (ret < 0) {
@@ -10331,12 +10339,12 @@ int RGWRados::cls_obj_prepare_op(BucketShard& bs, RGWModifyOp op, string& tag,
   if (_zones_trace) {
     zones_trace = *_zones_trace;
   }
-  zones_trace.insert(get_zone().id);
+  zones_trace.insert(svc.zone->get_zone().id);
 
   ObjectWriteOperation o;
   cls_rgw_obj_key key(obj.key.get_index_key_name(), obj.key.instance);
   cls_rgw_guard_bucket_resharding(o, -ERR_BUSY_RESHARDING);
-  cls_rgw_bucket_prepare_op(o, op, tag, key, obj.key.get_loc(), get_zone().log_data, bilog_flags, zones_trace);
+  cls_rgw_bucket_prepare_op(o, op, tag, key, obj.key.get_loc(), svc.zone->get_zone().log_data, bilog_flags, zones_trace);
   return bs.index_ctx.operate(bs.bucket_obj, &o);
 }
 
@@ -10354,7 +10362,7 @@ int RGWRados::cls_obj_complete_op(BucketShard& bs, const rgw_obj& obj, RGWModify
   if (_zones_trace) {
     zones_trace = *_zones_trace;
   }
-  zones_trace.insert(get_zone().id);
+  zones_trace.insert(svc.zone->get_zone().id);
 
   rgw_bucket_entry_ver ver;
   ver.pool = pool;
@@ -10362,10 +10370,10 @@ int RGWRados::cls_obj_complete_op(BucketShard& bs, const rgw_obj& obj, RGWModify
   cls_rgw_obj_key key(ent.key.name, ent.key.instance);
   cls_rgw_guard_bucket_resharding(o, -ERR_BUSY_RESHARDING);
   cls_rgw_bucket_complete_op(o, op, tag, ver, key, dir_meta, remove_objs,
-                             get_zone().log_data, bilog_flags, &zones_trace);
+                             svc.zone->get_zone().log_data, bilog_flags, &zones_trace);
   complete_op_data *arg;
   index_completion_manager->create_completion(obj, op, tag, ver, key, dir_meta, remove_objs,
-                                              get_zone().log_data, bilog_flags, &zones_trace, &arg);
+                                              svc.zone->get_zone().log_data, bilog_flags, &zones_trace, &arg);
   librados::AioCompletion *completion = arg->rados_completion;
   int ret = bs.index_ctx.aio_operate(bs.bucket_obj, arg->rados_completion, &o);
   completion->release(); /* can't reference arg here, as it might have already been released */
@@ -10662,7 +10670,7 @@ check_updates:
 int RGWRados::cls_obj_usage_log_add(const string& oid,
 				    rgw_usage_log_info& info)
 {
-  rgw_raw_obj obj(get_zone_params().usage_log_pool, oid);
+  rgw_raw_obj obj(svc.zone->get_zone_params().usage_log_pool, oid);
 
   rgw_rados_ref ref;
   int r = get_raw_obj_ref(obj, &ref);
@@ -10680,7 +10688,7 @@ int RGWRados::cls_obj_usage_log_add(const string& oid,
 int RGWRados::cls_obj_usage_log_read(string& oid, string& user, uint64_t start_epoch, uint64_t end_epoch, uint32_t max_entries,
                                      string& read_iter, map<rgw_user_bucket, rgw_usage_log_entry>& usage, bool *is_truncated)
 {
-  rgw_raw_obj obj(get_zone_params().usage_log_pool, oid);
+  rgw_raw_obj obj(svc.zone->get_zone_params().usage_log_pool, oid);
 
   rgw_rados_ref ref;
   int r = get_raw_obj_ref(obj, &ref);
@@ -10698,7 +10706,7 @@ int RGWRados::cls_obj_usage_log_read(string& oid, string& user, uint64_t start_e
 
 int RGWRados::cls_obj_usage_log_trim(string& oid, string& user, uint64_t start_epoch, uint64_t end_epoch)
 {
-  rgw_raw_obj obj(get_zone_params().usage_log_pool, oid);
+  rgw_raw_obj obj(svc.zone->get_zone_params().usage_log_pool, oid);
 
   rgw_rados_ref ref;
   int r = get_raw_obj_ref(obj, &ref);
@@ -10712,7 +10720,7 @@ int RGWRados::cls_obj_usage_log_trim(string& oid, string& user, uint64_t start_e
 
 int RGWRados::cls_obj_usage_log_clear(string& oid)
 {
-  rgw_raw_obj obj(get_zone_params().usage_log_pool, oid);
+  rgw_raw_obj obj(svc.zone->get_zone_params().usage_log_pool, oid);
 
   rgw_rados_ref ref;
   int r = get_raw_obj_ref(obj, &ref);
@@ -10731,7 +10739,7 @@ int RGWRados::remove_objs_from_index(RGWBucketInfo& bucket_info, list<rgw_obj_in
   librados::IoCtx index_ctx;
   string dir_oid;
 
-  uint8_t suggest_flag = (get_zone().log_data ? CEPH_RGW_DIR_SUGGEST_LOG_OP : 0);
+  uint8_t suggest_flag = (svc.zone->get_zone().log_data ? CEPH_RGW_DIR_SUGGEST_LOG_OP : 0);
 
   int r = open_bucket_index(bucket_info, index_ctx, dir_oid);
   if (r < 0)
@@ -10762,7 +10770,7 @@ int RGWRados::check_disk_state(librados::IoCtx io_ctx,
                                bufferlist& suggested_updates)
 {
   const rgw_bucket& bucket = bucket_info.bucket;
-  uint8_t suggest_flag = (get_zone().log_data ? CEPH_RGW_DIR_SUGGEST_LOG_OP : 0);
+  uint8_t suggest_flag = (svc.zone->get_zone().log_data ? CEPH_RGW_DIR_SUGGEST_LOG_OP : 0);
 
   std::string loc;
 
@@ -10910,7 +10918,7 @@ int RGWRados::cls_user_get_header(const string& user_id, cls_user_header *header
 {
   string buckets_obj_id;
   rgw_get_buckets_obj(user_id, buckets_obj_id);
-  rgw_raw_obj obj(get_zone_params().user_uid_pool, buckets_obj_id);
+  rgw_raw_obj obj(svc.zone->get_zone_params().user_uid_pool, buckets_obj_id);
 
   rgw_rados_ref ref;
   int r = get_raw_obj_ref(obj, &ref);
@@ -10935,7 +10943,7 @@ int RGWRados::cls_user_reset_stats(const string& user_id)
 {
   string buckets_obj_id;
   rgw_get_buckets_obj(user_id, buckets_obj_id);
-  rgw_raw_obj obj(get_zone_params().user_uid_pool, buckets_obj_id);
+  rgw_raw_obj obj(svc.zone->get_zone_params().user_uid_pool, buckets_obj_id);
 
   rgw_rados_ref ref;
   int r = get_raw_obj_ref(obj, &ref);
@@ -10952,7 +10960,7 @@ int RGWRados::cls_user_get_header_async(const string& user_id, RGWGetUserHeader_
 {
   string buckets_obj_id;
   rgw_get_buckets_obj(user_id, buckets_obj_id);
-  rgw_raw_obj obj(get_zone_params().user_uid_pool, buckets_obj_id);
+  rgw_raw_obj obj(svc.zone->get_zone_params().user_uid_pool, buckets_obj_id);
 
   rgw_rados_ref ref;
   int r = get_raw_obj_ref(obj, &ref);
@@ -11080,7 +11088,7 @@ int RGWRados::complete_sync_user_stats(const rgw_user& user_id)
 {
   string buckets_obj_id;
   rgw_get_buckets_obj(user_id, buckets_obj_id);
-  rgw_raw_obj obj(get_zone_params().user_uid_pool, buckets_obj_id);
+  rgw_raw_obj obj(svc.zone->get_zone_params().user_uid_pool, buckets_obj_id);
   return cls_user_complete_stats_sync(obj);
 }
 
@@ -11313,7 +11321,7 @@ string RGWStateLog::get_oid(const string& object) {
 }
 
 int RGWStateLog::open_ioctx(librados::IoCtx& ioctx) {
-  auto& pool = store->get_zone_params().log_pook;
+  auto& pool = store->svc.zone->get_zone_params().log_pool;
   int r = rgw_init_ioctx(store->get_rados_handle(), pool, ioctx);
   if (r < 0) {
     lderr(store->ctx()) << "ERROR: could not open rados pool" << dendl;
@@ -11807,7 +11815,7 @@ string RGWRados::get_mfa_oid(const rgw_user& user)
 int RGWRados::get_mfa_ref(const rgw_user& user, rgw_rados_ref *ref)
 {
   string oid = get_mfa_oid(user);
-  rgw_raw_obj obj(get_zone_params().otp_pool, oid);
+  rgw_raw_obj obj(svc.zone->get_zone_params().otp_pool, oid);
   return get_system_obj_ref(obj, ref);
 }
 
@@ -11955,7 +11963,7 @@ int RGWRados::set_mfa(const string& oid, const list<rados::cls::otp::otp_info_t>
                       bool reset_obj, RGWObjVersionTracker *objv_tracker,
                       const real_time& mtime)
 {
-  rgw_raw_obj obj(get_zone_params().otp_pool, oid);
+  rgw_raw_obj obj(svc.zone->get_zone_params().otp_pool, oid);
   rgw_rados_ref ref;
   int r = get_system_obj_ref(obj, &ref);
   if (r < 0) {
@@ -11982,7 +11990,7 @@ int RGWRados::set_mfa(const string& oid, const list<rados::cls::otp::otp_info_t>
 int RGWRados::list_mfa(const string& oid, list<rados::cls::otp::otp_info_t> *result,
                        RGWObjVersionTracker *objv_tracker, ceph::real_time *pmtime)
 {
-  rgw_raw_obj obj(get_zone_params().otp_pool, oid);
+  rgw_raw_obj obj(svc.zone->get_zone_params().otp_pool, oid);
   rgw_rados_ref ref;
   int r = get_system_obj_ref(obj, &ref);
   if (r < 0) {

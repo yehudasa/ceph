@@ -117,7 +117,7 @@ public:
     if (ret < 0) {
       return ret;
     }
-    *ref = std::static_pointer_cast<T>(r);
+    *ref = std::static_pointer_cast<typename T::element_type>(r);
     return 0;
   }
 

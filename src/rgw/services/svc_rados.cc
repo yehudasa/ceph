@@ -247,6 +247,17 @@ int RGWSI_RADOS::Pool::create(const vector<rgw_pool>& pools, vector<int> *retcod
   return 0;
 }
 
+int RGWSI_RADOS::Pool::lookup(const rgw_pool& pool)
+{
+  librados::Rados *rad = rados_svc->get_rados_handle();
+  int ret = rad->pool_lookup(pool.name.c_str());
+  if (ret < 0) {
+    return ret;
+  }
+
+  return 0;
+}
+
 int RGWSI_RADOS::Pool::List::init(const string& marker, RGWAccessListFilter *filter)
 {
   if (ctx.initialized) {

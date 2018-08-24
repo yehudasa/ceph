@@ -7,6 +7,8 @@
 #include "include/str_list.h"
 #include "include/rados/librados.hpp"
 
+#include "services/svc_sys_obj.h"
+
 #define dout_subsys ceph_subsys_rgw
 
 using ceph::crypto::MD5;
@@ -245,7 +247,7 @@ int seed::save_torrent_file()
   auto obj_ctx = store->svc.sysobj->init_obj_ctx();
   auto sysobj = obj_ctx.get_obj(raw_obj);
 
-  op_ret = sysobj.omap().set(key, &bl);
+  op_ret = sysobj.omap().set(key, bl);
   if (op_ret < 0)
   {
     ldout(s->cct, 0) << "ERROR: failed to omap_set() op_ret = " << op_ret << dendl;

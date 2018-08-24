@@ -1154,10 +1154,10 @@ int RGWSI_Zone::update_placement_map()
 
 int RGWSI_Zone::add_bucket_placement(const rgw_pool& new_pool)
 {
-  librados::Rados *rad = rados_svc->get_rados_handle();
-  int ret = rad->pool_lookup(new_pool.name.c_str());
-  if (ret < 0) // DNE, or something
+  int ret = rados_svc->pool().lookup(new_pool);
+  if (ret < 0) { // DNE, or something
     return ret;
+  }
 
   rgw_raw_obj obj(zone_params->domain_root, avail_pools);
   auto obj_ctx = sysobj_svc->init_obj_ctx();

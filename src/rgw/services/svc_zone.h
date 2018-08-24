@@ -80,8 +80,16 @@ public:
     return rest_master_conn;
   }
 
+  map<string, RGWRESTConn *>& get_zonegroup_conn_map() {
+    return zonegroup_conn_map;
+  }
+
   map<string, RGWRESTConn *>& get_zone_conn_map() {
     return zone_conn_map;
+  }
+
+  map<string, RGWRESTConn *>& get_zone_data_sync_from_map() {
+    return zone_data_sync_from_map;
   }
 
   map<string, RGWRESTConn *>& get_zone_data_notify_to_map() {

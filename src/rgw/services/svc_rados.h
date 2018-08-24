@@ -111,6 +111,7 @@ public:
                           pool(p.pool) {}
 
     int create(const std::vector<rgw_pool>& pools, std::vector<int> *retcodes);
+    int lookup(const rgw_pool& pool);
 
     struct List {
       Pool& pool;
