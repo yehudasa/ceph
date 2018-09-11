@@ -376,8 +376,6 @@ void RGWOp_BILog_List::execute() {
   RGWBucketInfo bucket_info;
   unsigned max_entries;
 
-  RGWObjectCtx& obj_ctx = *static_cast<RGWObjectCtx *>(s->obj_ctx);
-
   if (bucket_name.empty() && bucket_instance.empty()) {
     dout(5) << "ERROR: neither bucket nor bucket instance specified" << dendl;
     http_ret = -EINVAL;
@@ -391,13 +389,13 @@ void RGWOp_BILog_List::execute() {
   }
 
   if (!bucket_instance.empty()) {
-    http_ret = store->get_bucket_instance_info(obj_ctx, bucket_instance, bucket_info, NULL, NULL);
+    http_ret = store->get_bucket_instance_info(*s->sysobj_ctx, bucket_instance, bucket_info, NULL, NULL);
     if (http_ret < 0) {
       dout(5) << "could not get bucket instance info for bucket instance id=" << bucket_instance << dendl;
       return;
     }
   } else { /* !bucket_name.empty() */
-    http_ret = store->get_bucket_info(obj_ctx, tenant_name, bucket_name, bucket_info, NULL, NULL);
+    http_ret = store->get_bucket_info(*s->sysobj_ctx, tenant_name, bucket_name, bucket_info, NULL, NULL);
     if (http_ret < 0) {
       dout(5) << "could not get bucket info for bucket=" << bucket_name << dendl;
       return;
@@ -469,8 +467,6 @@ void RGWOp_BILog_Info::execute() {
          bucket_instance = s->info.args.get("bucket-instance");
   RGWBucketInfo bucket_info;
 
-  RGWObjectCtx& obj_ctx = *static_cast<RGWObjectCtx *>(s->obj_ctx);
-
   if (bucket_name.empty() && bucket_instance.empty()) {
     dout(5) << "ERROR: neither bucket nor bucket instance specified" << dendl;
     http_ret = -EINVAL;
@@ -484,13 +480,13 @@ void RGWOp_BILog_Info::execute() {
   }
 
   if (!bucket_instance.empty()) {
-    http_ret = store->get_bucket_instance_info(obj_ctx, bucket_instance, bucket_info, NULL, NULL);
+    http_ret = store->get_bucket_instance_info(*s->sysobj_ctx, bucket_instance, bucket_info, NULL, NULL);
     if (http_ret < 0) {
       dout(5) << "could not get bucket instance info for bucket instance id=" << bucket_instance << dendl;
       return;
     }
   } else { /* !bucket_name.empty() */
-    http_ret = store->get_bucket_info(obj_ctx, tenant_name, bucket_name, bucket_info, NULL, NULL);
+    http_ret = store->get_bucket_info(*s->sysobj_ctx, tenant_name, bucket_name, bucket_info, NULL, NULL);
     if (http_ret < 0) {
       dout(5) << "could not get bucket info for bucket=" << bucket_name << dendl;
       return;
@@ -531,8 +527,6 @@ void RGWOp_BILog_Delete::execute() {
 
   RGWBucketInfo bucket_info;
 
-  RGWObjectCtx& obj_ctx = *static_cast<RGWObjectCtx *>(s->obj_ctx);
-
   http_ret = 0;
   if ((bucket_name.empty() && bucket_instance.empty()) ||
       end_marker.empty()) {
@@ -548,13 +542,13 @@ void RGWOp_BILog_Delete::execute() {
   }
 
   if (!bucket_instance.empty()) {
-    http_ret = store->get_bucket_instance_info(obj_ctx, bucket_instance, bucket_info, NULL, NULL);
+    http_ret = store->get_bucket_instance_info(*s->sysobj_ctx, bucket_instance, bucket_info, NULL, NULL);
     if (http_ret < 0) {
       dout(5) << "could not get bucket instance info for bucket instance id=" << bucket_instance << dendl;
       return;
     }
   } else { /* !bucket_name.empty() */
-    http_ret = store->get_bucket_info(obj_ctx, tenant_name, bucket_name, bucket_info, NULL, NULL);
+    http_ret = store->get_bucket_info(*s->sysobj_ctx, tenant_name, bucket_name, bucket_info, NULL, NULL);
     if (http_ret < 0) {
       dout(5) << "could not get bucket info for bucket=" << bucket_name << dendl;
       return;
@@ -911,7 +905,7 @@ void RGWOp_BILog_Status::execute()
   }
 
   // read the bucket instance info for num_shards
-  RGWObjectCtx ctx(store);
+  auto ctx = store->svc.sysobj->init_obj_ctx();
   RGWBucketInfo info;
   http_ret = store->get_bucket_instance_info(ctx, bucket, info, nullptr, nullptr);
   if (http_ret < 0) {
