@@ -5,6 +5,7 @@
 
 #include "services/svc_zone.h"
 #include "services/svc_zone_utils.h"
+#include "services/svc_sys_obj.h"
 
 #include "cls/lock/cls_lock_client.h"
 #include "cls/rgw/cls_rgw_client.h"
@@ -91,23 +92,25 @@ void RGWAsyncRadosProcessor::queue(RGWAsyncRadosRequest *req) {
 
 int RGWAsyncGetSystemObj::_send_request()
 {
-  return store->get_system_obj(*obj_ctx, read_state, objv_tracker, obj, *pbl, ofs, end, pattrs, NULL);
+  auto sysobj = obj_ctx->get_obj(obj);
+  return sysobj.rop()
+               .set_objv_tracker(objv_tracker)
+               .set_attrs(pattrs)
+               .read(pbl);
 }
 
-RGWAsyncGetSystemObj::RGWAsyncGetSystemObj(RGWCoroutine *caller, RGWAioCompletionNotifier *cn, RGWRados *_store, RGWObjectCtx *_obj_ctx,
+RGWAsyncGetSystemObj::RGWAsyncGetSystemObj(RGWCoroutine *caller, RGWAioCompletionNotifier *cn, RGWSysObjectCtx *_obj_ctx,
                        RGWObjVersionTracker *_objv_tracker, const rgw_raw_obj& _obj,
-                       bufferlist *_pbl, off_t _ofs, off_t _end) : RGWAsyncRadosRequest(caller, cn), store(_store), obj_ctx(_obj_ctx),
-                                                                   objv_tracker(_objv_tracker), obj(_obj), pbl(_pbl), pattrs(NULL),
-                                                                  ofs(_ofs), end(_end)
+                       bufferlist *_pbl) : RGWAsyncRadosRequest(caller, cn), obj_ctx(_obj_ctx),
+                                                                   objv_tracker(_objv_tracker), obj(_obj), pbl(_pbl), pattrs(NULL)
 {
 }
 
 int RGWSimpleRadosReadAttrsCR::send_request()
 {
   req = new RGWAsyncGetSystemObj(this, stack->create_completion_notifier(),
-			         store, &obj_ctx, NULL,
-				 obj,
-				 &bl, 0, -1);
+			         &obj_ctx, NULL,
+				 obj, &bl);
   if (pattrs) {
     req->set_read_attrs(pattrs);
   }
@@ -122,25 +125,42 @@ int RGWSimpleRadosReadAttrsCR::request_complete()
 
 int RGWAsyncPutSystemObj::_send_request()
 {
-  return store->put_system_obj_data(NULL, obj, bl, -1, exclusive, objv_tracker);
+  auto obj_ctx = svc->init_obj_ctx();
+  auto sysobj = obj_ctx.get_obj(obj);
+  return sysobj.wop()
+               .set_objv_tracker(objv_tracker)
+               .set_exclusive(false)
+               .write_data(bl);
 }
 
-RGWAsyncPutSystemObj::RGWAsyncPutSystemObj(RGWCoroutine *caller, RGWAioCompletionNotifier *cn, RGWRados *_store,
+RGWAsyncPutSystemObj::RGWAsyncPutSystemObj(RGWCoroutine *caller, RGWAioCompletionNotifier *cn,
+                     RGWSI_SysObj *_svc,
                      RGWObjVersionTracker *_objv_tracker, rgw_raw_obj& _obj,
                      bool _exclusive, bufferlist& _bl)
-  : RGWAsyncRadosRequest(caller, cn), store(_store), objv_tracker(_objv_tracker),
+  : RGWAsyncRadosRequest(caller, cn), svc(_svc), objv_tracker(_objv_tracker),
     obj(_obj), exclusive(_exclusive), bl(_bl)
 {
 }
 
 int RGWAsyncPutSystemObjAttrs::_send_request()
 {
-  return store->system_obj_set_attrs(NULL, obj, *attrs, NULL, objv_tracker);
+  auto obj_ctx = svc->init_obj_ctx();
+  auto sysobj = obj_ctx.get_obj(obj);
+  map<string, bufferlist> empty_attrs;
+  if (!attrs) {
+    attrs = &empty_attrs;
+  }
+  return sysobj.wop()
+               .set_objv_tracker(objv_tracker)
+               .set_exclusive(false)
+               .set_attrs(*attrs)
+               .write_attrs();
 }
 
-RGWAsyncPutSystemObjAttrs::RGWAsyncPutSystemObjAttrs(RGWCoroutine *caller, RGWAioCompletionNotifier *cn, RGWRados *_store,
+RGWAsyncPutSystemObjAttrs::RGWAsyncPutSystemObjAttrs(RGWCoroutine *caller, RGWAioCompletionNotifier *cn,
+                     RGWSI_SysObj *_svc,
                      RGWObjVersionTracker *_objv_tracker, const rgw_raw_obj& _obj,
-                     map<string, bufferlist> *_attrs) : RGWAsyncRadosRequest(caller, cn), store(_store),
+                     map<string, bufferlist> *_attrs) : RGWAsyncRadosRequest(caller, cn), svc(_svc),
                                                        objv_tracker(_objv_tracker), obj(_obj),
                                                        attrs(_attrs)
 {
@@ -494,7 +514,7 @@ bool RGWOmapAppend::finish() {
 
 int RGWAsyncGetBucketInstanceInfo::_send_request()
 {
-  RGWObjectCtx obj_ctx(store);
+  RGWSysObjectCtx obj_ctx = store->svc.sysobj->init_obj_ctx();
   int r = store->get_bucket_instance_from_oid(obj_ctx, oid, *bucket_info, NULL, NULL);
   if (r < 0) {
     ldout(store->ctx(), 0) << "ERROR: failed to get bucket instance info for "
