@@ -80,11 +80,9 @@ public:
   using BucketRef = std::shared_ptr<Bucket>;
   using ObjectRef = std::shared_ptr<Object>;
 
-  class Bucket {
+  class Bucket : public enable_shared_from_this<Bucket> {
     friend class RGWDataAccess;
     friend class Object;
-
-    std::shared_ptr<Bucket> self_ref;
 
     RGWDataAccess *sd{nullptr};
     RGWBucketInfo bucket_info;
@@ -128,7 +126,7 @@ public:
     std::optional<bufferlist> aclbl;
 
     Object(RGWDataAccess *_sd,
-           BucketRef& _bucket,
+           BucketRef&& _bucket,
            const rgw_obj_key& _key) : sd(_sd),
                                       bucket(_bucket),
                                       key(_key) {}
@@ -165,7 +163,6 @@ public:
 		 const string bucket_id,
 		 BucketRef *bucket) {
     bucket->reset(new Bucket(this, tenant, name, bucket_id));
-    (*bucket)->self_ref = *bucket;
     return (*bucket)->init();
   }
 
@@ -173,7 +170,6 @@ public:
 		 const map<string, bufferlist>& attrs,
 		 BucketRef *bucket) {
     bucket->reset(new Bucket(this));
-    (*bucket)->self_ref = *bucket;
     return (*bucket)->init(bucket_info, attrs);
   }
   friend class Bucket;
