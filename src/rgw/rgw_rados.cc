@@ -10264,6 +10264,7 @@ struct get_obj_data : public RefCountedObject {
   RGWRados *rados;
   RGWObjectCtx *ctx;
   IoCtx io_ctx;
+  rgw_pool cur_pool;
   map<off_t, get_obj_io> io_map;
   map<off_t, librados::AioCompletion *> completion_map;
   uint64_t total_read;
@@ -10557,6 +10558,10 @@ int RGWRados::get_obj_iterate_cb(RGWObjectCtx *ctx, RGWObjState *astate,
       if (!len)
 	  return 0;
     }
+
+    if (d->cur_pool.empty()) {
+      d->cur_pool = read_obj.pool;
+    }
   }
 
   d->throttle.get(len);
@@ -10571,6 +10576,16 @@ int RGWRados::get_obj_iterate_cb(RGWObjectCtx *ctx, RGWObjState *astate,
 
   ldout(cct, 20) << "rados->get_obj_iterate_cb oid=" << read_obj.oid << " obj-ofs=" << obj_ofs << " read_ofs=" << read_ofs << " len=" << len << dendl;
   op.read(read_ofs, len, pbl, NULL);
+
+  /* have we switched to a different pool? */
+  if (read_obj.pool != d->cur_pool) {
+    r = open_pool_ctx(read_obj.pool, d->io_ctx);
+    if (r < 0) {
+      ldout(cct, 0) << "ERROR: " << __func__ << "(): failed to open pool: " << read_obj.pool << " r=" << r << dendl;
+      return r;
+    }
+    d->cur_pool = read_obj.pool;
+  }
 
   librados::IoCtx io_ctx(d->io_ctx);
   io_ctx.locator_set_key(read_obj.loc);
