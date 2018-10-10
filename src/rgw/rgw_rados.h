@@ -2844,7 +2844,9 @@ public:
       RGWRados::Object *source;
 
       struct GetObjState {
-        librados::IoCtx io_ctx;
+        map<rgw_pool, librados::IoCtx> io_ctxs;
+        rgw_pool cur_pool;
+        librados::IoCtx *cur_ioctx{nullptr};
         rgw_obj obj;
         rgw_raw_obj head_obj;
       } state;
