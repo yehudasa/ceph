@@ -534,6 +534,13 @@ int rgw_build_bucket_policies(RGWRados* store, struct req_state* s)
         return -ERR_PERMANENT_REDIRECT;
       }
     }
+
+    /* init dest placement -- only if bucket exists, otherwise request is either not relevant, or
+     * it's a create_bucket request, in which case the op will deal with the placement later */
+    if (s->bucket_exists) {
+      s->dest_placement.storage_class = s->info.storage_class;
+      s->dest_placement.inherit_from(s->bucket_info.placement_rule);
+    }
   }
 
   /* handle user ACL only for those APIs which support it */
@@ -3295,7 +3302,7 @@ int RGWPutObjProcessor_Multipart::prepare(RGWRados *store, string *oid_rand)
 
   int r = manifest_gen.create_begin(store->ctx(), &manifest,
                                     s->bucket_info.placement_rule,
-                                    &s->info.storage_class,
+                                    &s->dest_placement,
                                     bucket, target_obj);
   if (r < 0) {
     return r;
@@ -3394,7 +3401,7 @@ RGWPutObjProcessor *RGWPutObj::select_processor(RGWObjectCtx& obj_ctx, bool *is_
 
   uint64_t part_size = s->cct->_conf->rgw_obj_stripe_size;
 
-  rgw_placement_rule& tail_placement = s->info.storage_class;
+  rgw_placement_rule& tail_placement = s->dest_placement;
 
   if (!multipart) {
     processor = new RGWPutObjProcessor_Atomic(obj_ctx, s->bucket_info, &tail_placement, s->bucket, s->object.name, part_size, s->req_id, s->bucket_info.versioning_enabled());
@@ -3999,7 +4006,7 @@ void RGWPostObj::execute()
       ldpp_dout(this, 15) << "supplied_md5=" << supplied_md5 << dendl;
     }
 
-    rgw_placement_rule& tail_placement = s->info.storage_class;
+    rgw_placement_rule& tail_placement = s->dest_placement;
 
     RGWPutObjProcessor_Atomic processor(*static_cast<RGWObjectCtx *>(s->obj_ctx),
                                         s->bucket_info,
@@ -4849,8 +4856,6 @@ void RGWCopyObj::execute()
     return;
   }
 
-  rgw_placement_rule& dest_placement = s->info.storage_class;
-
   op_ret = store->copy_obj(obj_ctx,
 			   s->user->user_id,
 			   &s->info,
@@ -4859,7 +4864,7 @@ void RGWCopyObj::execute()
 			   src_obj,
 			   dest_bucket_info,
 			   src_bucket_info,
-                           &dest_placement,
+                           s->dest_placement,
 			   &src_mtime,
 			   &mtime,
 			   mod_ptr,
@@ -6592,6 +6597,7 @@ int RGWBulkUploadOp::handle_dir(const boost::string_ref path)
     pmaster_num_shards = nullptr;
   }
 
+  rgw_placement_rule placement_rule(binfo.placement_rule, s->info.storage_class);
 
   if (bucket_exists) {
     rgw_placement_rule selected_placement_rule;
@@ -6600,7 +6606,7 @@ int RGWBulkUploadOp::handle_dir(const boost::string_ref path)
     bucket.name = s->bucket_name;
     op_ret = store->select_bucket_placement(*(s->user),
                                             store->get_zonegroup().get_id(),
-                                            s->info.storage_class,
+                                            placement_rule,
                                             &selected_placement_rule,
                                             nullptr);
     if (selected_placement_rule != binfo.placement_rule) {
@@ -6630,7 +6636,7 @@ int RGWBulkUploadOp::handle_dir(const boost::string_ref path)
   op_ret = store->create_bucket(*(s->user),
                                 bucket,
                                 store->get_zonegroup().get_id(),
-                                s->info.storage_class, binfo.swift_ver_location,
+                                placement_rule, binfo.swift_ver_location,
                                 pquota_info, attrs,
                                 out_info, pobjv, &ep_objv, creation_time,
                                 pmaster_bucket, pmaster_num_shards, true);
@@ -6764,11 +6770,9 @@ int RGWBulkUploadOp::handle_file(const boost::string_ref path,
     return op_ret;
   }
 
-  rgw_placement_rule& tail_placement = s->info.storage_class;
-
   RGWPutObjProcessor_Atomic processor(obj_ctx,
                                       binfo,
-                                      &tail_placement,
+                                      &s->dest_placement,
                                       binfo.bucket,
                                       object.name,
                                       /* part size */
