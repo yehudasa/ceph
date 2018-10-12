@@ -5563,6 +5563,10 @@ void RGWInitMultipart::execute()
     obj_op.meta.category = RGW_OBJ_CATEGORY_MULTIMETA;
     obj_op.meta.flags = PUT_OBJ_CREATE_EXCL;
 
+    bufferlist bl;
+    bl.append(s->dest_placement.get_storage_class);
+    obj_op.meta.attrs[RGW_ATTR_STORAGE_CLASS] = std::move(bl);
+
     op_ret = obj_op.write_meta(0, 0, attrs);
   } while (op_ret == -EEXIST);
 }
