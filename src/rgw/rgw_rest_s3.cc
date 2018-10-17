@@ -1647,6 +1647,8 @@ int RGWPostObj_ObjStore_S3::get_params()
     env.add_var(part.name, part_str);
   } while (!done);
 
+  part_str(parts, "x-amz-storage-class", &s->info.storage_class);
+
   string object_str;
   if (!part_str(parts, "key", &object_str)) {
     err_msg = "Key not specified";
