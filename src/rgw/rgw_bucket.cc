@@ -2077,580 +2077,387 @@ void RGWBucketCompleteInfo::decode_json(JSONObj *obj) {
   JSONDecoder::decode_json("attrs", attrs, obj);
 }
 
-class RGWBucketMetadataHandler : public RGWMetadataHandler {
-
-public:
-  string get_type() override { return "bucket"; }
-
-  int get(RGWRados *store, string& entry, RGWMetadataObject **obj) override {
-    RGWObjVersionTracker ot;
-    RGWBucketEntryPoint be;
-
-    real_time mtime;
-    map<string, bufferlist> attrs;
-    RGWObjectCtx obj_ctx(store);
-
-    string tenant_name, bucket_name;
-    parse_bucket(entry, &tenant_name, &bucket_name);
-    int ret = store->get_bucket_entrypoint_info(obj_ctx, tenant_name, bucket_name, be, &ot, &mtime, &attrs);
-    if (ret < 0)
-      return ret;
-
-    RGWBucketEntryMetadataObject *mdo = new RGWBucketEntryMetadataObject(be, ot.read_version, mtime);
-
-    *obj = mdo;
-
-    return 0;
-  }
-
-  int put(RGWRados *store, string& entry, RGWObjVersionTracker& objv_tracker,
-          real_time mtime, JSONObj *obj, sync_type_t sync_type) override {
-    RGWBucketEntryPoint be, old_be;
-    try {
-      decode_json_obj(be, obj);
-    } catch (JSONDecoder::err& e) {
-      return -EINVAL;
-    }
-
-    real_time orig_mtime;
-    map<string, bufferlist> attrs;
-
-    RGWObjVersionTracker old_ot;
-    RGWObjectCtx obj_ctx(store);
-
-    string tenant_name, bucket_name;
-    parse_bucket(entry, &tenant_name, &bucket_name);
-    int ret = store->get_bucket_entrypoint_info(obj_ctx, tenant_name, bucket_name, old_be, &old_ot, &orig_mtime, &attrs);
-    if (ret < 0 && ret != -ENOENT)
-      return ret;
-
-    // are we actually going to perform this put, or is it too old?
-    if (ret != -ENOENT &&
-        !check_versions(old_ot.read_version, orig_mtime,
-			objv_tracker.write_version, mtime, sync_type)) {
-      return STATUS_NO_APPLY;
-    }
-
-    objv_tracker.read_version = old_ot.read_version; /* maintain the obj version we just read */
-
-    ret = store->put_bucket_entrypoint_info(tenant_name, bucket_name, be, false, objv_tracker, mtime, &attrs);
-    if (ret < 0)
-      return ret;
-
-    /* link bucket */
-    if (be.linked) {
-      ret = rgw_link_bucket(store, be.owner, be.bucket, be.creation_time, false);
-    } else {
-      ret = rgw_unlink_bucket(store, be.owner, be.bucket.tenant,
-                              be.bucket.name, false);
-    }
-
-    return ret;
-  }
-
-  struct list_keys_info {
-    RGWRados *store;
-    RGWListRawObjsCtx ctx;
-  };
-
-  int remove(RGWRados *store, string& entry, RGWObjVersionTracker& objv_tracker) override {
-    RGWBucketEntryPoint be;
-    RGWObjectCtx obj_ctx(store);
-
-    string tenant_name, bucket_name;
-    parse_bucket(entry, &tenant_name, &bucket_name);
-    int ret = store->get_bucket_entrypoint_info(obj_ctx, tenant_name, bucket_name, be, &objv_tracker, NULL, NULL);
-    if (ret < 0)
-      return ret;
-
-    /*
-     * We're unlinking the bucket but we don't want to update the entrypoint here - we're removing
-     * it immediately and don't want to invalidate our cached objv_version or the bucket obj removal
-     * will incorrectly fail.
-     */
-    ret = rgw_unlink_bucket(store, be.owner, tenant_name, bucket_name, false);
-    if (ret < 0) {
-      lderr(store->ctx()) << "could not unlink bucket=" << entry << " owner=" << be.owner << dendl;
-    }
-
-    ret = rgw_bucket_delete_bucket_obj(store, tenant_name, bucket_name, objv_tracker);
-    if (ret < 0) {
-      lderr(store->ctx()) << "could not delete bucket=" << entry << dendl;
-    }
-    /* idempotent */
-    return 0;
-  }
-
-  void get_pool_and_oid(RGWRados *store, const string& key, rgw_pool& pool, string& oid) override {
-    oid = key;
-    pool = store->get_zone_params().domain_root;
-  }
-
-  int list_keys_init(RGWRados *store, const string& marker, void **phandle) override {
-    auto info = std::make_unique<list_keys_info>();
-
-    info->store = store;
-
-    int ret = store->list_raw_objects_init(store->get_zone_params().domain_root, marker,
-                                           &info->ctx);
-    if (ret < 0) {
-      return ret;
-    }
-    *phandle = (void *)info.release();
-
-    return 0;
-  }
-
-  int list_keys_next(void *handle, int max, list<string>& keys, bool *truncated) override {
-    list_keys_info *info = static_cast<list_keys_info *>(handle);
-
-    string no_filter;
-
-    keys.clear();
-
-    RGWRados *store = info->store;
-
-    list<string> unfiltered_keys;
-
-    int ret = store->list_raw_objects_next(no_filter, max, info->ctx,
-                                           unfiltered_keys, truncated);
-    if (ret < 0 && ret != -ENOENT)
-      return ret;
-    if (ret == -ENOENT) {
-      if (truncated)
-        *truncated = false;
-      return 0;
-    }
-
-    // now filter out the system entries
-    list<string>::iterator iter;
-    for (iter = unfiltered_keys.begin(); iter != unfiltered_keys.end(); ++iter) {
-      string& k = *iter;
-
-      if (k[0] != '.') {
-        keys.push_back(k);
-      }
-    }
-
-    return 0;
-  }
-
-  void list_keys_complete(void *handle) override {
-    list_keys_info *info = static_cast<list_keys_info *>(handle);
-    delete info;
-  }
-
-  string get_marker(void *handle) override {
-    list_keys_info *info = static_cast<list_keys_info *>(handle);
-    return info->store->list_raw_objs_get_cursor(info->ctx);
-  }
+struct list_keys_info {
+  RGWRados *store;
+  RGWListRawObjsCtx ctx;
 };
 
-void get_md5_digest(const RGWBucketEntryPoint *be, string& md5_digest) {
+int RGWBucketMetadataHandler::get(RGWRados *store, string& entry, RGWMetadataObject **obj) {
+  RGWObjVersionTracker ot;
+  RGWBucketEntryPoint be;
 
-   char md5[CEPH_CRYPTO_MD5_DIGESTSIZE * 2 + 1];
-   unsigned char m[CEPH_CRYPTO_MD5_DIGESTSIZE];
-   bufferlist bl;
+  real_time mtime;
+  map<string, bufferlist> attrs;
+  RGWObjectCtx obj_ctx(store);
 
-   Formatter *f = new JSONFormatter(false);
-   be->dump(f);
-   f->flush(bl);
+  string tenant_name, bucket_name;
+  parse_bucket(entry, &tenant_name, &bucket_name);
+  int ret = store->get_bucket_entrypoint_info(obj_ctx, tenant_name, bucket_name, be, &ot, &mtime, &attrs);
+  if (ret < 0)
+    return ret;
 
-   MD5 hash;
-   hash.Update((const unsigned char *)bl.c_str(), bl.length());
-   hash.Final(m);
+  RGWBucketEntryMetadataObject *mdo = new RGWBucketEntryMetadataObject(be, ot.read_version, mtime);
 
-   buf_to_hex(m, CEPH_CRYPTO_MD5_DIGESTSIZE, md5);
+  *obj = mdo;
 
-   delete f;
-
-   md5_digest = md5;
+  return 0;
 }
 
-class RGWArchiveBucketMetadataHandler : public RGWBucketMetadataHandler {
+int RGWBucketMetadataHandler::put(RGWRados *store, string& entry, RGWObjVersionTracker& objv_tracker,
+                                  real_time mtime, JSONObj *obj, sync_type_t sync_type) {
+  RGWBucketEntryPoint be, old_be;
+  try {
+    decode_json_obj(be, obj);
+  } catch (JSONDecoder::err& e) {
+    return -EINVAL;
+  }
 
-public:
+  real_time orig_mtime;
+  map<string, bufferlist> attrs;
 
-  int remove_by_metakey(RGWRados *store, string& metadata_key) override {
+  RGWObjVersionTracker old_ot;
+  RGWObjectCtx obj_ctx(store);
 
-    ldout(store->ctx(), 0) << "SKIP: bucket removal is not allowed on archive zone: " << metadata_key << " ... proceeding to rename" << dendl;
+  string tenant_name, bucket_name;
+  parse_bucket(entry, &tenant_name, &bucket_name);
+  int ret = store->get_bucket_entrypoint_info(obj_ctx, tenant_name, bucket_name, old_be, &old_ot, &orig_mtime, &attrs);
+  if (ret < 0 && ret != -ENOENT)
+    return ret;
 
-    string type;
-    string entry;
-    store->meta_mgr->parse_metadata_key(metadata_key, type, entry);
+  // are we actually going to perform this put, or is it too old?
+  if (ret != -ENOENT &&
+      !check_versions(old_ot.read_version, orig_mtime,
+                      objv_tracker.write_version, mtime, sync_type)) {
+    return STATUS_NO_APPLY;
+  }
 
-    RGWMetadataObject *obj;
-    int ret = get(store, entry, &obj);
-    if (ret < 0) {
-        return ret;
-    }
+  objv_tracker.read_version = old_ot.read_version; /* maintain the obj version we just read */
 
-    RGWBucketEntryPoint be;
-    RGWObjectCtx obj_ctx(store);
-    RGWObjVersionTracker objv_tracker;
-    objv_tracker.read_version = obj->get_version();
+  ret = store->put_bucket_entrypoint_info(tenant_name, bucket_name, be, false, objv_tracker, mtime, &attrs);
+  if (ret < 0)
+    return ret;
 
-    delete obj;
-
-    string tenant_name, bucket_name;
-    parse_bucket(entry, &tenant_name, &bucket_name);
-
-    real_time mtime;
-
-    ret = store->get_bucket_entrypoint_info(obj_ctx, tenant_name, bucket_name, be, &objv_tracker, &mtime, NULL);
-    if (ret < 0) {
-        return ret;
-    }
-
-    string md5_digest;
-    get_md5_digest(&be, md5_digest);
-
-    string archive_zone_suffix = "-deleted-" + md5_digest;
-    be.bucket.name = be.bucket.name + archive_zone_suffix;
-
-    RGWBucketEntryMetadataObject *be_mdo = new RGWBucketEntryMetadataObject(be, objv_tracker.read_version, mtime);
-
-    JSONFormatter f(false);
-    f.open_object_section("metadata_info");
-    encode_json("key", metadata_key + archive_zone_suffix, &f);
-    encode_json("ver", be_mdo->get_version(), &f);
-    mtime = be_mdo->get_mtime();
-    if (!real_clock::is_zero(mtime)) {
-       utime_t ut(mtime);
-       encode_json("mtime", ut, &f);
-    }
-    encode_json("data", *be_mdo, &f);
-    f.close_section();
-
-    delete be_mdo;
-
-    ret = rgw_unlink_bucket(store, be.owner, tenant_name, bucket_name, false);
-    if (ret < 0) {
-        lderr(store->ctx()) << "could not unlink bucket=" << entry << " owner=" << be.owner << dendl;
-    }
-
-    // if (ret == -ECANCELED) it means that there was a race here, and someone
-    // wrote to the bucket entrypoint just before we removed it. The question is
-    // whether it was a newly created bucket entrypoint ...  in which case we
-    // should ignore the error and move forward, or whether it is a higher version
-    // of the same bucket instance ... in which we should retry
-    ret = rgw_bucket_delete_bucket_obj(store, tenant_name, bucket_name, objv_tracker);
-    if (ret < 0) {
-        lderr(store->ctx()) << "could not delete bucket=" << entry << dendl;
-    }
-
-    string new_entry, new_bucket_name;
-    new_entry = entry + archive_zone_suffix;
-    parse_bucket(new_entry, &tenant_name, &new_bucket_name);
-
-    bufferlist bl;
-    f.flush(bl);
-
-    JSONParser parser;
-    if (!parser.parse(bl.c_str(), bl.length())) {
-        return -EINVAL;
-    }
-
-    JSONObj *jo = parser.find_obj("data");
-    if (!jo) {
-        return -EINVAL;
-    }
-
-    try {
-        decode_json_obj(be, jo);
-    } catch (JSONDecoder::err& e) {
-        return -EINVAL;
-    }
-
-    RGWBucketEntryPoint ep;
-    ep.linked = be.linked;
-    ep.owner = be.owner;
-    ep.bucket = be.bucket;
-
-    RGWObjVersionTracker ot;
-    ot.generate_new_write_ver(store->ctx());
-
-    map<string, bufferlist> attrs;
-
-    ret = store->put_bucket_entrypoint_info(tenant_name, new_bucket_name, ep, false, ot, mtime, &attrs);
-    if (ret < 0) {
-        return ret;
-    }
-
+  /* link bucket */
+  if (be.linked) {
     ret = rgw_link_bucket(store, be.owner, be.bucket, be.creation_time, false);
-    if (ret < 0) {
-        return ret;
-    }
-
-    // .bucket.meta.my-bucket-1:c0f7ef8c-2309-4ebb-a1d0-1b0a61dc5a78.4226.1
-    string meta_name = bucket_name + ":" + be.bucket.marker;
-
-    map<string, bufferlist> attrs_m;
-    RGWBucketInfo bi_m;
-
-    ret = store->get_bucket_instance_info(obj_ctx, meta_name, bi_m, NULL, &attrs_m);
-    if (ret < 0) {
-        return ret;
-    }
-
-    string new_meta_name = RGW_BUCKET_INSTANCE_MD_PREFIX + new_bucket_name + ":" + be.bucket.marker;
-
-    bi_m.bucket.name = new_bucket_name;
-
-    bufferlist bl_m;
-    using ceph::encode;
-    encode(bi_m, bl_m);
-
-    ret = rgw_put_system_obj(store, store->get_zone_params().domain_root, new_meta_name, bl_m, false, NULL, real_time(), NULL);
-    if (ret < 0) {
-        return ret;
-    }
-
-    ret = rgw_delete_system_obj(store, store->get_zone_params().domain_root, RGW_BUCKET_INSTANCE_MD_PREFIX + meta_name, NULL);
-
-    /* idempotent */
-    return 0;
+  } else {
+    ret = rgw_unlink_bucket(store, be.owner, be.bucket.tenant,
+                            be.bucket.name, false);
   }
 
-};
+  return ret;
+}
 
-class RGWBucketInstanceMetadataHandler : public RGWMetadataHandler {
+int RGWBucketMetadataHandler::remove(RGWRados *store, string& entry, RGWObjVersionTracker& objv_tracker) {
+  RGWBucketEntryPoint be;
+  RGWObjectCtx obj_ctx(store);
 
-public:
-  string get_type() override { return "bucket.instance"; }
-
-  int get(RGWRados *store, string& oid, RGWMetadataObject **obj) override {
-    RGWBucketCompleteInfo bci;
-
-    real_time mtime;
-    RGWObjectCtx obj_ctx(store);
-
-    int ret = store->get_bucket_instance_info(obj_ctx, oid, bci.info, &mtime, &bci.attrs);
-    if (ret < 0)
-      return ret;
-
-    RGWBucketInstanceMetadataObject *mdo = new RGWBucketInstanceMetadataObject(bci, bci.info.objv_tracker.read_version, mtime);
-
-    *obj = mdo;
-
-    return 0;
-  }
-
-  int put(RGWRados *store, string& entry, RGWObjVersionTracker& objv_tracker,
-          real_time mtime, JSONObj *obj, sync_type_t sync_type) override {
-    RGWBucketCompleteInfo bci, old_bci;
-    try {
-      decode_json_obj(bci, obj);
-    } catch (JSONDecoder::err& e) {
-      return -EINVAL;
-    }
-
-    real_time orig_mtime;
-    RGWObjectCtx obj_ctx(store);
-
-    int ret = store->get_bucket_instance_info(obj_ctx, entry, old_bci.info,
-            &orig_mtime, &old_bci.attrs);
-    bool exists = (ret != -ENOENT);
-    if (ret < 0 && exists)
-      return ret;
-
-    if (!exists || old_bci.info.bucket.bucket_id != bci.info.bucket.bucket_id) {
-      /* a new bucket, we need to select a new bucket placement for it */
-      auto key(entry);
-      rgw_bucket_instance_oid_to_key(key);
-      string tenant_name;
-      string bucket_name;
-      string bucket_instance;
-      parse_bucket(key, &tenant_name, &bucket_name, &bucket_instance);
-
-      RGWZonePlacementInfo rule_info;
-      bci.info.bucket.name = bucket_name;
-      bci.info.bucket.bucket_id = bucket_instance;
-      bci.info.bucket.tenant = tenant_name;
-      ret = store->select_bucket_location_by_rule(bci.info.placement_rule, &rule_info);
-      if (ret < 0) {
-        ldout(store->ctx(), 0) << "ERROR: select_bucket_placement() returned " << ret << dendl;
-        return ret;
-      }
-      bci.info.index_type = rule_info.index_type;
-    } else {
-      /* existing bucket, keep its placement */
-      bci.info.bucket.explicit_placement = old_bci.info.bucket.explicit_placement;
-      bci.info.placement_rule = old_bci.info.placement_rule;
-    }
-
-    if (exists && old_bci.info.datasync_flag_enabled() != bci.info.datasync_flag_enabled()) {
-      int shards_num = bci.info.num_shards? bci.info.num_shards : 1;
-      int shard_id = bci.info.num_shards? 0 : -1;
-
-      if (!bci.info.datasync_flag_enabled()) {
-      ret = store->stop_bi_log_entries(bci.info, -1);
-        if (ret < 0) {
-	   lderr(store->ctx()) << "ERROR: failed writing bilog" << dendl;
-	   return ret;
-        }
-      } else {
-        ret = store->resync_bi_log_entries(bci.info, -1);
-        if (ret < 0) {
-	   lderr(store->ctx()) << "ERROR: failed writing bilog" << dendl;
-	   return ret;
-        }
-      }
-
-      for (int i = 0; i < shards_num; ++i, ++shard_id) {
-        ret = store->data_log->add_entry(bci.info.bucket, shard_id);
-        if (ret < 0) {
-	   lderr(store->ctx()) << "ERROR: failed writing data log" << dendl;
-	   return ret;
-        }
-      }
-    }
-
-    // are we actually going to perform this put, or is it too old?
-    if (exists &&
-        !check_versions(old_bci.info.objv_tracker.read_version, orig_mtime,
-			objv_tracker.write_version, mtime, sync_type)) {
-      objv_tracker.read_version = old_bci.info.objv_tracker.read_version;
-      return STATUS_NO_APPLY;
-    }
-
-    /* record the read version (if any), store the new version */
-    bci.info.objv_tracker.read_version = old_bci.info.objv_tracker.read_version;
-    bci.info.objv_tracker.write_version = objv_tracker.write_version;
-
-    ret = store->put_bucket_instance_info(bci.info, false, mtime, &bci.attrs);
-    if (ret < 0)
-      return ret;
-
-    objv_tracker = bci.info.objv_tracker;
-
-    ret = store->init_bucket_index(bci.info, bci.info.num_shards);
-    if (ret < 0)
-      return ret;
-
-    return STATUS_APPLIED;
-  }
-
-  struct list_keys_info {
-    RGWRados *store;
-    RGWListRawObjsCtx ctx;
-  };
-
-  int remove(RGWRados *store, string& entry, RGWObjVersionTracker& objv_tracker) override {
-    RGWBucketInfo info;
-    RGWObjectCtx obj_ctx(store);
-
-    int ret = store->get_bucket_instance_info(obj_ctx, entry, info, NULL, NULL);
-    if (ret < 0 && ret != -ENOENT)
-      return ret;
-
-    return rgw_bucket_instance_remove_entry(store, entry, &info.objv_tracker);
-  }
-
-  void get_pool_and_oid(RGWRados *store, const string& key, rgw_pool& pool, string& oid) override {
-    oid = RGW_BUCKET_INSTANCE_MD_PREFIX + key;
-    rgw_bucket_instance_key_to_oid(oid);
-    pool = store->get_zone_params().domain_root;
-  }
-
-  int list_keys_init(RGWRados *store, const string& marker, void **phandle) override {
-    auto info = std::make_unique<list_keys_info>();
-
-    info->store = store;
-
-    int ret = store->list_raw_objects_init(store->get_zone_params().domain_root, marker,
-                                           &info->ctx);
-    if (ret < 0) {
-      return ret;
-    }
-    *phandle = (void *)info.release();
-
-    return 0;
-  }
-
-  int list_keys_next(void *handle, int max, list<string>& keys, bool *truncated) override {
-    list_keys_info *info = static_cast<list_keys_info *>(handle);
-
-    string no_filter;
-
-    keys.clear();
-
-    RGWRados *store = info->store;
-
-    list<string> unfiltered_keys;
-
-    int ret = store->list_raw_objects_next(no_filter, max, info->ctx,
-                                           unfiltered_keys, truncated);
-    if (ret < 0 && ret != -ENOENT)
-      return ret;
-    if (ret == -ENOENT) {
-      if (truncated)
-        *truncated = false;
-      return 0;
-    }
-
-    constexpr int prefix_size = sizeof(RGW_BUCKET_INSTANCE_MD_PREFIX) - 1;
-    // now filter in the relevant entries
-    list<string>::iterator iter;
-    for (iter = unfiltered_keys.begin(); iter != unfiltered_keys.end(); ++iter) {
-      string& k = *iter;
-
-      if (k.compare(0, prefix_size, RGW_BUCKET_INSTANCE_MD_PREFIX) == 0) {
-        auto oid = k.substr(prefix_size);
-        rgw_bucket_instance_oid_to_key(oid);
-        keys.emplace_back(std::move(oid));
-      }
-    }
-
-    return 0;
-  }
-
-  void list_keys_complete(void *handle) override {
-    list_keys_info *info = static_cast<list_keys_info *>(handle);
-    delete info;
-  }
-
-  string get_marker(void *handle) override {
-    list_keys_info *info = static_cast<list_keys_info *>(handle);
-    return info->store->list_raw_objs_get_cursor(info->ctx);
-  }
+  string tenant_name, bucket_name;
+  parse_bucket(entry, &tenant_name, &bucket_name);
+  int ret = store->get_bucket_entrypoint_info(obj_ctx, tenant_name, bucket_name, be, &objv_tracker, NULL, NULL);
+  if (ret < 0)
+    return ret;
 
   /*
-   * hash entry for mdlog placement. Use the same hash key we'd have for the bucket entry
-   * point, so that the log entries end up at the same log shard, so that we process them
-   * in order
+   * We're unlinking the bucket but we don't want to update the entrypoint here - we're removing
+   * it immediately and don't want to invalidate our cached objv_version or the bucket obj removal
+   * will incorrectly fail.
    */
-  void get_hash_key(const string& section, const string& key, string& hash_key) override {
-    string k;
-    int pos = key.find(':');
-    if (pos < 0)
-      k = key;
-    else
-      k = key.substr(0, pos);
-    hash_key = "bucket:" + k;
+  ret = rgw_unlink_bucket(store, be.owner, tenant_name, bucket_name, false);
+  if (ret < 0) {
+    lderr(store->ctx()) << "could not unlink bucket=" << entry << " owner=" << be.owner << dendl;
   }
-};
 
-class RGWArchiveBucketInstanceMetadataHandler : public RGWBucketInstanceMetadataHandler {
+  ret = rgw_bucket_delete_bucket_obj(store, tenant_name, bucket_name, objv_tracker);
+  if (ret < 0) {
+    lderr(store->ctx()) << "could not delete bucket=" << entry << dendl;
+  }
+  /* idempotent */
+  return 0;
+}
 
-public:
+void RGWBucketMetadataHandler::get_pool_and_oid(RGWRados *store, const string& key, rgw_pool& pool, string& oid) {
+  oid = key;
+  pool = store->get_zone_params().domain_root;
+}
 
-   int remove_by_metakey(RGWRados *store, string& metadata_key) override {
-       ldout(store->ctx(), 0) << "SKIP: bucket instance removal is not allowed on archive zone: " << metadata_key << dendl;
-	   return 0;
-   }
+int RGWBucketMetadataHandler::list_keys_init(RGWRados *store, const string& marker, void **phandle) {
+  auto info = std::make_unique<list_keys_info>();
 
-};
+  info->store = store;
+
+  int ret = store->list_raw_objects_init(store->get_zone_params().domain_root, marker,
+                                         &info->ctx);
+  if (ret < 0) {
+    return ret;
+  }
+  *phandle = (void *)info.release();
+
+  return 0;
+}
+
+int RGWBucketMetadataHandler::list_keys_next(void *handle, int max, list<string>& keys, bool *truncated) {
+  list_keys_info *info = static_cast<list_keys_info *>(handle);
+
+  string no_filter;
+
+  keys.clear();
+
+  RGWRados *store = info->store;
+
+  list<string> unfiltered_keys;
+
+  int ret = store->list_raw_objects_next(no_filter, max, info->ctx,
+                                         unfiltered_keys, truncated);
+  if (ret < 0 && ret != -ENOENT)
+    return ret;
+  if (ret == -ENOENT) {
+    if (truncated)
+      *truncated = false;
+    return 0;
+  }
+
+  // now filter out the system entries
+  list<string>::iterator iter;
+  for (iter = unfiltered_keys.begin(); iter != unfiltered_keys.end(); ++iter) {
+    string& k = *iter;
+
+    if (k[0] != '.') {
+      keys.push_back(k);
+    }
+  }
+
+  return 0;
+}
+
+void RGWBucketMetadataHandler::list_keys_complete(void *handle) {
+  list_keys_info *info = static_cast<list_keys_info *>(handle);
+  delete info;
+}
+
+string RGWBucketMetadataHandler::get_marker(void *handle) {
+  list_keys_info *info = static_cast<list_keys_info *>(handle);
+  return info->store->list_raw_objs_get_cursor(info->ctx);
+}
+
+int RGWBucketInstanceMetadataHandler::get(RGWRados *store, string& oid, RGWMetadataObject **obj) {
+  RGWBucketCompleteInfo bci;
+
+  real_time mtime;
+  RGWObjectCtx obj_ctx(store);
+
+  int ret = store->get_bucket_instance_info(obj_ctx, oid, bci.info, &mtime, &bci.attrs);
+  if (ret < 0)
+    return ret;
+
+  RGWBucketInstanceMetadataObject *mdo = new RGWBucketInstanceMetadataObject(bci, bci.info.objv_tracker.read_version, mtime);
+
+  *obj = mdo;
+
+  return 0;
+}
+
+int RGWBucketInstanceMetadataHandler::put(RGWRados *store, string& entry, RGWObjVersionTracker& objv_tracker,
+                                          real_time mtime, JSONObj *obj, sync_type_t sync_type) {
+  RGWBucketCompleteInfo bci, old_bci;
+  try {
+    decode_json_obj(bci, obj);
+  } catch (JSONDecoder::err& e) {
+    return -EINVAL;
+  }
+
+  real_time orig_mtime;
+  RGWObjectCtx obj_ctx(store);
+
+  int ret = store->get_bucket_instance_info(obj_ctx, entry, old_bci.info,
+                                            &orig_mtime, &old_bci.attrs);
+  bool exists = (ret != -ENOENT);
+  if (ret < 0 && exists)
+    return ret;
+
+  if (!exists || old_bci.info.bucket.bucket_id != bci.info.bucket.bucket_id) {
+    /* a new bucket, we need to select a new bucket placement for it */
+    auto key(entry);
+    rgw_bucket_instance_oid_to_key(key);
+    string tenant_name;
+    string bucket_name;
+    string bucket_instance;
+    parse_bucket(key, &tenant_name, &bucket_name, &bucket_instance);
+
+    RGWZonePlacementInfo rule_info;
+    bci.info.bucket.name = bucket_name;
+    bci.info.bucket.bucket_id = bucket_instance;
+    bci.info.bucket.tenant = tenant_name;
+    ret = store->select_bucket_location_by_rule(bci.info.placement_rule, &rule_info);
+    if (ret < 0) {
+      ldout(store->ctx(), 0) << "ERROR: select_bucket_placement() returned " << ret << dendl;
+      return ret;
+    }
+    bci.info.index_type = rule_info.index_type;
+  } else {
+    /* existing bucket, keep its placement */
+    bci.info.bucket.explicit_placement = old_bci.info.bucket.explicit_placement;
+    bci.info.placement_rule = old_bci.info.placement_rule;
+  }
+
+  if (exists && old_bci.info.datasync_flag_enabled() != bci.info.datasync_flag_enabled()) {
+    int shards_num = bci.info.num_shards? bci.info.num_shards : 1;
+    int shard_id = bci.info.num_shards? 0 : -1;
+
+    if (!bci.info.datasync_flag_enabled()) {
+      ret = store->stop_bi_log_entries(bci.info, -1);
+      if (ret < 0) {
+        lderr(store->ctx()) << "ERROR: failed writing bilog" << dendl;
+        return ret;
+      }
+    } else {
+      ret = store->resync_bi_log_entries(bci.info, -1);
+      if (ret < 0) {
+        lderr(store->ctx()) << "ERROR: failed writing bilog" << dendl;
+        return ret;
+      }
+    }
+
+    for (int i = 0; i < shards_num; ++i, ++shard_id) {
+      ret = store->data_log->add_entry(bci.info.bucket, shard_id);
+      if (ret < 0) {
+        lderr(store->ctx()) << "ERROR: failed writing data log" << dendl;
+        return ret;
+      }
+    }
+  }
+
+  // are we actually going to perform this put, or is it too old?
+  if (exists &&
+      !check_versions(old_bci.info.objv_tracker.read_version, orig_mtime,
+                      objv_tracker.write_version, mtime, sync_type)) {
+    objv_tracker.read_version = old_bci.info.objv_tracker.read_version;
+    return STATUS_NO_APPLY;
+  }
+
+  /* record the read version (if any), store the new version */
+  bci.info.objv_tracker.read_version = old_bci.info.objv_tracker.read_version;
+  bci.info.objv_tracker.write_version = objv_tracker.write_version;
+
+  ret = store->put_bucket_instance_info(bci.info, false, mtime, &bci.attrs);
+  if (ret < 0)
+    return ret;
+
+  objv_tracker = bci.info.objv_tracker;
+
+  ret = store->init_bucket_index(bci.info, bci.info.num_shards);
+  if (ret < 0)
+    return ret;
+
+  return STATUS_APPLIED;
+}
+
+int RGWBucketInstanceMetadataHandler::remove(RGWRados *store, string& entry, RGWObjVersionTracker& objv_tracker) {
+  RGWBucketInfo info;
+  RGWObjectCtx obj_ctx(store);
+
+  int ret = store->get_bucket_instance_info(obj_ctx, entry, info, NULL, NULL);
+  if (ret < 0 && ret != -ENOENT)
+    return ret;
+
+  return rgw_bucket_instance_remove_entry(store, entry, &info.objv_tracker);
+}
+
+void RGWBucketInstanceMetadataHandler::get_pool_and_oid(RGWRados *store, const string& key, rgw_pool& pool, string& oid) {
+  oid = RGW_BUCKET_INSTANCE_MD_PREFIX + key;
+  rgw_bucket_instance_key_to_oid(oid);
+  pool = store->get_zone_params().domain_root;
+}
+
+int RGWBucketInstanceMetadataHandler::list_keys_init(RGWRados *store, const string& marker, void **phandle) {
+  auto info = std::make_unique<list_keys_info>();
+
+  info->store = store;
+
+  int ret = store->list_raw_objects_init(store->get_zone_params().domain_root, marker,
+                                         &info->ctx);
+  if (ret < 0) {
+    return ret;
+  }
+  *phandle = (void *)info.release();
+
+  return 0;
+}
+
+int RGWBucketInstanceMetadataHandler::list_keys_next(void *handle, int max, list<string>& keys, bool *truncated) {
+  list_keys_info *info = static_cast<list_keys_info *>(handle);
+
+  string no_filter;
+
+  keys.clear();
+
+  RGWRados *store = info->store;
+
+  list<string> unfiltered_keys;
+
+  int ret = store->list_raw_objects_next(no_filter, max, info->ctx,
+                                         unfiltered_keys, truncated);
+  if (ret < 0 && ret != -ENOENT)
+    return ret;
+  if (ret == -ENOENT) {
+    if (truncated)
+      *truncated = false;
+    return 0;
+  }
+
+  constexpr int prefix_size = sizeof(RGW_BUCKET_INSTANCE_MD_PREFIX) - 1;
+  // now filter in the relevant entries
+  list<string>::iterator iter;
+  for (iter = unfiltered_keys.begin(); iter != unfiltered_keys.end(); ++iter) {
+    string& k = *iter;
+
+    if (k.compare(0, prefix_size, RGW_BUCKET_INSTANCE_MD_PREFIX) == 0) {
+      auto oid = k.substr(prefix_size);
+      rgw_bucket_instance_oid_to_key(oid);
+      keys.emplace_back(std::move(oid));
+    }
+  }
+
+  return 0;
+}
+
+void RGWBucketInstanceMetadataHandler::list_keys_complete(void *handle) {
+  list_keys_info *info = static_cast<list_keys_info *>(handle);
+  delete info;
+}
+
+string RGWBucketInstanceMetadataHandler::get_marker(void *handle) {
+  list_keys_info *info = static_cast<list_keys_info *>(handle);
+  return info->store->list_raw_objs_get_cursor(info->ctx);
+}
+
+/*
+ * hash entry for mdlog placement. Use the same hash key we'd have for the bucket entry
+ * point, so that the log entries end up at the same log shard, so that we process them
+ * in order
+ */
+void RGWBucketInstanceMetadataHandler::get_hash_key(const string& section, const string& key, string& hash_key) {
+  string k;
+  int pos = key.find(':');
+  if (pos < 0)
+    k = key;
+  else
+    k = key.substr(0, pos);
+  hash_key = "bucket:" + k;
+}
 
 void rgw_bucket_init(RGWMetadataManager *mm)
 {
-  if (mm->get_store()->get_zone().tier_type == "archive") {
-      bucket_meta_handler = new RGWArchiveBucketMetadataHandler;
-      bucket_instance_meta_handler = new RGWArchiveBucketInstanceMetadataHandler;
-  } else {
-      bucket_meta_handler = new RGWBucketMetadataHandler;
-      bucket_instance_meta_handler = new RGWBucketInstanceMetadataHandler;
+  auto& sync_module = mm->get_store()->get_sync_module();
+
+  if (!sync_module->alloc_meta_handler("bucket", &bucket_meta_handler)) {
+    bucket_meta_handler = new RGWBucketMetadataHandler;
   }
+
+  if (!sync_module->alloc_meta_handler("bucket.instance", &bucket_instance_meta_handler)) {
+    bucket_instance_meta_handler = new RGWBucketInstanceMetadataHandler;
+  }
+
   mm->register_handler(bucket_meta_handler);
   mm->register_handler(bucket_instance_meta_handler);
 }

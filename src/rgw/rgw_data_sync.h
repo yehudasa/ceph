@@ -583,16 +583,28 @@ public:
   int create_instance(CephContext *cct, const JSONFormattable& config, RGWSyncModuleInstanceRef *instance) override;
 };
 
-class RGWArchiveSyncModule : public RGWDefaultSyncModule {
-public:
-  RGWArchiveSyncModule() {}
-  bool supports_data_export() override { return false; }
-  int create_instance(CephContext *cct, const JSONFormattable& config, RGWSyncModuleInstanceRef *instance) override;
-};
-
 // DataLogTrimCR factory function
 extern RGWCoroutine* create_data_log_trim_cr(RGWRados *store,
                                              RGWHTTPManager *http,
                                              int num_shards, utime_t interval);
+
+class RGWDefaultDataSyncModule : public RGWDataSyncModule {
+public:
+  RGWDefaultDataSyncModule() {}
+
+  RGWCoroutine *sync_object(RGWDataSyncEnv *sync_env, RGWBucketInfo& bucket_info, rgw_obj_key& key, uint64_t versioned_epoch, rgw_zone_set *zones_trace) override;
+  RGWCoroutine *remove_object(RGWDataSyncEnv *sync_env, RGWBucketInfo& bucket_info, rgw_obj_key& key, real_time& mtime, bool versioned, uint64_t versioned_epoch, rgw_zone_set *zones_trace) override;
+  RGWCoroutine *create_delete_marker(RGWDataSyncEnv *sync_env, RGWBucketInfo& bucket_info, rgw_obj_key& key, real_time& mtime,
+                                     rgw_bucket_entry_owner& owner, bool versioned, uint64_t versioned_epoch, rgw_zone_set *zones_trace) override;
+};
+
+class RGWDefaultSyncModuleInstance : public RGWSyncModuleInstance {
+  RGWDefaultDataSyncModule data_handler;
+public:
+  RGWDefaultSyncModuleInstance() {}
+  RGWDataSyncModule *get_data_handler() override {
+    return &data_handler;
+  }
+};
 
 #endif

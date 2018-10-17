@@ -7,6 +7,7 @@
 #include "rgw_sync_module_log.h"
 #include "rgw_sync_module_es.h"
 #include "rgw_sync_module_aws.h"
+#include "rgw_sync_module_archive.h"
 
 #include <boost/asio/yield.hpp>
 

@@ -30,6 +30,7 @@ public:
 };
 
 class RGWRESTMgr;
+class RGWMetadataHandler;
 
 class RGWSyncModuleInstance {
 public:
@@ -39,11 +40,15 @@ public:
   virtual RGWRESTMgr *get_rest_filter(int dialect, RGWRESTMgr *orig) {
     return orig;
   }
+  virtual bool alloc_meta_handler(const string& type, RGWMetadataHandler **handler) const {
+    return false;
+  }
 };
 
 typedef std::shared_ptr<RGWSyncModuleInstance> RGWSyncModuleInstanceRef;
 
 class JSONFormattable;
+class RGWMetadataHandler;
 
 class RGWSyncModule {
 

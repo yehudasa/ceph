@@ -2825,5 +2825,6 @@ void rgw_user_init(RGWRados *store)
   uinfo_cache.init(store);
 
   user_meta_handler = new RGWUserMetadataHandler;
+
   store->meta_mgr->register_handler(user_meta_handler);
 }

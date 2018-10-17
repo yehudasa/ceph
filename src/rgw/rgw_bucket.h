@@ -19,6 +19,7 @@
 #include "common/lru_map.h"
 #include "common/ceph_time.h"
 #include "rgw_formats.h"
+#include "rgw_metadata.h"
 
 // define as static when RGWBucket implementation completes
 extern void rgw_get_buckets_obj(const rgw_user& user_id, string& buckets_obj_id);
@@ -524,5 +525,50 @@ public:
   bool going_down();
 };
 
+
+
+class RGWBucketMetadataHandler : public RGWMetadataHandler {
+
+public:
+  string get_type() override { return "bucket"; }
+
+  int get(RGWRados *store, string& entry, RGWMetadataObject **obj) override;
+  int put(RGWRados *store, string& entry, RGWObjVersionTracker& objv_tracker,
+          real_time mtime, JSONObj *obj, sync_type_t sync_type) override;
+
+  int remove(RGWRados *store, string& entry, RGWObjVersionTracker& objv_tracker) override;
+
+  void get_pool_and_oid(RGWRados *store, const string& key, rgw_pool& pool, string& oid) override;
+
+  int list_keys_init(RGWRados *store, const string& marker, void **phandle) override;
+  int list_keys_next(void *handle, int max, list<string>& keys, bool *truncated) override;
+  void list_keys_complete(void *handle) override;
+  string get_marker(void *handle) override;
+};
+
+class RGWBucketInstanceMetadataHandler : public RGWMetadataHandler {
+
+public:
+  string get_type() override { return "bucket.instance"; }
+
+  int get(RGWRados *store, string& oid, RGWMetadataObject **obj) override;
+  int put(RGWRados *store, string& entry, RGWObjVersionTracker& objv_tracker,
+          real_time mtime, JSONObj *obj, sync_type_t sync_type) override;
+  int remove(RGWRados *store, string& entry, RGWObjVersionTracker& objv_tracker) override;
+
+  void get_pool_and_oid(RGWRados *store, const string& key, rgw_pool& pool, string& oid) override;
+
+  int list_keys_init(RGWRados *store, const string& marker, void **phandle) override;
+  int list_keys_next(void *handle, int max, list<string>& keys, bool *truncated) override;
+  void list_keys_complete(void *handle) override;
+  string get_marker(void *handle) override;
+
+  /*
+   * hash entry for mdlog placement. Use the same hash key we'd have for the bucket entry
+   * point, so that the log entries end up at the same log shard, so that we process them
+   * in order
+   */
+  void get_hash_key(const string& section, const string& key, string& hash_key) override;
+};
 
 #endif
