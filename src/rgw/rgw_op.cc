@@ -303,7 +303,29 @@ static int get_obj_attrs(RGWRados *store, struct req_state *s, rgw_obj& obj, map
 
   read_op.params.attrs = &attrs;
 
-  return read_op.prepare();
+  return read_obj.prepare();
+}
+
+static int get_obj_head(RGWRados *store, struct req_state *s, rgw_obj& obj, map<string, bufferlist>& attrs,
+                         bufferlist *pbl)
+{
+  RGWRados::Object op_target(store, s->bucket_info, *static_cast<RGWObjectCtx *>(s->obj_ctx), obj);
+  RGWRados::Object::Read read_op(&op_target);
+
+  read_op.params.attrs = &attrs;
+
+  int ret = read_obj.prepare();
+  if (ret < 0) {
+    return ret;
+  }
+
+  if (!pbl) {
+    return 0;
+  }
+
+  ret = read_obj.read(0, cct->_conf->rgw_max_chunk_size, *pbl, nullptr);
+
+  return 0;
 }
 
 static int modify_obj_attr(RGWRados *store, struct req_state *s, rgw_obj& obj, const char* attr_name, bufferlist& attr_val)
@@ -5507,6 +5529,23 @@ int RGWInitMultipart::verify_permission()
   return 0;
 }
 
+struct multipart_upload_info
+{
+  string storage_class;
+
+  void encode(bufferlist& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(storage_class, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(bufferlist::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(storage_class, bl);
+    DECODE_FINISH(bl);
+  }
+};
+
 void RGWInitMultipart::pre_exec()
 {
   rgw_bucket_object_pre_exec(s);
@@ -5563,11 +5602,14 @@ void RGWInitMultipart::execute()
     obj_op.meta.category = RGW_OBJ_CATEGORY_MULTIMETA;
     obj_op.meta.flags = PUT_OBJ_CREATE_EXCL;
 
-    bufferlist bl;
-    bl.append(s->dest_placement.get_storage_class);
-    obj_op.meta.attrs[RGW_ATTR_STORAGE_CLASS] = std::move(bl);
+    multipart_upload_info upload_info;
+    upload_info.storage_class = s->dest_placement.get_storage_class();
 
-    op_ret = obj_op.write_meta(0, 0, attrs);
+    bufferlist bl;
+    encode(upload_info, bl);
+    obj_op.meta.data = &bl;
+
+    op_ret = obj_op.write_meta(bl.size(), 0, attrs);
   } while (op_ret == -EEXIST);
 }
 
