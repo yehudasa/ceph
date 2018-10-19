@@ -303,7 +303,7 @@ static int get_obj_attrs(RGWRados *store, struct req_state *s, rgw_obj& obj, map
 
   read_op.params.attrs = &attrs;
 
-  return read_obj.prepare();
+  return read_op.prepare();
 }
 
 static int get_obj_head(RGWRados *store, struct req_state *s, rgw_obj& obj, map<string, bufferlist>& attrs,
@@ -314,7 +314,7 @@ static int get_obj_head(RGWRados *store, struct req_state *s, rgw_obj& obj, map<
 
   read_op.params.attrs = &attrs;
 
-  int ret = read_obj.prepare();
+  int ret = read_op.prepare();
   if (ret < 0) {
     return ret;
   }
@@ -323,7 +323,7 @@ static int get_obj_head(RGWRados *store, struct req_state *s, rgw_obj& obj, map<
     return 0;
   }
 
-  ret = read_obj.read(0, cct->_conf->rgw_max_chunk_size, *pbl, nullptr);
+  ret = read_op.read(0, s->cct->_conf->rgw_max_chunk_size, *pbl);
 
   return 0;
 }
@@ -5545,6 +5545,7 @@ struct multipart_upload_info
     DECODE_FINISH(bl);
   }
 };
+WRITE_CLASS_ENCODER(multipart_upload_info)
 
 void RGWInitMultipart::pre_exec()
 {
@@ -5609,7 +5610,7 @@ void RGWInitMultipart::execute()
     encode(upload_info, bl);
     obj_op.meta.data = &bl;
 
-    op_ret = obj_op.write_meta(bl.size(), 0, attrs);
+    op_ret = obj_op.write_meta(bl.length(), 0, attrs);
   } while (op_ret == -EEXIST);
 }
 
