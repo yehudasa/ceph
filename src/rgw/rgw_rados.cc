@@ -6590,6 +6590,26 @@ int RGWRados::get_obj_head_ref(const RGWBucketInfo& bucket_info, const rgw_obj& 
   return 0;
 }
 
+int RGWRados::get_obj_head_ref(const rgw_placement_rule& rule, const rgw_obj& obj, rgw_rados_ref *ref)
+{
+  get_obj_bucket_and_oid_loc(obj, ref->oid, ref->key);
+
+  rgw_pool pool;
+  if (!get_obj_data_pool(rule, obj, &pool)) {
+    ldout(cct, 0) << "ERROR: cannot get data pool for obj=" << obj << ", probably misconfiguration" << dendl;
+    return -EIO;
+  }
+
+  int r = open_pool_ctx(pool, ref->ioctx);
+  if (r < 0) {
+    return r;
+  }
+
+  ref->ioctx.locator_set_key(ref->key);
+
+  return 0;
+}
+
 int RGWRados::get_raw_obj_ref(const rgw_raw_obj& obj, rgw_rados_ref *ref)
 {
   ref->oid = obj.oid;
@@ -7178,7 +7198,16 @@ int RGWRados::Object::Write::_do_write_meta(uint64_t size, uint64_t accounted_si
   }
 
   rgw_rados_ref ref;
-  r = store->get_obj_head_ref(target->get_bucket_info(), obj, &ref);
+  if (obj.key.ns.compare("multipart") == 0 && !obj.in_extra_data) {
+    auto iter = attrs.find(RGW_ATTR_STORAGE_CLASS);
+    rgw_placement_rule rule;
+    rule.inherit_from(target->get_bucket_info().placement_rule);
+    if (iter != attrs.end())
+      rule.storage_class = iter->second.to_str();
+    r = store->get_obj_head_ref(rule, obj, &ref);
+  } else {
+    r = store->get_obj_head_ref(target->get_bucket_info(), obj, &ref);
+  }
   if (r < 0)
     return r;
 

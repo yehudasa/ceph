@@ -3283,6 +3283,24 @@ void RGWPutObjProcessor_Multipart::get_mp(RGWMPObj** _mp){
   *_mp = &mp;
 }
 
+struct multipart_upload_info
+{
+  string storage_class;
+
+  void encode(bufferlist& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(storage_class, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(bufferlist::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(storage_class, bl);
+    DECODE_FINISH(bl);
+  }
+};
+WRITE_CLASS_ENCODER(multipart_upload_info)
+
 int RGWPutObjProcessor_Multipart::prepare(RGWRados *store, string *oid_rand)
 {
   string oid = obj_str;
@@ -3321,6 +3339,25 @@ int RGWPutObjProcessor_Multipart::prepare(RGWRados *store, string *oid_rand)
   manifest.set_prefix(upload_prefix);
 
   manifest.set_multipart_part_rule(store->ctx()->_conf->rgw_obj_stripe_size, num);
+
+  //Get RGW_ATTR_STORAGE_CLASS ATTR
+  map<string, bufferlist> xattrs;
+  multipart_upload_info info;
+  rgw_obj obj;
+  obj.init_ns(s->bucket, mp.get_meta(), mp_ns);
+  obj.set_in_extra_data(true);
+  bufferlist bl;
+  int res = get_obj_head(store, s, obj, xattrs, &bl);
+  if (res == 0) {
+    try {
+      auto iter = bl.cbegin();
+      decode(info, iter);
+      s->dest_placement.storage_class = info.storage_class;
+    } catch (buffer::error& err) {
+      ldpp_dout(s, 10) << "ERROR: failed to decode manifest" << dendl;
+      return -EINVAL;
+    }
+  }
 
   int r = manifest_gen.create_begin(store->ctx(), &manifest,
                                     s->bucket_info.placement_rule,
@@ -3579,6 +3616,8 @@ void RGWPutObj::execute()
   bufferlist bl, aclbl, bs;
   int len;
   bool multipart;
+  map<string, bufferlist>::iterator storage_class_iter;
+  bufferlist storage_class_bl;
   
   off_t fst;
   off_t lst;
@@ -3907,6 +3946,13 @@ void RGWPutObj::execute()
     bufferlist slo_userindicator_bl;
     slo_userindicator_bl.append("True", 4);
     emplace_attr(RGW_ATTR_SLO_UINDICATOR, std::move(slo_userindicator_bl));
+  }
+
+  /* for multipart part upload ,we need storage class attr */
+  storage_class_iter = attrs.find(RGW_ATTR_STORAGE_CLASS);
+  if (storage_class_iter == attrs.end()) {
+    storage_class_bl.append(s->dest_placement.storage_class.c_str());
+    emplace_attr(RGW_ATTR_STORAGE_CLASS, std::move(storage_class_bl));
   }
 
   tracepoint(rgw_op, processor_complete_enter, s->req_id.c_str());
@@ -5528,24 +5574,6 @@ int RGWInitMultipart::verify_permission()
 
   return 0;
 }
-
-struct multipart_upload_info
-{
-  string storage_class;
-
-  void encode(bufferlist& bl) const {
-    ENCODE_START(1, 1, bl);
-    encode(storage_class, bl);
-    ENCODE_FINISH(bl);
-  }
-
-  void decode(bufferlist::const_iterator& bl) {
-    DECODE_START(1, bl);
-    decode(storage_class, bl);
-    DECODE_FINISH(bl);
-  }
-};
-WRITE_CLASS_ENCODER(multipart_upload_info)
 
 void RGWInitMultipart::pre_exec()
 {
