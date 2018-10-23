@@ -6969,6 +6969,14 @@ int RGWHandler::error_handler(int err_no, string *error_content) {
 }
 
 
+void RGWDefaultResponseOp::send_response() {
+  if (op_ret) {
+    set_req_state_err(s, op_ret);
+  }
+  dump_errno(s);
+  end_header(s);
+}
+
 void RGWPutBucketPolicy::send_response()
 {
   if (op_ret) {

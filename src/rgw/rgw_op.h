@@ -191,6 +191,11 @@ public:
   virtual int error_handler(int err_no, string *error_content);
 };
 
+class RGWDefaultResponseOp : public RGWOp {
+public:
+  void send_response() override;
+};
+
 class RGWGetObj_Filter : public RGWGetDataCB
 {
 protected:
