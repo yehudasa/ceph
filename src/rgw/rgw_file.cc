@@ -1327,6 +1327,7 @@ namespace rgw {
       }
     }
     processor.emplace(&*aio, get_store(), s->bucket_info,
+                      &s->dest_placement,
                       s->bucket_owner.get_id(),
                       *static_cast<RGWObjectCtx *>(s->obj_ctx),
                       obj, olh_epoch, s->req_id);

@@ -8007,7 +8007,10 @@ int RGWRados::copy_obj(RGWObjectCtx& obj_ctx,
   ldout(cct, 20) << __func__ << "(): src_rule=" << src_rule->to_str() << " src_pool=" << src_pool
                              << " dest_rule=" << dest_placement.to_str() << " dest_pool=" << dest_pool << dendl;
 
-  bool copy_data = !astate->has_manifest || (src_pool != dest_pool);
+  bool copy_data = !astate->has_manifest ||
+    (*src_rule != dest_placement) ||
+    (src_pool != dest_pool);
+
   bool copy_first = false;
   if (astate->has_manifest) {
     if (!astate->manifest.has_tail()) {
@@ -10101,6 +10104,12 @@ int RGWRados::Object::Read::read(int64_t ofs, int64_t end, bufferlist& bl)
   int r = source->get_state(&astate, true);
   if (r < 0)
     return r;
+
+  if (astate->size == 0) {
+    end = 0;
+  } else if (end >= astate->size) {
+    end = astate->size - 1;
+  }
 
   if (end < 0)
     len = 0;
