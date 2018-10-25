@@ -707,7 +707,7 @@ struct rgw_placement_rule {
 
   void encode(bufferlist& bl) const {
     /* no ENCODE_START/END due to backward compatibility */
-    std::string s = to_str();
+    std::string s = to_str_explicit();
     ceph::encode(s, bl);
   }
 
@@ -721,6 +721,10 @@ struct rgw_placement_rule {
     if (standard_storage_class()) {
       return name;
     }
+    return to_str_explicit();
+  }
+
+  std::string to_str_explicit() const {
     return name + "/" + storage_class;
   }
 
