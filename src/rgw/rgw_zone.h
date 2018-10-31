@@ -205,6 +205,11 @@ public:
     return true;
   }
 
+  bool exists(const string& sc) const {
+    auto iter = m.find(sc);
+    return (iter != m.end());
+  }
+
   const map<string, RGWZoneStorageClass>& get_all() const {
     return m;
   }
@@ -325,6 +330,10 @@ struct RGWZonePlacementInfo {
       return no_compression;
     }
     return storage_class->compression_type.get_value_or(no_compression);
+  }
+
+  bool storage_class_exists(const string& sc) const {
+    return storage_classes.exists(sc);
   }
 
   void dump(Formatter *f) const;
