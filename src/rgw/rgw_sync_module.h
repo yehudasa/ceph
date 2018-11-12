@@ -30,6 +30,7 @@ public:
 };
 
 class RGWRESTMgr;
+class RGWMetadataHandler;
 
 class RGWSyncModuleInstance {
 public:
@@ -39,6 +40,8 @@ public:
   virtual RGWRESTMgr *get_rest_filter(int dialect, RGWRESTMgr *orig) {
     return orig;
   }
+  virtual RGWMetadataHandler *alloc_bucket_meta_handler();
+  virtual RGWMetadataHandler *alloc_bucket_instance_meta_handler();
 };
 
 typedef std::shared_ptr<RGWSyncModuleInstance> RGWSyncModuleInstanceRef;
