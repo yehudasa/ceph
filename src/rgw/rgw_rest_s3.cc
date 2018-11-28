@@ -1660,6 +1660,13 @@ int RGWPostObj_ObjStore_S3::get_params()
     env.add_var(part.name, part_str);
   } while (!done);
 
+  part_str(parts, "x-amz-storage-class", &s->dest_placement.storage_class);
+  if (!store->svc.zone->get_zone_params().valid_placement(s->dest_placement)) {
+    ldout(s->cct, 0) << "NOTICE: invalid dest placement: " << s->dest_placement.to_str() << dendl;
+    err_msg = "The storage class you specified is not valid";
+    return -EINVAL;
+  }
+
   string object_str;
   if (!part_str(parts, "key", &object_str)) {
     err_msg = "Key not specified";
