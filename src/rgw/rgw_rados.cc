@@ -3622,6 +3622,10 @@ int RGWRados::Object::Write::_do_write_meta(uint64_t size, uint64_t accounted_si
     op.setxattr(RGW_ATTR_MANIFEST, bl);
   }
 
+  if (meta.storage_class) {
+    storage_class = *meta.storage_class;
+  }
+
   for (iter = attrs.begin(); iter != attrs.end(); ++iter) {
     const string& name = iter->first;
     bufferlist& bl = iter->second;

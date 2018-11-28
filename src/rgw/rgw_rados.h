@@ -1609,6 +1609,7 @@ public:
         rgw_zone_set *zones_trace;
         bool modify_tail;
         bool completeMultipart;
+        std::optional<std::string> storage_class;
 
         MetaParams() : mtime(NULL), rmattrs(NULL), data(NULL), manifest(NULL), ptag(NULL),
                  remove_objs(NULL), category(RGW_OBJ_CATEGORY_MAIN), flags(0),

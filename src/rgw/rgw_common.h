@@ -752,6 +752,25 @@ void decode_json_obj(rgw_placement_rule& v, JSONObj *obj);
 inline ostream& operator<<(ostream& out, const rgw_placement_rule& rule) {
   return out << rule.to_str();
 }
+
+struct multipart_upload_info
+{
+  rgw_placement_rule dest_placement;
+
+  void encode(bufferlist& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(dest_placement, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(bufferlist::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(dest_placement, bl);
+    DECODE_FINISH(bl);
+  }
+};
+WRITE_CLASS_ENCODER(multipart_upload_info)
+
 struct RGWUserInfo
 {
   rgw_user user_id;

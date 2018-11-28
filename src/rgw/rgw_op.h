@@ -1657,6 +1657,7 @@ protected:
   int marker;
   RGWAccessControlPolicy policy;
   bool truncated;
+  multipart_upload_info upload_info;
 
 public:
   RGWListMultipart() {

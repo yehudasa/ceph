@@ -342,24 +342,6 @@ static int get_obj_head(RGWRados *store, struct req_state *s,
   return 0;
 }
 
-struct multipart_upload_info
-{
-  rgw_placement_rule dest_placement;
-
-  void encode(bufferlist& bl) const {
-    ENCODE_START(1, 1, bl);
-    encode(dest_placement, bl);
-    ENCODE_FINISH(bl);
-  }
-
-  void decode(bufferlist::const_iterator& bl) {
-    DECODE_START(1, bl);
-    decode(dest_placement, bl);
-    DECODE_FINISH(bl);
-  }
-};
-WRITE_CLASS_ENCODER(multipart_upload_info)
-
 static int get_multipart_info(RGWRados *store, struct req_state *s,
 			      const rgw_obj& obj,
                               RGWAccessControlPolicy *policy,
@@ -5503,6 +5485,7 @@ void RGWInitMultipart::execute()
     obj_op.meta.owner = s->owner.get_id();
     obj_op.meta.category = RGW_OBJ_CATEGORY_MULTIMETA;
     obj_op.meta.flags = PUT_OBJ_CREATE_EXCL;
+    obj_op.meta.storage_class = s->dest_placement.storage_class;
 
     multipart_upload_info upload_info;
     upload_info.dest_placement = s->dest_placement;
@@ -5926,7 +5909,7 @@ void RGWListMultipart::execute()
   mp.init(s->object.name, upload_id);
   meta_oid = mp.get_meta();
 
-  op_ret = get_multipart_info(store, s, meta_oid, &policy, nullptr, nullptr);
+  op_ret = get_multipart_info(store, s, meta_oid, &policy, nullptr, &upload_info);
   if (op_ret < 0)
     return;
 
