@@ -355,6 +355,26 @@ int MultipartObjectProcessor::prepare_head()
 
   chunk = ChunkProcessor(&writer, chunk_size);
   stripe = StripeProcessor(&chunk, this, stripe_size);
+
+  rgw_obj meta_obj;
+  meta_obj.init_ns(bucket_info.bucket, mp.get_meta(), RGW_OBJ_NS_MULTIPART);
+  meta_obj.set_in_extra_data(true);
+
+  rgw_raw_obj raw_meta_obj;
+
+  store->obj_to_raw(bucket_info.placement_rule, meta_obj, &raw_meta_obj);
+
+  auto obj_ctx = store->svc.sysobj->init_obj_ctx();
+  auto sysobj = obj_ctx.get_obj(raw_meta_obj);
+
+  bufferlist mpinfo_bl;
+  sysobj.rop().read(&mpinfo_bl);
+  try {
+    auto iter = mpinfo_bl.cbegin();
+    decode(upload_info, iter);
+  } catch (buffer::error& err) {
+    return -EINVAL;
+  }
   return 0;
 }
 
@@ -399,6 +419,7 @@ int MultipartObjectProcessor::complete(size_t accounted_size,
   obj_op.meta.delete_at = delete_at;
   obj_op.meta.zones_trace = zones_trace;
   obj_op.meta.modify_tail = true;
+  obj_op.meta.storage_class = upload_info.dest_placement.storage_class;
 
   r = obj_op.write_meta(actual_size, accounted_size, attrs);
   if (r < 0)

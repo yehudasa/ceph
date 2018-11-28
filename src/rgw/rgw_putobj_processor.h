@@ -186,6 +186,7 @@ class MultipartObjectProcessor : public ManifestObjectProcessor {
   const std::string upload_id;
   const int part_num;
   const std::string part_num_str;
+  multipart_upload_info upload_info;
   RGWMPObj mp;
 
   // write the first chunk and wait on aio->drain() for its completion.
