@@ -958,7 +958,7 @@ int RGWSI_Zone::select_new_bucket_location(RGWUserInfo& user_info, const string&
                     << " within zonegroup " << dendl;
       return -ERR_INVALID_LOCATION_CONSTRAINT;
     }
-  } else if (!user_info.default_placement.empty()) {
+  } else if (!user_info.default_placement.name.empty()) {
     used_rule = &user_info.default_placement;
     titer = zonegroup.placement_targets.find(user_info.default_placement.name);
     if (titer == zonegroup.placement_targets.end()) {
