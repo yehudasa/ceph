@@ -139,7 +139,7 @@ class ManifestObjectProcessor : public HeadObjectProcessor,
       owner(owner),
       obj_ctx(obj_ctx), head_obj(head_obj),
       writer(aio, store, bucket_info, obj_ctx, head_obj),
-      chunk(&writer, 0), stripe(&chunk, this, 0) {
+      chunk(&writer, 0), stripe(&chunk, this, 0, 0) {
         if (ptail_placement_rule) {
           tail_placement_rule = *ptail_placement_rule;
         }

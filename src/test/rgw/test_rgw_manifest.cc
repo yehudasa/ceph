@@ -131,7 +131,7 @@ static void gen_obj(test_rgw_env& env, uint64_t obj_size, uint64_t head_max_size
                     RGWObjManifest *manifest, const rgw_placement_rule& placement_rule, rgw_bucket *bucket, rgw_obj *head, RGWObjManifest::generator *gen,
                     list<rgw_obj> *test_objs)
 {
-  manifest->set_trivial_rule(head_max_size, stripe_size);
+  manifest->set_trivial_rule(head_max_Size, stripe_size);
 
   test_rgw_init_bucket(bucket, "buck");
 

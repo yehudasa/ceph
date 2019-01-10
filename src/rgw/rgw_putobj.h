@@ -69,8 +69,9 @@ class StripeProcessor : public Pipe {
   std::pair<uint64_t, uint64_t> bounds; // bounds of current stripe
  public:
   StripeProcessor(DataProcessor *next, StripeGenerator *gen,
+                  uint64_t head_size,
                   uint64_t stripe_size)
-    : Pipe(next), gen(gen), bounds(0, stripe_size)
+    : Pipe(next), gen(gen), bounds(0, head_size)
   {}
 
   int process(bufferlist&& data, uint64_t data_offset) override;
