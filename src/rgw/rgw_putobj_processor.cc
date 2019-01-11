@@ -207,7 +207,7 @@ int AtomicObjectProcessor::prepare()
     return r;
   }
   const uint64_t default_stripe_size = store->ctx()->_conf->rgw_obj_stripe_size;
-  uint64_t head_max_size = max_chunk_size;
+  uint64_t head_max_size = (bucket_info.placement_rule == tail_placement_rule ? max_chunk_size : 0);
   manifest.set_trivial_rule(head_max_size, default_stripe_size);
 
   r = manifest_gen.create_begin(store->ctx(), &manifest,
