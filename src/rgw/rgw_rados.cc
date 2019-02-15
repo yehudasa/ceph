@@ -839,7 +839,7 @@ int RGWIndexCompletionThread::process()
       /* ignoring error, can't do anything about it */
       continue;
     }
-    r = store->svc.datalog_rados->add_entry(bs.bucket, bs.shard_id);
+    r = store->svc.datalog_rados->add_entry(bucket_info, bs.shard_id);
     if (r < 0) {
       lderr(store->ctx()) << "ERROR: failed writing data log" << dendl;
     }
@@ -4730,7 +4730,7 @@ int RGWRados::Object::Delete::delete_obj(optional_yield y)
     }
 
     if (target->bucket_info.datasync_flag_enabled()) {
-      r = store->svc.datalog_rados->add_entry(bs->bucket, bs->shard_id);
+      r = store->data_log->add_entry(target->bucket_info, bs->shard_id);
       if (r < 0) {
         lderr(store->ctx()) << "ERROR: failed writing data log" << dendl;
         return r;
@@ -5794,7 +5794,7 @@ int RGWRados::Bucket::UpdateIndex::complete(int64_t poolid, uint64_t epoch,
   ret = store->cls_obj_complete_add(*bs, obj, optag, poolid, epoch, ent, category, remove_objs, bilog_flags, zones_trace);
 
   if (target->bucket_info.datasync_flag_enabled()) {
-    int r = store->svc.datalog_rados->add_entry(bs->bucket, bs->shard_id);
+    int r = store->data_log->add_entry(target->bucket_info, bs->shard_id);
     if (r < 0) {
       lderr(store->ctx()) << "ERROR: failed writing data log" << dendl;
     }
@@ -5822,7 +5822,7 @@ int RGWRados::Bucket::UpdateIndex::complete_del(int64_t poolid, uint64_t epoch,
   ret = store->cls_obj_complete_del(*bs, optag, poolid, epoch, obj, removed_mtime, remove_objs, bilog_flags, zones_trace);
 
   if (target->bucket_info.datasync_flag_enabled()) {
-    int r = store->svc.datalog_rados->add_entry(bs->bucket, bs->shard_id);
+    int r = store->data_log->add_entry(target->bucket_info, bs->shard_id);
     if (r < 0) {
       lderr(store->ctx()) << "ERROR: failed writing data log" << dendl;
     }
@@ -5850,7 +5850,7 @@ int RGWRados::Bucket::UpdateIndex::cancel()
    * have no way to tell that they're all caught up
    */
   if (target->bucket_info.datasync_flag_enabled()) {
-    int r = store->svc.datalog_rados->add_entry(bs->bucket, bs->shard_id);
+    int r = store->data_log->add_entry(target->bucket_info, bs->shard_id);
     if (r < 0) {
       lderr(store->ctx()) << "ERROR: failed writing data log" << dendl;
     }
@@ -6496,7 +6496,7 @@ int RGWRados::bucket_index_link_olh(const RGWBucketInfo& bucket_info, RGWObjStat
   }
 
   if (log_data_change && bucket_info.datasync_flag_enabled()) {
-    svc.datalog_rados->add_entry(bs.bucket, bs.shard_id);
+    data_log->add_entry(bucket_info, bs.shard_id);
   }
 
   return 0;
