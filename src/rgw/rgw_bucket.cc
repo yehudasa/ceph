@@ -23,6 +23,7 @@
 #include "rgw_user.h"
 #include "rgw_string.h"
 #include "rgw_multi.h"
+#include "rgw_bucket_sync.h"
 
 #include "services/svc_zone.h"
 #include "services/svc_sys_obj.h"
@@ -2026,9 +2027,13 @@ int RGWDataChangesLog::get_log_shard_id(rgw_bucket& bucket, int shard_id) {
   return choose_oid(bs);
 }
 
-int RGWDataChangesLog::add_entry(rgw_bucket& bucket, int shard_id) {
-  if (!store->svc.zone->need_to_log_data())
+int RGWDataChangesLog::add_entry(const RGWBucketInfo& bucket_info, int shard_id) {
+  if (!store->svc.zone->need_to_log_data() &&
+      (!bucket_info.sync_policy || !bucket_info.sync_policy->zone_is_source(store->svc.zone->zone_id()))) {
     return 0;
+  }
+
+  auto& bucket = bucket_info.bucket;
 
   if (observer) {
     observer->on_bucket_changed(bucket.get_key());
@@ -2770,7 +2775,7 @@ public:
       }
 
       for (int i = 0; i < shards_num; ++i, ++shard_id) {
-        ret = store->data_log->add_entry(bci.info.bucket, shard_id);
+        ret = store->data_log->add_entry(bci.info, shard_id);
         if (ret < 0) {
 	   lderr(store->ctx()) << "ERROR: failed writing data log" << dendl;
 	   return ret;
