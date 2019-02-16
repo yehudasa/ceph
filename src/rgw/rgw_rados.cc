@@ -617,7 +617,7 @@ public:
     http_manager.start();
   }
 
-  int notify_all(map<string, RGWRESTConn *>& conn_map, map<int, set<string> >& shards) {
+  int notify_all(map<string, RGWRESTConn *>& conn_map, map<int, map<string, RGWDataChangesLog::modified_info> >& shards) {
     rgw_http_param_pair pairs[] = { { "type", "data" },
                                     { "notify", NULL },
                                     { "source-zone", store->svc.zone->get_zone_params().get_id().c_str() },
@@ -751,19 +751,19 @@ int RGWDataNotifier::process()
     return 0;
   }
 
-  map<int, set<string> > shards;
+  map<int, map<string, RGWDataChangesLog::modified_info> > shards;
 
-  store->data_log->read_clear_modified(shards);
+  store->data_log->read_clear_modified(&shards);
 
   if (shards.empty()) {
     return 0;
   }
 
-  for (map<int, set<string> >::iterator iter = shards.begin(); iter != shards.end(); ++iter) {
+  for (auto& iter : shards) {
     ldout(cct, 20) << __func__ << "(): notifying datalog change, shard_id=" << iter->first << ": " << iter->second << dendl;
   }
 
-  notify_mgr.notify_all(store->svc.zone->get_zone_data_notify_to_map(), shards);
+  notify_mgr.notify_all(store->svc.zone->get_zone_data_notify_to_map(), shards.second);
 
   return 0;
 }

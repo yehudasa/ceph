@@ -441,6 +441,13 @@ struct BucketChangeObserver;
 }
 
 class RGWDataChangesLog {
+public:
+  struct modified_info {
+    string key;
+    std::optional<RGWBucketSyncPolicy> sync_policy;
+  };
+
+private:
   CephContext *cct;
   RGWRados *store;
   rgw::BucketChangeObserver *observer = nullptr;
@@ -450,12 +457,11 @@ class RGWDataChangesLog {
 
   Mutex lock;
   RWLock modified_lock;
-  map<int, set<string> > modified_shards;
+  map<int, map<string, modified_info> > modified_shards;
 
   std::atomic<bool> down_flag = { false };
 
   struct ChangeStatus {
-    std::shared_ptr<const RGWBucketSyncPolicy> sync_policy;
     real_time cur_expiration;
     real_time cur_sent;
     bool pending;
@@ -548,8 +554,8 @@ public:
   int list_entries(const real_time& start_time, const real_time& end_time, int max_entries,
                list<rgw_data_change_log_entry>& entries, LogMarker& marker, bool *ptruncated);
 
-  void mark_modified(int shard_id, const rgw_bucket_shard& bs);
-  void read_clear_modified(map<int, set<string> > &modified);
+  void mark_modified(int shard_id, const rgw_bucket_shard& bs, const RGWBucketInfo& bucket_info);
+  void read_clear_modified(map<int, set<string, modified_shards> > *modified);
 
   void set_observer(rgw::BucketChangeObserver *observer) {
     this->observer = observer;
