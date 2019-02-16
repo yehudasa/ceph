@@ -4728,12 +4728,10 @@ int RGWRados::Object::Delete::delete_obj(optional_yield y)
       return r;
     }
 
-    if (target->bucket_info.datasync_flag_enabled()) {
-      r = store->data_log->add_entry(target->bucket_info, bs->shard_id);
-      if (r < 0) {
-        lderr(store->ctx()) << "ERROR: failed writing data log" << dendl;
-        return r;
-      }
+    r = store->svc.datalog_rados->add_entry(target->bucket_info, bs->shard_id);
+    if (r < 0) {
+      lderr(store->ctx()) << "ERROR: failed writing data log" << dendl;
+      return r;
     }
 
     return 0;
@@ -5789,11 +5787,9 @@ int RGWRados::Bucket::UpdateIndex::complete(int64_t poolid, uint64_t epoch,
 
   ret = store->cls_obj_complete_add(*bs, obj, optag, poolid, epoch, ent, category, remove_objs, bilog_flags, zones_trace);
 
-  if (target->bucket_info.datasync_flag_enabled()) {
-    int r = store->data_log->add_entry(target->bucket_info, bs->shard_id);
-    if (r < 0) {
-      lderr(store->ctx()) << "ERROR: failed writing data log" << dendl;
-    }
+  int r = store->svc.datalog_rados->add_entry(target->bucket_info, bs->shard_id);
+  if (r < 0) {
+    lderr(store->ctx()) << "ERROR: failed writing data log" << dendl;
   }
 
   return ret;
@@ -5817,11 +5813,9 @@ int RGWRados::Bucket::UpdateIndex::complete_del(int64_t poolid, uint64_t epoch,
 
   ret = store->cls_obj_complete_del(*bs, optag, poolid, epoch, obj, removed_mtime, remove_objs, bilog_flags, zones_trace);
 
-  if (target->bucket_info.datasync_flag_enabled()) {
-    int r = store->data_log->add_entry(target->bucket_info, bs->shard_id);
-    if (r < 0) {
-      lderr(store->ctx()) << "ERROR: failed writing data log" << dendl;
-    }
+  int r = store->svc.datalog_rados->add_entry(target->bucket_info, bs->shard_id);
+  if (r < 0) {
+    lderr(store->ctx()) << "ERROR: failed writing data log" << dendl;
   }
 
   return ret;
@@ -5845,11 +5839,9 @@ int RGWRados::Bucket::UpdateIndex::cancel()
    * for following the specific bucket shard log. Otherwise they end up staying behind, and users
    * have no way to tell that they're all caught up
    */
-  if (target->bucket_info.datasync_flag_enabled()) {
-    int r = store->data_log->add_entry(target->bucket_info, bs->shard_id);
-    if (r < 0) {
-      lderr(store->ctx()) << "ERROR: failed writing data log" << dendl;
-    }
+  int r = store->svc.datalog_rados->add_entry(target->bucket_info, bs->shard_id);
+  if (r < 0) {
+    lderr(store->ctx()) << "ERROR: failed writing data log" << dendl;
   }
 
   return ret;
@@ -6491,8 +6483,9 @@ int RGWRados::bucket_index_link_olh(const RGWBucketInfo& bucket_info, RGWObjStat
     return r;
   }
 
-  if (log_data_change && bucket_info.datasync_flag_enabled()) {
-    data_log->add_entry(bucket_info, bs.shard_id);
+  r = svc.datalog_rados->add_entry(bucket_info, bs.shard_id);
+  if (r < 0) {
+    ldout(cct, 0) << "ERROR: failed writing data log" << dendl;
   }
 
   return 0;
