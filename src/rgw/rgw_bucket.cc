@@ -2028,8 +2028,7 @@ int RGWDataChangesLog::get_log_shard_id(rgw_bucket& bucket, int shard_id) {
 }
 
 int RGWDataChangesLog::add_entry(const RGWBucketInfo& bucket_info, int shard_id) {
-  if (!store->svc.zone->need_to_log_data() &&
-      (!bucket_info.sync_policy || !bucket_info.sync_policy->zone_is_source(store->svc.zone->zone_id()))) {
+  if (!bucket_info.bucket_datasync_enabled(store->svc.zone)) {
     return 0;
   }
 
@@ -2756,12 +2755,19 @@ public:
       bci.info.placement_rule = old_bci.info.placement_rule;
     }
 
-    if (exists && old_bci.info.datasync_flag_enabled() != bci.info.datasync_flag_enabled()) {
+    bool old_sync_enabled = false;
+    bool new_sync_enabled = false;;
+    if (exists) {
+      old_sync_enabled = old_bci.info.bucket_datasync_enabled(store->svc.zone);
+      new_sync_enabled = bci.info.bucket_datasync_enabled(store->svc.zone);
+    }
+
+    if (old_sync_enabled != new_sync_enabled) {
       int shards_num = bci.info.num_shards? bci.info.num_shards : 1;
       int shard_id = bci.info.num_shards? 0 : -1;
 
-      if (!bci.info.datasync_flag_enabled()) {
-      ret = store->stop_bi_log_entries(bci.info, -1);
+      if (!new_sync_enabled) {
+        ret = store->stop_bi_log_entries(bci.info, -1);
         if (ret < 0) {
 	   lderr(store->ctx()) << "ERROR: failed writing bilog" << dendl;
 	   return ret;
