@@ -2041,7 +2041,7 @@ int RGWDataChangesLog::add_entry(const RGWBucketInfo& bucket_info, int shard_id)
   rgw_bucket_shard bs(bucket, shard_id);
 
   int index = choose_oid(bs);
-  mark_modified(index, bs, bucket_info);
+  mark_modified(index, bs);
 
   lock.Lock();
 
@@ -2288,7 +2288,7 @@ void RGWDataChangesLog::ChangesRenewThread::stop()
   cond.Signal();
 }
 
-void RGWDataChangesLog::mark_modified(int shard_id, const rgw_bucket_shard& bs, const RGWBucketInfo& bucket_info)
+void RGWDataChangesLog::mark_modified(int shard_id, const rgw_bucket_shard& bs)
 {
   auto key = bs.get_key();
   modified_lock.get_read();
@@ -2303,13 +2303,13 @@ void RGWDataChangesLog::mark_modified(int shard_id, const rgw_bucket_shard& bs, 
   modified_lock.unlock();
 
   RWLock::WLocker wl(modified_lock);
-  modified_shards[shard_id][key] = modified_info{key, bucket_info.sync_policy};
+  modified_shards[shard_id].insert(key);
 }
 
-void RGWDataChangesLog::read_clear_modified(map<int, map<string, modified_shards> > *modified)
+void RGWDataChangesLog::read_clear_modified(map<int, set<string> > &modified)
 {
   RWLock::WLocker wl(modified_lock);
-  modified->swap(modified_shards);
+  modified.swap(modified_shards);
   modified_shards.clear();
 }
 
