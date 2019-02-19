@@ -1692,7 +1692,7 @@ int set_bucket_sync_enabled(RGWRados *store, int opt_cmd, const string& tenant_n
   }
 
   for (int i = 0; i < shards_num; ++i, ++shard_id) {
-    r = store->svc.datalog_rados->add_entry(bucket_info.bucket, shard_id);
+    r = store->svc.datalog_rados->add_entry(bucket_info, shard_id);
     if (r < 0) {
       lderr(store->ctx()) << "ERROR: failed writing data log" << dendl;
       return r;
@@ -2504,7 +2504,7 @@ static int bucket_sync_status(RGWRados *store, const RGWBucketInfo& info,
   out << indented{width, "zone"} << zone.id << " (" << zone.name << ")\n";
   out << indented{width, "bucket"} << info.bucket << "\n\n";
 
-  if (!info.bucket_datasync_enabled()) {
+  if (!info.bucket_datasync_enabled(store->svc.zone)) {
     out << "Sync is disabled for bucket " << info.bucket.name << '\n';
     return 0;
   }
