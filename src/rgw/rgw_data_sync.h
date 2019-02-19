@@ -17,6 +17,13 @@
 #include "rgw_sync_module.h"
 #include "rgw_sync_trace.h"
 
+struct rgw_bucket_sync_pipe {
+  rgw_bucket_shard source_bs;
+  RGWBucketInfo dest_bucket_info;
+  string source_prefix;
+  string dest_prefix;
+};
+
 struct rgw_datalog_info {
   uint32_t num_shards;
 
@@ -572,7 +579,7 @@ public:
   map<int, rgw_bucket_shard_sync_info>& get_sync_status() { return sync_status; }
   int init_sync_status();
 
-  static string status_oid(const string& source_zone, const rgw_bucket_shard& bs);
+  static string status_oid(const string& source_zone, const rgw_bucket_sync_pipe& bs);
   static string obj_status_oid(const string& source_zone, const rgw_obj& obj); /* can be used by sync modules */
 
   // implements DoutPrefixProvider
