@@ -25,7 +25,7 @@ public:
   struct target;
 
 private:
-  rgw_bucket bucket;
+  rgw_bucket bucket; /* source bucket */
   std::map<string, target> targets; /* map: target zone_id -> target rules */
 
   /* in-memory only */
@@ -37,14 +37,14 @@ public:
 
   struct rule {
     std::string zone_id;
-    std::string bucket_name;
+    std::string dest_bucket;
     std::string source_obj_prefix;
     std::string dest_obj_prefix;
 
     void encode(bufferlist& bl) const {
       ENCODE_START(1, 1, bl);
       encode(zone_id, bl);
-      encode(bucket_name, bl);
+      encode(dest_bucket, bl);
       encode(source_obj_prefix, bl);
       encode(dest_obj_prefix, bl);
       ENCODE_FINISH(bl);
@@ -53,7 +53,7 @@ public:
     void decode(bufferlist::const_iterator& bl) {
       DECODE_START(1, bl);
       decode(zone_id, bl);
-      decode(bucket_name, bl);
+      decode(dest_bucket, bl);
       decode(source_obj_prefix, bl);
       decode(dest_obj_prefix, bl);
       DECODE_FINISH(bl);
