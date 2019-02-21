@@ -1987,11 +1987,10 @@ string RGWDataSyncStatusManager::shard_obj_name(const string& source_zone, int s
 }
 
 RGWRemoteBucketLog::RGWRemoteBucketLog(const DoutPrefixProvider *_dpp, RGWRados *_store,
-                                       RGWBucketSyncStatusManager *_sm,
                                        RGWAsyncRadosProcessor *_async_rados,
                                        RGWHTTPManager *_http_manager)
     : RGWCoroutinesManager(_store->ctx(), _store->get_cr_registry()),
-      dpp(_dpp), store(_store), status_manager(_sm),
+      dpp(_dpp), store(_store),
       async_rados(_async_rados), http_manager(_http_manager)
 {
 }
@@ -3441,7 +3440,7 @@ int RGWBucketSyncStatusManager::init()
   auto async_rados = store->svc.rados->get_async_processor();
 
   for (int i = 0; i < effective_num_shards; i++) {
-    RGWRemoteBucketLog *l = new RGWRemoteBucketLog(this, store, this, async_rados, &http_manager);
+    RGWRemoteBucketLog *l = new RGWRemoteBucketLog(this, store, async_rados, &http_manager);
     ret = l->init(source_zone, conn, bucket, (num_shards ? i : -1), error_logger, store->get_sync_tracer(), sync_module);
     if (ret < 0) {
       ldpp_dout(this, 0) << "ERROR: failed to initialize RGWRemoteBucketLog object" << dendl;
