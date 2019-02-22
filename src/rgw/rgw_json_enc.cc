@@ -825,17 +825,17 @@ void RGWBucketInfo::decode_json(JSONObj *obj) {
 
 void RGWBucketSyncPolicy::rule::dump(Formatter *f) const
 {
-  encode_json("zone_id", zone_id, f);
-  encode_json("dest_bucket", dest_bucket, f);
+  encode_json("source_zone_id", source_zone_id, f);
   encode_json("source_obj_prefix", source_obj_prefix, f);
+  encode_json("dest_bucket", dest_bucket, f);
   encode_json("dest_obj_prefix", dest_obj_prefix, f);
 }
 
 void RGWBucketSyncPolicy::rule::decode_json(JSONObj *obj)
 {
-  JSONDecoder::decode_json("zone_id", zone_id, obj);
-  JSONDecoder::decode_json("dest_bucket", dest_bucket, obj);
+  JSONDecoder::decode_json("source_zone_id", source_zone_id, obj);
   JSONDecoder::decode_json("source_obj_prefix", source_obj_prefix, obj);
+  JSONDecoder::decode_json("dest_bucket", dest_bucket, obj);
   JSONDecoder::decode_json("dest_obj_prefix", dest_obj_prefix, obj);
 }
 
@@ -861,6 +861,12 @@ void RGWBucketSyncPolicy::decode_json(JSONObj *obj)
 {
   JSONDecoder::decode_json("bucket", bucket, obj);
   JSONDecoder::decode_json("targets", targets, obj);
+}
+
+void rgw_bucket_sync_target_info::dump(Formatter *f) const
+{
+  encode_json("source_bucket", source_bucket, f);
+  encode_json("target", target, f);
 }
 
 void rgw_obj_key::dump(Formatter *f) const

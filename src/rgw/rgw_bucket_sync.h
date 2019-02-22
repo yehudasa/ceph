@@ -36,14 +36,14 @@ private:
 public:
 
   struct rule {
-    std::string zone_id;
-    std::string dest_bucket;
+    std::string source_zone_id;
     std::string source_obj_prefix;
+    rgw_bucket dest_bucket;
     std::string dest_obj_prefix;
 
     void encode(bufferlist& bl) const {
       ENCODE_START(1, 1, bl);
-      encode(zone_id, bl);
+      encode(source_zone_id, bl);
       encode(dest_bucket, bl);
       encode(source_obj_prefix, bl);
       encode(dest_obj_prefix, bl);
@@ -52,7 +52,7 @@ public:
 
     void decode(bufferlist::const_iterator& bl) {
       DECODE_START(1, bl);
-      decode(zone_id, bl);
+      decode(source_zone_id, bl);
       decode(dest_bucket, bl);
       decode(source_obj_prefix, bl);
       decode(dest_obj_prefix, bl);
@@ -114,3 +114,35 @@ public:
 WRITE_CLASS_ENCODER(RGWBucketSyncPolicy::rule)
 WRITE_CLASS_ENCODER(RGWBucketSyncPolicy::target)
 WRITE_CLASS_ENCODER(RGWBucketSyncPolicy)
+
+struct rgw_bucket_sync_pipe {
+  rgw_bucket_shard source_bs;
+  RGWBucketInfo dest_bucket_info;
+  string source_prefix;
+  string dest_prefix;
+};
+
+struct rgw_bucket_sync_target_info {
+  rgw_bucket source_bucket;
+  RGWBucketSyncPolicy::target target;
+
+  void encode(bufferlist& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(source_bucket, bl);
+    encode(target, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(bufferlist::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(source_bucket, bl);
+    decode(target, bl);
+    DECODE_FINISH(bl);
+  }
+
+  void dump(ceph::Formatter *f) const;
+
+  std;;vector<rgw_bucket_sync_pipe> build_pipes(const rgw_bucket& source_bs);
+};
+WRITE_CLASS_ENCODER(rgw_bucket_sync_target_info)
+
