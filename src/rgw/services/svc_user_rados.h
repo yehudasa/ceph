@@ -181,6 +181,6 @@ public:
 		 ceph::real_time *last_stats_update) override;  /* last time a stats update was done */
 
   int read_stats_async(RGWSI_MetaBackend::Context *ctx,
-		       const rgw_user& user, RGWGetUserStats_CB *cb);
+		       const rgw_user& user, RGWGetUserStats_CB *cb) override;
 };
 
