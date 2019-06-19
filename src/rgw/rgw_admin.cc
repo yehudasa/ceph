@@ -62,6 +62,7 @@ extern "C" {
 #include "services/svc_bilog_rados.h"
 #include "services/svc_datalog_rados.h"
 #include "services/svc_mdlog.h"
+#include "services/svc_meta_be_otp.h"
 
 #define dout_context g_ceph_context
 #define dout_subsys ceph_subsys_rgw
@@ -6764,7 +6765,7 @@ next:
     RGWStorageStats stats;
     ceph::real_time last_stats_sync;
     ceph::real_time last_stats_update;
-    int ret = store->ctl.user->read_stats(user_id, &stats, last_stats_sync, last_stats_update);
+    int ret = store->ctl.user->read_stats(user_id, &stats, &last_stats_sync, &last_stats_update);
     if (ret < 0) {
       if (ret == -ENOENT) { /* in case of ENOENT */
         cerr << "User has not been initialized or user does not exist" << std::endl;
@@ -6778,8 +6779,10 @@ next:
     {
       Formatter::ObjectSection os(*formatter, "result");
       encode_json("stats", stats, formatter);
-      encode_json("last_stats_sync", last_stats_sync, formatter);
-      encode_json("last_stats_update", last_stats_update, formatter);
+      utime_t last_sync_ut(last_stats_sync);
+      encode_json("last_stats_sync", last_sync_ut, formatter);
+      utime_t last_update_ut(last_stats_update);
+      encode_json("last_stats_update", last_update_ut, formatter);
     }
   }
 
@@ -7482,7 +7485,7 @@ next:
       cerr << "ERROR: could not init bucket: " << cpp_strerror(-ret) << std::endl;
       return -ret;
     }
-    ret = store->svc.bilog_rados->trim_entries(bucket_info, shard_id, start_marker, end_marker);
+    ret = store->svc.bilog_rados->log_trim(bucket_info, shard_id, start_marker, end_marker);
     if (ret < 0) {
       cerr << "ERROR: trim_bi_log_entries(): " << cpp_strerror(-ret) << std::endl;
       return -ret;
@@ -7713,9 +7716,10 @@ next:
     real_time mtime = real_clock::now();
     string oid = store->svc.cls->mfa.get_mfa_oid(user_id);
 
-    int ret = store->ctl.meta.mgr->mutate(rgw_otp_get_handler(), oid, mtime, &objv_tracker,
-                                      MDLOG_STATUS_WRITE, RGWMDLogSyncType::APPLY_ALWAYS,
-                                      [&] {
+    int ret = store->ctl.meta.mgr->mutate(RGWSI_MetaBackend_OTP::get_meta_key(user_id),
+					  mtime, &objv_tracker,
+					  MDLOG_STATUS_WRITE,
+					  [&] {
       return store->svc.cls->mfa.create_mfa(user_id, config, &objv_tracker, mtime, null_yield);
     });
     if (ret < 0) {
@@ -7746,11 +7750,11 @@ next:
     }
 
     real_time mtime = real_clock::now();
-    string oid = store->svc.cls->mfa.get_mfa_oid(user_id);
 
-    int ret = store->ctl.meta.mgr->mutate(rgw_otp_get_handler(), oid, mtime, &objv_tracker,
-                                      MDLOG_STATUS_WRITE, RGWMDLogSyncType::APPLY_ALWAYS,
-                                      [&] {
+    int ret = store->ctl.meta.mgr->mutate(RGWSI_MetaBackend_OTP::get_meta_key(user_id),
+					  mtime, &objv_tracker,
+					  MDLOG_STATUS_WRITE,
+					  [&] {
       return store->svc.cls->mfa.remove_mfa(user_id, totp_serial, &objv_tracker, mtime, null_yield);
     });
     if (ret < 0) {
@@ -7889,11 +7893,11 @@ next:
 
     /* now update the backend */
     real_time mtime = real_clock::now();
-    string oid = store->svc.cls->mfa.get_mfa_oid(user_id);
 
-    ret = store->ctl.meta.mgr->mutate(rgw_otp_get_handler(), oid, mtime, &objv_tracker,
-                                  MDLOG_STATUS_WRITE, RGWMDLogSyncType::APPLY_ALWAYS,
-                                  [&] {
+    ret = store->ctl.meta.mgr->mutate(RGWSI_MetaBackend_OTP::get_meta_key(user_id),
+				      mtime, &objv_tracker,
+				      MDLOG_STATUS_WRITE,
+				      [&] {
       return store->svc.cls->mfa.create_mfa(user_id, config, &objv_tracker, mtime, null_yield);
     });
     if (ret < 0) {
