@@ -605,15 +605,16 @@ int rgw_build_bucket_policies(RGWRados* store, struct req_state* s)
 
   if (!s->bucket_name.empty()) {
     s->bucket_exists = true;
-    if (s->bucket_instance_id.empty()) {
-      ret = store->get_bucket_info(obj_ctx, s->bucket_tenant, s->bucket_name,
-                                   s->bucket_info, &s->bucket_mtime,
-                                   s->yield, &s->bucket_attrs);
-    } else {
-      ret = store->get_bucket_instance_info(obj_ctx, s->bucket_instance_id,
-                                            s->bucket_info, &s->bucket_mtime,
-                                            &s->bucket_attrs, s->yield);
-    }
+
+    auto b = rgw_bucket(rgw_bucket_key(s->bucket_tenant, s->bucket_name, s->bucket_instance_id));
+
+    RGWObjVersionTracker ep_ot;
+    ret = store->ctl.bucket->read_bucket_info(b, &s->bucket_info,
+                                              s->yield,
+					      RGWBucketCtl::BucketInstance::GetParams()
+					        .set_mtime(&s->bucket_mtime)
+					        .set_attrs(&s->bucket_attrs),
+			                      &ep_ot);
     if (ret < 0) {
       if (ret != -ENOENT) {
         string bucket_log;
@@ -624,6 +625,7 @@ int rgw_build_bucket_policies(RGWRados* store, struct req_state* s)
       }
       s->bucket_exists = false;
     }
+    s->bucket_ep_objv = ep_ot.read_version;
     s->bucket = s->bucket_info.bucket;
 
     if (s->bucket_exists) {
@@ -3332,7 +3334,7 @@ void RGWDeleteBucket::execute()
     return;
   }
   RGWObjVersionTracker ot;
-  ot.read_version = s->bucket_info.ep_objv;
+  ot.read_version = s->bucket_ep_objv;
 
   if (s->system_request) {
     string tag = s->info.args.get(RGW_SYS_PARAM_PREFIX "tag");
@@ -6450,10 +6452,14 @@ bool RGWBulkDelete::Deleter::delete_single(const acct_path_t& path)
   RGWBucketInfo binfo;
   map<string, bufferlist> battrs;
   ACLOwner bowner;
+  RGWObjVersionTracker ot;
 
-  int ret = store->get_bucket_info(*s->sysobj_ctx, s->user->user_id.tenant,
-                                   path.bucket_name, binfo, nullptr,
-                                   s->yield, &battrs);
+  rgw_bucket b(rgw_bucket_key(s->user->user_id.tenant, path.bucket_name));
+
+  int ret = store->ctl.bucket->read_bucket_info(b, &binfo, s->yield,
+						RGWBucketCtl::BucketInstance::GetParams()
+						  .set_attrs(&battrs),
+						&ot);
   if (ret < 0) {
     goto binfo_fail;
   }
@@ -6479,9 +6485,6 @@ bool RGWBulkDelete::Deleter::delete_single(const acct_path_t& path)
       goto delop_fail;
     }
   } else {
-    RGWObjVersionTracker ot;
-    ot.read_version = binfo.ep_objv;
-
     ret = store->delete_bucket(binfo, ot);
     if (0 == ret) {
       ret = store->ctl.bucket->unlink_bucket(binfo.owner, binfo.bucket, false);
