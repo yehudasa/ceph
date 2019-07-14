@@ -290,7 +290,8 @@ void check_bad_user_bucket_mapping(RGWRados *store, const rgw_user& user_id,
         if (fix) {
           cout << "fixing" << std::endl;
           r = store->ctl.bucket->link_bucket(user_id, actual_bucket,
-                                             bucket_info.creation_time);
+                                             bucket_info.creation_time,
+					     null_yield);
           if (r < 0) {
             cerr << "failed to fix bucket: " << cpp_strerror(-r) << std::endl;
           }
@@ -392,7 +393,7 @@ int rgw_remove_bucket(RGWRados *store, rgw_bucket& bucket, bool delete_children)
     return ret;
   }
 
-  ret = store->ctl.bucket->unlink_bucket(info.owner, bucket, false);
+  ret = store->ctl.bucket->unlink_bucket(info.owner, bucket, null_yield, false);
   if (ret < 0) {
     lderr(store->ctx()) << "ERROR: unable to remove user bucket information" << dendl;
   }
@@ -556,7 +557,7 @@ int rgw_remove_bucket_bypass_gc(RGWRados *store, rgw_bucket& bucket,
     return ret;
   }
 
-  ret = store->ctl.bucket->unlink_bucket(info.owner, bucket, false);
+  ret = store->ctl.bucket->unlink_bucket(info.owner, bucket, null_yield, false);
   if (ret < 0) {
     lderr(store->ctx()) << "ERROR: unable to remove user bucket information" << dendl;
   }
@@ -608,7 +609,7 @@ int RGWBucket::init(RGWRados *storage, RGWBucketAdminOpState& op_state)
   return 0;
 }
 
-int RGWBucket::link(RGWBucketAdminOpState& op_state, std::string *err_msg)
+int RGWBucket::link(RGWBucketAdminOpState& op_state, optional_yield y, std::string *err_msg)
 {
   if (!op_state.is_user_op()) {
     set_err_msg(err_msg, "empty user id");
@@ -639,9 +640,9 @@ int RGWBucket::link(RGWBucketAdminOpState& op_state, std::string *err_msg)
 
   auto bucket_ctl = store->ctl.bucket;
 
-  int r = bucket_ctl->read_bucket_instance_info(bucket, &bucket_info, null_yield, RGWBucketCtl::BucketInstance::GetParams()
+  int r = bucket_ctl->read_bucket_instance_info(bucket, &bucket_info, y, RGWBucketCtl::BucketInstance::GetParams()
                                                                                   .set_attrs(&attrs)
-                                                                                  .set_objv_tracker(&objv_tracker),
+                                                                                  .set_objv_tracker(&objv_tracker)
                                                                                   .set_bectx_params(&obj_ctx));
   if (r < 0) {
     return r;
@@ -661,7 +662,7 @@ int RGWBucket::link(RGWBucketAdminOpState& op_state, std::string *err_msg)
       return -EIO;
     }
 
-    r = store->ctl.bucket->unlink_bucket(owner.get_id(), bucket, false);
+    r = store->ctl.bucket->unlink_bucket(owner.get_id(), bucket, y, false);
     if (r < 0) {
       set_err_msg(err_msg, "could not unlink policy from user " + owner.get_id().to_str());
       return r;
@@ -678,9 +679,10 @@ int RGWBucket::link(RGWBucketAdminOpState& op_state, std::string *err_msg)
     // ...and encode the acl
     policy.encode(attrs[RGW_ATTR_ACL]);
 
-    r = bucket_ctl->store_bucket_instance_info(bucket, bucket_info, RGWBucketCtl::BucketInstance::PutParams()
-                                                                    .set_attrs(&attrs)
-                                                                    .set_objv_tracker(&objv_tracker));
+    r = bucket_ctl->store_bucket_instance_info(bucket, bucket_info, y,
+					       RGWBucketCtl::BucketInstance::PutParams()
+                                                 .set_attrs(&attrs)
+                                                 .set_objv_tracker(&objv_tracker));
     if (r < 0) {
       return r;
     }
@@ -690,7 +692,7 @@ int RGWBucket::link(RGWBucketAdminOpState& op_state, std::string *err_msg)
     RGWBucketEntryPoint be;
     map<string, bufferlist> be_attrs;
     RGWObjVersionTracker be_ot;
-    r = bucket_ctl->read_bucket_entrypoint_info(bucket, &be, null_yield, RGWBucketCtl::Bucket::GetParams()
+    r = bucket_ctl->read_bucket_entrypoint_info(bucket, &be, y, RGWBucketCtl::Bucket::GetParams()
                                                                          .set_objv_tracker(&be_ot)
                                                                          .set_attrs(&be_attrs));
     if (r < 0) {
@@ -700,7 +702,7 @@ int RGWBucket::link(RGWBucketAdminOpState& op_state, std::string *err_msg)
     be.owner = bucket_info.owner;
     be_attrs[RGW_ATTR_ACL] = attrs[RGW_ATTR_ACL];
 
-    r = bucket_ctl->store_bucket_entrypoint_info(bucket, be, null_yield, RGWBucketCtl::Bucket::PutParams()
+    r = bucket_ctl->store_bucket_entrypoint_info(bucket, be, y, RGWBucketCtl::Bucket::PutParams()
                                                                          .set_objv_tracker(&be_ot)
                                                                          .set_attrs(&be_attrs));
     if (r < 0) {
@@ -710,7 +712,8 @@ int RGWBucket::link(RGWBucketAdminOpState& op_state, std::string *err_msg)
     /* link to user */
     r = store->ctl.bucket->link_bucket(user_info.user_id,
                                        bucket_info.bucket,
-                                       ceph::real_time());
+                                       ceph::real_time(),
+				       y);
     if (r < 0) {
       return r;
     }
@@ -719,7 +722,7 @@ int RGWBucket::link(RGWBucketAdminOpState& op_state, std::string *err_msg)
   return 0;
 }
 
-int RGWBucket::unlink(RGWBucketAdminOpState& op_state, std::string *err_msg)
+int RGWBucket::unlink(RGWBucketAdminOpState& op_state, optional_yield y, std::string *err_msg)
 {
   rgw_bucket bucket = op_state.get_bucket();
 
@@ -728,7 +731,7 @@ int RGWBucket::unlink(RGWBucketAdminOpState& op_state, std::string *err_msg)
     return -EINVAL;
   }
 
-  int r = store->ctl.bucket->unlink_bucket(user_info.user_id, bucket);
+  int r = store->ctl.bucket->unlink_bucket(user_info.user_id, bucket, y);
   if (r < 0) {
     set_err_msg(err_msg, "error unlinking bucket" + cpp_strerror(-r));
   }
@@ -1141,7 +1144,7 @@ int RGWBucketAdminOp::unlink(RGWRados *store, RGWBucketAdminOpState& op_state)
   if (ret < 0)
     return ret;
 
-  return bucket.unlink(op_state);
+  return bucket.unlink(op_state, null_yield);
 }
 
 int RGWBucketAdminOp::link(RGWRados *store, RGWBucketAdminOpState& op_state, string *err)
@@ -1152,7 +1155,7 @@ int RGWBucketAdminOp::link(RGWRados *store, RGWBucketAdminOpState& op_state, str
   if (ret < 0)
     return ret;
 
-  return bucket.link(op_state, err);
+  return bucket.link(op_state, null_yield, err);
 
 }
 
@@ -1685,7 +1688,7 @@ int RGWBucketAdminOp::clear_stale_instances(RGWRados *store,
                        int ret = purge_bucket_instance(store, binfo);
                        if (ret == 0){
                          auto md_key = "bucket.instance:" + binfo.bucket.get_key();
-                         ret = store->ctl.meta.mgr->remove(md_key);
+                         ret = store->ctl.meta.mgr->remove(md_key, null_yield);
                        }
                        formatter->open_object_section("delete_status");
                        formatter->dump_string("bucket_instance", binfo.bucket.get_key());
@@ -1751,7 +1754,7 @@ int RGWBucketAdminOp::fix_lc_shards(RGWRados *store,
     process_single_lc_entry(store, formatter, user_id.tenant, bucket_name);
     formatter->flush(cout);
   } else {
-    int ret = store->meta_mgr->list_keys_init("bucket", marker, &handle);
+    int ret = store->ctl.meta.mgr->list_keys_init("bucket", marker, &handle);
     if (ret < 0) {
       std::cerr << "ERROR: can't get key: " << cpp_strerror(-ret) << std::endl;
       return ret;
@@ -1760,13 +1763,13 @@ int RGWBucketAdminOp::fix_lc_shards(RGWRados *store,
     {
       formatter->open_array_section("lc_fix_status");
       auto sg = make_scope_guard([&store, &handle, &formatter](){
-                                   store->meta_mgr->list_keys_complete(handle);
+                                   store->ctl.meta.mgr->list_keys_complete(handle);
                                    formatter->close_section(); // lc_fix_status
                                    formatter->flush(cout);
                                  });
       do {
         list<std::string> keys;
-        ret = store->meta_mgr->list_keys_next(handle, default_max_keys, keys, &truncated);
+        ret = store->ctl.meta.mgr->list_keys_next(handle, default_max_keys, keys, &truncated);
         if (ret < 0 && ret != -ENOENT) {
           std::cerr << "ERROR: lists_keys_next(): " << cpp_strerror(-ret) << std::endl;
           return ret;
@@ -2414,12 +2417,12 @@ public:
      * it immediately and don't want to invalidate our cached objv_version or the bucket obj removal
      * will incorrectly fail.
      */
-    ret = ctl.bucket->unlink_bucket(be.owner, be.bucket, false);
+    ret = ctl.bucket->unlink_bucket(be.owner, be.bucket, y, false);
     if (ret < 0) {
       lderr(svc.bucket->ctx()) << "could not unlink bucket=" << entry << " owner=" << be.owner << dendl;
     }
 
-    ret = svc.bucket->remove_bucket_entrypoint_info(ctx, entry, &objv_tracker);
+    ret = svc.bucket->remove_bucket_entrypoint_info(ctx, entry, &objv_tracker, y);
     if (ret < 0) {
       lderr(svc.bucket->ctx()) << "could not delete bucket=" << entry << dendl;
     }
@@ -2448,7 +2451,8 @@ public:
   RGWMetadataHandlerPut_Bucket(RGWBucketMetadataHandler *_handler,
                                RGWSI_MetaBackend_Handler::Op *op, string& entry,
                                RGWMetadataObject *_obj, RGWObjVersionTracker& objv_tracker,
-                               RGWMDLogSyncType type) : RGWMetadataHandlerPut_SObj(_handler, op, entry, obj, objv_tracker, type),
+			       optional_yield y,
+                               RGWMDLogSyncType type) : RGWMetadataHandlerPut_SObj(_handler, op, entry, obj, objv_tracker, y, type),
                                                         bhandler(_handler) {
     obj = static_cast<RGWBucketEntryMetadataObject *>(_obj);
   }
@@ -2465,9 +2469,10 @@ public:
 int RGWBucketMetadataHandler::do_put(RGWSI_MetaBackend_Handler::Op *op, string& entry,
                                      RGWMetadataObject *obj,
                                      RGWObjVersionTracker& objv_tracker,
+				     optional_yield y,
                                      RGWMDLogSyncType type)
 {
-  RGWMetadataHandlerPut_Bucket put_op(this, op, entry, obj, objv_tracker, type);
+  RGWMetadataHandlerPut_Bucket put_op(this, op, entry, obj, objv_tracker, y, type);
   return do_put_operate(&put_op);
 }
 
@@ -2490,7 +2495,8 @@ int RGWMetadataHandlerPut_Bucket::put_checked()
                                                            false,
                                                            mtime,
                                                            pattrs,
-                                                           &objv_tracker);
+                                                           &objv_tracker,
+							   y);
 }
 
 int RGWMetadataHandlerPut_Bucket::put_post()
@@ -2501,9 +2507,9 @@ int RGWMetadataHandlerPut_Bucket::put_post()
 
   /* link bucket */
   if (be.linked) {
-    ret = bhandler->ctl.bucket->link_bucket(be.owner, be.bucket, be.creation_time, false);
+    ret = bhandler->ctl.bucket->link_bucket(be.owner, be.bucket, be.creation_time, y, false);
   } else {
-    ret = bhandler->ctl.bucket->unlink_bucket(be.owner, be.bucket, false);
+    ret = bhandler->ctl.bucket->unlink_bucket(be.owner, be.bucket, y, false);
   }
 
   return ret;
@@ -2667,7 +2673,7 @@ public:
 
     /* link new bucket */
 
-    ret = ctl.bucket->link_bucket(new_be.owner, new_be.bucket, new_be.creation_time, false, y);
+    ret = ctl.bucket->link_bucket(new_be.owner, new_be.bucket, new_be.creation_time, y, false);
     if (ret < 0) {
       ldout(cct, 0) << "ERROR: failed to link new bucket for bucket=" << new_be.bucket << " ret=" << ret << dendl;
       return ret;
@@ -2675,7 +2681,7 @@ public:
 
     /* clean up old stuff */
 
-    ret = ctl.bucket->unlink_bucket(be.owner, entry_bucket, false, y);
+    ret = ctl.bucket->unlink_bucket(be.owner, entry_bucket, y, false);
     if (ret < 0) {
         lderr(cct) << "could not unlink bucket=" << entry << " owner=" << be.owner << dendl;
     }
@@ -2713,7 +2719,7 @@ public:
     if (entry.find("-deleted-") != string::npos) {
       RGWObjVersionTracker ot;
       RGWMetadataObject *robj;
-      int ret = do_get(op, entry, &robj);
+      int ret = do_get(op, entry, &robj, y);
       if (ret != -ENOENT) {
         if (ret < 0) {
           return ret;
@@ -2799,6 +2805,7 @@ public:
 
   int do_put(RGWSI_MetaBackend_Handler::Op *op, string& entry,
              RGWMetadataObject *_obj, RGWObjVersionTracker& objv_tracker,
+	     optional_yield y,
              RGWMDLogSyncType sync_type) override;
 
   int do_remove(RGWSI_MetaBackend_Handler::Op *op, string& entry, RGWObjVersionTracker& objv_tracker,
@@ -2811,7 +2818,7 @@ public:
     if (ret < 0 && ret != -ENOENT)
       return ret;
 
-    return svc.bucket->remove_bucket_instance_info(ctx, entry, &bci.info.objv_tracker);
+    return svc.bucket->remove_bucket_instance_info(ctx, entry, &bci.info.objv_tracker, y);
   }
 
   int call(std::function<int(RGWSI_Bucket_BI_Ctx& ctx)> f) {
@@ -2837,7 +2844,8 @@ public:
                                        RGWBucketInstanceMetadataHandler *_handler,
                                        RGWSI_MetaBackend_Handler::Op *_op, string& entry,
                                        RGWMetadataObject *_obj, RGWObjVersionTracker& objv_tracker,
-                                       RGWMDLogSyncType type) : RGWMetadataHandlerPut_SObj(_handler, _op, entry, obj, objv_tracker, type),
+				       optional_yield y,
+                                       RGWMDLogSyncType type) : RGWMetadataHandlerPut_SObj(_handler, _op, entry, obj, objv_tracker, y, type),
                                                                 bihandler(_handler) {
     obj = static_cast<RGWBucketInstanceMetadataObject *>(_obj);
 
@@ -2926,7 +2934,8 @@ int RGWMetadataHandlerPut_BucketInstance::put_checked()
                                                          orig_info,
                                                          false,
                                                          mtime,
-                                                         pattrs);
+                                                         pattrs,
+							 y);
 }
 
 int RGWMetadataHandlerPut_BucketInstance::put_post()
@@ -2946,7 +2955,7 @@ class RGWArchiveBucketInstanceMetadataHandler : public RGWBucketInstanceMetadata
 public:
   RGWArchiveBucketInstanceMetadataHandler() {}
 
-  int do_remove(RGWSI_MetaBackend_Handler::Op *op, string& entry, RGWObjVersionTracker& objv_tracker) override {
+  int do_remove(RGWSI_MetaBackend_Handler::Op *op, string& entry, RGWObjVersionTracker& objv_tracker, optional_yield y) override {
     ldout(cct, 0) << "SKIP: bucket instance removal is not allowed on archive zone: bucket.instance:" << entry << dendl;
     return 0;
   }
@@ -2997,9 +3006,9 @@ int RGWBucketCtl::read_bucket_entrypoint_info(const rgw_bucket& bucket,
                                                    params.objv_tracker,
                                                    params.mtime,
                                                    params.attrs,
+						   y,
                                                    params.cache_info,
-                                                   params.refresh_version,
-                                                   y);
+                                                   params.refresh_version);
   });
 }
 
@@ -3029,7 +3038,8 @@ int RGWBucketCtl::remove_bucket_entrypoint_info(const rgw_bucket& bucket,
   return bm_handler->call([&](RGWSI_Bucket_EP_Ctx& ctx) {
     return svc.bucket->remove_bucket_entrypoint_info(ctx,
                                                      RGWSI_Bucket::get_entrypoint_meta_key(bucket),
-                                                     params.objv_tracker);
+                                                     params.objv_tracker,
+						     y);
   });
 }
 
@@ -3045,9 +3055,9 @@ int RGWBucketCtl::read_bucket_instance_info(const rgw_bucket& bucket,
                                                  info,
                                                  params.mtime,
                                                  params.attrs,
+						 y,
                                                  params.cache_info,
-                                                 params.refresh_version,
-                                                 y);
+                                                 params.refresh_version);
   });
 
   if (ret < 0) {
@@ -3075,7 +3085,7 @@ int RGWBucketCtl::read_bucket_info(const rgw_bucket& bucket,
   if (b->bucket_id.empty()) {
     ep.emplace();
 
-    int r = read_bucket_entrypoint_info(*b, &(*ep), RGWBucketCtl::Bucket::GetParams()
+    int r = read_bucket_entrypoint_info(*b, &(*ep), y, RGWBucketCtl::Bucket::GetParams()
                                                     .set_bectx_params(params.bectx_params)
                                                     .set_objv_tracker(ep_objv_tracker));
     if (r < 0) {
@@ -3091,9 +3101,9 @@ int RGWBucketCtl::read_bucket_info(const rgw_bucket& bucket,
                                                  info,
                                                  params.mtime,
                                                  params.attrs,
+						 y,
                                                  params.cache_info,
-                                                 params.refresh_version,
-                                                 y);
+                                                 params.refresh_version);
   });
 
   if (ret < 0) {
@@ -3134,7 +3144,7 @@ int RGWBucketCtl::store_bucket_instance_info(const rgw_bucket& bucket,
                                             ceph::optional_ref_default<RGWBucketCtl::BucketInstance::PutParams> _params)
 {
   return bmi_handler->call([&](RGWSI_Bucket_BI_Ctx& ctx) {
-    return do_store_bucket_instance_info(ctx, bucket, info, _params, y);
+    return do_store_bucket_instance_info(ctx, bucket, info, y, _params);
   });
 }
 
@@ -3162,7 +3172,8 @@ int RGWBucketCtl::do_store_linked_bucket_info(RGWSI_Bucket_X_Ctx& ctx,
                                               bool exclusive, real_time mtime,
                                               obj_version *pep_objv,
                                               map<string, bufferlist> *pattrs,
-                                              bool create_entry_point)
+                                              bool create_entry_point,
+					      optional_yield y)
 {
   bool create_head = !info.has_instance_obj || create_entry_point;
 
@@ -3171,7 +3182,8 @@ int RGWBucketCtl::do_store_linked_bucket_info(RGWSI_Bucket_X_Ctx& ctx,
                                                    info,
                                                    orig_info,
                                                    exclusive,
-                                                   mtime, pattrs);
+                                                   mtime, pattrs,
+						   y);
   if (ret < 0) {
     return ret;
   }
@@ -3199,7 +3211,8 @@ int RGWBucketCtl::do_store_linked_bucket_info(RGWSI_Bucket_X_Ctx& ctx,
                                                  exclusive,
                                                  mtime,
                                                  pattrs,
-                                                 &ot);
+                                                 &ot,
+						 y);
   if (ret < 0)
     return ret;
 
@@ -3275,10 +3288,11 @@ int RGWBucketCtl::set_bucket_instance_attrs(RGWBucketInfo& bucket_info,
 int RGWBucketCtl::link_bucket(const rgw_user& user_id,
                               const rgw_bucket& bucket,
                               ceph::real_time creation_time,
+			      optional_yield y,
                               bool update_entrypoint)
 {
   return bm_handler->call([&](RGWSI_Bucket_EP_Ctx& ctx) {
-    return do_link_bucket(ctx, user_id, bucket, creation_time, update_entrypoint);
+    return do_link_bucket(ctx, user_id, bucket, creation_time, y, update_entrypoint);
   });
 }
 
@@ -3286,6 +3300,7 @@ int RGWBucketCtl::do_link_bucket(RGWSI_Bucket_EP_Ctx& ctx,
                                  const rgw_user& user_id,
                                  const rgw_bucket& bucket,
                                  ceph::real_time creation_time,
+				 optional_yield y,
                                  bool update_entrypoint)
 {
   int ret;
@@ -3302,7 +3317,8 @@ int RGWBucketCtl::do_link_bucket(RGWSI_Bucket_EP_Ctx& ctx,
     ret = svc.bucket->read_bucket_entrypoint_info(ctx,
                                                   meta_key,
                                                   &ep, &ot,
-                                                  nullptr, &attrs);
+                                                  nullptr, &attrs,
+						  y);
     if (ret < 0 && ret != -ENOENT) {
       ldout(cct, 0) << "ERROR: store->get_bucket_entrypoint_info() returned: "
                     << cpp_strerror(-ret) << dendl;
@@ -3322,13 +3338,13 @@ int RGWBucketCtl::do_link_bucket(RGWSI_Bucket_EP_Ctx& ctx,
   ep.linked = true;
   ep.owner = user_id;
   ep.bucket = bucket;
-  ret = svc.bucket->store_bucket_entrypoint_info(ctx, meta_key, ep, false, real_time(), &attrs, &ot);
+  ret = svc.bucket->store_bucket_entrypoint_info(ctx, meta_key, ep, false, real_time(), &attrs, &ot, y);
   if (ret < 0)
     goto done_err;
 
   return 0;
 done_err:
-  int r = do_unlink_bucket(ctx, user_id, bucket, true);
+  int r = do_unlink_bucket(ctx, user_id, bucket, y, true);
   if (r < 0) {
     ldout(cct, 0) << "ERROR: failed unlinking bucket on error cleanup: "
                            << cpp_strerror(-r) << dendl;
@@ -3336,16 +3352,17 @@ done_err:
   return ret;
 }
 
-int RGWBucketCtl::unlink_bucket(const rgw_user& user_id, const rgw_bucket& bucket, bool update_entrypoint)
+int RGWBucketCtl::unlink_bucket(const rgw_user& user_id, const rgw_bucket& bucket, optional_yield y, bool update_entrypoint)
 {
   return bm_handler->call([&](RGWSI_Bucket_EP_Ctx& ctx) {
-    return do_unlink_bucket(ctx, user_id, bucket, update_entrypoint);
+    return do_unlink_bucket(ctx, user_id, bucket, y, update_entrypoint);
   });
 }
 
 int RGWBucketCtl::do_unlink_bucket(RGWSI_Bucket_EP_Ctx& ctx,
                                    const rgw_user& user_id,
                                    const rgw_bucket& bucket,
+				   optional_yield y,
                                    bool update_entrypoint)
 {
   int ret = ctl.user->remove_bucket(user_id, bucket);
@@ -3361,7 +3378,7 @@ int RGWBucketCtl::do_unlink_bucket(RGWSI_Bucket_EP_Ctx& ctx,
   RGWObjVersionTracker ot;
   map<string, bufferlist> attrs;
   string meta_key = RGWSI_Bucket::get_entrypoint_meta_key(bucket);
-  ret = svc.bucket->read_bucket_entrypoint_info(ctx, meta_key, &ep, &ot, nullptr, &attrs);
+  ret = svc.bucket->read_bucket_entrypoint_info(ctx, meta_key, &ep, &ot, nullptr, &attrs, y);
   if (ret == -ENOENT)
     return 0;
   if (ret < 0)
@@ -3376,7 +3393,7 @@ int RGWBucketCtl::do_unlink_bucket(RGWSI_Bucket_EP_Ctx& ctx,
   }
 
   ep.linked = false;
-  return svc.bucket->store_bucket_entrypoint_info(ctx, meta_key, ep, false, real_time(), &attrs, &ot);
+  return svc.bucket->store_bucket_entrypoint_info(ctx, meta_key, ep, false, real_time(), &attrs, &ot, y);
 }
 
 int RGWBucketCtl::read_bucket_stats(const rgw_bucket& bucket,
@@ -3399,7 +3416,7 @@ int RGWBucketCtl::read_buckets_stats(map<string, RGWBucketEnt>& m,
 int RGWBucketCtl::sync_user_stats(const rgw_user& user_id, const RGWBucketInfo& bucket_info)
 {
   RGWBucketEnt ent;
-  int r = svc.bi->read_stats(bucket_info, &ent);
+  int r = svc.bi->read_stats(bucket_info, &ent, null_yield);
   if (r < 0) {
     ldout(cct, 20) << __func__ << "(): failed to read bucket stats (r=" << r << ")" << dendl;
     return r;

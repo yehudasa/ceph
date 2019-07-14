@@ -847,7 +847,7 @@ public:
       return *this;
     }
 
-    RemoveParams& set_yield(optional_yield _y) {
+    GetParams& set_yield(optional_yield _y) {
       y = _y;
       return *this;
     }
@@ -886,7 +886,7 @@ public:
       return *this;
     }
 
-    RemoveParams& set_yield(optional_yield _y) {
+    PutParams& set_yield(optional_yield _y) {
       y = _y;
       return *this;
     }

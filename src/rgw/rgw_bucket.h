@@ -338,8 +338,8 @@ public:
           std::string *err_msg = NULL);
 
   int remove(RGWBucketAdminOpState& op_state, bool bypass_gc = false, bool keep_index_consistent = true, std::string *err_msg = NULL);
-  int link(RGWBucketAdminOpState& op_state, std::string *err_msg = NULL);
-  int unlink(RGWBucketAdminOpState& op_state, std::string *err_msg = NULL);
+  int link(RGWBucketAdminOpState& op_state, optional_yield y, std::string *err_msg = NULL);
+  int unlink(RGWBucketAdminOpState& op_state, optional_yield y, std::string *err_msg = NULL);
   int set_quota(RGWBucketAdminOpState& op_state, std::string *err_msg = NULL);
 
   int remove_object(RGWBucketAdminOpState& op_state, std::string *err_msg = NULL);
@@ -776,8 +776,8 @@ public:
                                  optional_yield y,
                                  ceph::optional_ref_default<RGWBucketCtl::BucketInstance::PutParams> params = std::nullopt);
   int remove_bucket_instance_info(const rgw_bucket& bucket,
-                                  optional_yield y,
                                   RGWBucketInfo& info,
+                                  optional_yield y,
                                   ceph::optional_ref_default<RGWBucketCtl::BucketInstance::RemoveParams> params = std::nullopt);
 
   /*
@@ -789,7 +789,8 @@ public:
   int read_bucket_info(const rgw_bucket& bucket,
                        RGWBucketInfo *info,
                        optional_yield y,
-                       ceph::optional_ref_default<RGWBucketCtl::BucketInstance::GetParams> _params = std::nullopt);
+                       ceph::optional_ref_default<RGWBucketCtl::BucketInstance::GetParams> _params = std::nullopt,
+		       RGWObjVersionTracker *ep_objv_tracker = nullptr);
 
 
   int set_bucket_instance_attrs(RGWBucketInfo& bucket_info,
@@ -801,10 +802,12 @@ public:
   int link_bucket(const rgw_user& user_id,
                   const rgw_bucket& bucket,
                   ceph::real_time creation_time,
+		  optional_yield y,
                   bool update_entrypoint = true);
 
   int unlink_bucket(const rgw_user& user_id,
                     const rgw_bucket& bucket,
+		    optional_yield y,
                     bool update_entrypoint = true);
 
   int read_buckets_stats(map<string, RGWBucketEnt>& m,
@@ -834,17 +837,20 @@ private:
                                   bool exclusive, real_time mtime,
                                   obj_version *pep_objv,
                                   map<string, bufferlist> *pattrs,
-                                  bool create_entry_point);
+                                  bool create_entry_point,
+				  optional_yield);
 
   int do_link_bucket(RGWSI_Bucket_EP_Ctx& ctx,
                      const rgw_user& user,
                      const rgw_bucket& bucket,
                      ceph::real_time creation_time,
+		     optional_yield y,
                      bool update_entrypoint);
 
   int do_unlink_bucket(RGWSI_Bucket_EP_Ctx& ctx,
                        const rgw_user& user_id,
                        const rgw_bucket& bucket,
+		       optional_yield y,
                        bool update_entrypoint);
 
 };
