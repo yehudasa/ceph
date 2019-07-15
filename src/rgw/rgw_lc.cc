@@ -21,6 +21,7 @@
 #include "rgw_multi.h"
 
 #include "services/svc_sys_obj.h"
+#include "services/svc_zone.h"
 #include "services/svc_tier_rados.h"
 
 #define dout_context g_ceph_context

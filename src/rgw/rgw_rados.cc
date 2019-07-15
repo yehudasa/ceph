@@ -7170,7 +7170,7 @@ int RGWRados::raw_obj_stat(rgw_raw_obj& obj, uint64_t *psize, real_time *pmtime,
     op.read(0, cct->_conf->rgw_max_chunk_size, first_chunk, NULL);
   }
   bufferlist outbl;
-  r = ref.pool.ioctx().operate(ref.obj.oid, &op, &outbl, y);
+  r = rgw_rados_operate(ref.pool.ioctx(), ref.obj.oid, &op, &outbl, y);
 
   if (epoch) {
     *epoch = ref.pool.ioctx().get_last_version();
