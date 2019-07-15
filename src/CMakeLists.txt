@@ -187,8 +187,6 @@ if(${ENABLE_COVERAGE})
   list(APPEND EXTRALIBS gcov)
 endif(${ENABLE_COVERAGE})
 
-include_directories(${NSS_INCLUDE_DIR} ${NSPR_INCLUDE_DIR})
-
 set(GCOV_PREFIX_STRIP 4)
 
 # the src/.git_version file may be written out by make-dist; otherwise
@@ -761,7 +759,7 @@ if (WITH_RBD)
   add_dependencies(vstart cython${PY_BINDING_INFIX}_rbd)
 endif()
 if (WITH_CEPHFS)
-  add_dependencies(vstart ceph-mds cephfs)
+  add_dependencies(vstart ceph-mds cephfs cython${PY_BINDING_INFIX}_cephfs)
 endif()
 if(WITH_RADOSGW)
   add_dependencies(vstart radosgw radosgw-admin)

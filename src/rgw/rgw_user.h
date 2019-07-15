@@ -659,7 +659,8 @@ private:
 
   /* API Contract Fulfillment */
   int execute_add(RGWUserAdminOpState& op_state, std::string *err_msg);
-  int execute_remove(RGWUserAdminOpState& op_state, std::string *err_msg);
+  int execute_remove(RGWUserAdminOpState& op_state, 
+                    std::string *err_msg, optional_yield y);
   int execute_modify(RGWUserAdminOpState& op_state, std::string *err_msg);
 
 public:
@@ -681,7 +682,7 @@ public:
 
   /* API Contracted Methods */
   int add(RGWUserAdminOpState& op_state, std::string *err_msg = NULL);
-  int remove(RGWUserAdminOpState& op_state, std::string *err_msg = NULL);
+  int remove(RGWUserAdminOpState& op_state, optional_yield y, std::string *err_msg = NULL);
 
   /* remove an already populated RGWUser */
   int remove(std::string *err_msg = NULL);
@@ -720,7 +721,7 @@ public:
                   RGWUserAdminOpState& op_state, RGWFormatterFlusher& flusher);
 
   static int remove(RGWRados *store,
-                  RGWUserAdminOpState& op_state, RGWFormatterFlusher& flusher);
+                  RGWUserAdminOpState& op_state, RGWFormatterFlusher& flusher, optional_yield y);
 };
 
 class RGWUserAdminOp_Subuser

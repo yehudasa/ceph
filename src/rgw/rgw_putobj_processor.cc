@@ -200,7 +200,7 @@ int AtomicObjectProcessor::process_first_chunk(bufferlist&& data,
   return 0;
 }
 
-int AtomicObjectProcessor::prepare()
+int AtomicObjectProcessor::prepare(optional_yield y)
 {
   uint64_t max_head_chunk_size;
   uint64_t head_max_size;
@@ -281,7 +281,7 @@ int AtomicObjectProcessor::complete(size_t accounted_size,
                                     const char *if_nomatch,
                                     const std::string *user_data,
                                     rgw_zone_set *zones_trace,
-                                    bool *pcanceled)
+                                    bool *pcanceled, optional_yield y)
 {
   int r = writer.drain();
   if (r < 0) {
@@ -317,7 +317,7 @@ int AtomicObjectProcessor::complete(size_t accounted_size,
   obj_op.meta.zones_trace = zones_trace;
   obj_op.meta.modify_tail = true;
 
-  r = obj_op.write_meta(actual_size, accounted_size, attrs);
+  r = obj_op.write_meta(actual_size, accounted_size, attrs, y);
   if (r < 0) {
     return r;
   }
@@ -402,7 +402,7 @@ int MultipartObjectProcessor::prepare_head()
   return 0;
 }
 
-int MultipartObjectProcessor::prepare()
+int MultipartObjectProcessor::prepare(optional_yield y)
 {
   manifest.set_prefix(target_obj.key.name + "." + upload_id);
 
@@ -419,7 +419,7 @@ int MultipartObjectProcessor::complete(size_t accounted_size,
                                        const char *if_nomatch,
                                        const std::string *user_data,
                                        rgw_zone_set *zones_trace,
-                                       bool *pcanceled)
+                                       bool *pcanceled, optional_yield y)
 {
   int r = writer.drain();
   if (r < 0) {
@@ -442,7 +442,7 @@ int MultipartObjectProcessor::complete(size_t accounted_size,
   obj_op.meta.zones_trace = zones_trace;
   obj_op.meta.modify_tail = true;
 
-  r = obj_op.write_meta(actual_size, accounted_size, attrs);
+  r = obj_op.write_meta(actual_size, accounted_size, attrs, y);
   if (r < 0)
     return r;
 
@@ -512,10 +512,10 @@ int AppendObjectProcessor::process_first_chunk(bufferlist &&data, rgw::putobj::D
   return 0;
 }
 
-int AppendObjectProcessor::prepare()
+int AppendObjectProcessor::prepare(optional_yield y)
 {
   RGWObjState *astate;
-  int r = store->get_obj_state(&obj_ctx, bucket_info, head_obj, &astate);
+  int r = store->get_obj_state(&obj_ctx, bucket_info, head_obj, &astate, y);
   if (r < 0) {
     return r;
   }
@@ -597,7 +597,8 @@ int AppendObjectProcessor::prepare()
 int AppendObjectProcessor::complete(size_t accounted_size, const string &etag, ceph::real_time *mtime,
                                     ceph::real_time set_mtime, map <string, bufferlist> &attrs,
                                     ceph::real_time delete_at, const char *if_match, const char *if_nomatch,
-                                    const string *user_data, rgw_zone_set *zones_trace, bool *pcanceled)
+                                    const string *user_data, rgw_zone_set *zones_trace, bool *pcanceled,
+                                    optional_yield y)
 {
   int r = writer.drain();
   if (r < 0)
@@ -650,7 +651,7 @@ int AppendObjectProcessor::complete(size_t accounted_size, const string &etag, c
     etag_bl.append(final_etag_str, strlen(final_etag_str) + 1);
     attrs[RGW_ATTR_ETAG] = etag_bl;
   }
-  r = obj_op.write_meta(actual_size + cur_size, accounted_size + *cur_accounted_size, attrs);
+  r = obj_op.write_meta(actual_size + cur_size, accounted_size + *cur_accounted_size, attrs, y);
   if (r < 0) {
     return r;
   }

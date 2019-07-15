@@ -1554,7 +1554,7 @@ namespace rgw {
                       *static_cast<RGWObjectCtx *>(s->obj_ctx),
                       obj, olh_epoch, s->req_id, this, s->yield);
 
-    op_ret = processor->prepare();
+    op_ret = processor->prepare(s->yield);
     if (op_ret < 0) {
       ldout(s->cct, 20) << "processor->prepare() returned ret=" << op_ret
 			<< dendl;
@@ -1705,7 +1705,8 @@ namespace rgw {
 
     op_ret = processor->complete(s->obj_size, etag, &mtime, real_time(), attrs,
                                  (delete_at ? *delete_at : real_time()),
-                                if_match, if_nomatch, nullptr, nullptr, nullptr);
+                                if_match, if_nomatch, nullptr, nullptr, nullptr,
+                                s->yield);
     if (op_ret != 0) {
       /* revert attr updates */
       rgw_fh->set_mtime(omtime);
