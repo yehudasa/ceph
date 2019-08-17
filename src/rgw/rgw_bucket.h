@@ -576,6 +576,7 @@ class RGWBucketCtl
   struct Svc {
     RGWSI_Zone *zone{nullptr};
     RGWSI_Bucket *bucket{nullptr};
+    RGWSI_Bucket_Sync *bucket_sync{nullptr};
     RGWSI_BucketIndex *bi{nullptr};
   } svc;
 
@@ -594,6 +595,7 @@ class RGWBucketCtl
 public:
   RGWBucketCtl(RGWSI_Zone *zone_svc,
                RGWSI_Bucket *bucket_svc,
+               RGWSI_Bucket_Sync *bucket_sync_svc,
                RGWSI_BucketIndex *bi_svc);
 
   void init(RGWUserCtl *user_ctl,
@@ -847,6 +849,12 @@ public:
 
   /* quota related */
   int sync_user_stats(const rgw_user& user_id, const RGWBucketInfo& bucket_info);
+
+  /* bucket sync */
+  int bucket_exports_data(const rgw_bucket& bucket,
+                          optional_yield y);
+  int bucket_imports_data(const rgw_bucket& bucket,
+                          optional_yield y);
 
 private:
   int convert_old_bucket_info(RGWSI_Bucket_X_Ctx& ctx,
