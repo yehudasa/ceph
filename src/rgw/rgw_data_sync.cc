@@ -3356,8 +3356,11 @@ class RGWRunBucketSourcesSyncCR : public RGWCoroutine {
 
 public:
   RGWRunBucketSourcesSyncCR(RGWDataSyncCtx *_sc, const rgw_bucket& bucket, const RGWSyncTraceNodeRef& _tn_parent)
-    : RGWCoroutine(_sc->cct), sc(_sc), sync_env(_sc->env), bucket(_bucket),
-      status_oid(RGWBucketPipeSyncStatusManager::status_oid(sc->source_zone, bucket)),
+    : RGWCoroutine(_sc->cct), sc(_sc), sync_env(_sync_env), bucket(_bucket),
+#warning FIXME
+#if 0
+      status_oid(RGWBucketPipeSyncStatusManager::status_oid(sync_env->source_zone, bucket)),
+#endif
       tn(sync_env->sync_tracer->add_node(_tn_parent, "bucket_source",
                                          SSTR(bucket_shard_str{bs}))) {
   }
