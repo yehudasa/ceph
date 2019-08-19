@@ -563,7 +563,7 @@ public:
   std::ostream& gen_prefix(std::ostream& out) const override;
 };
 
-class RGWBucketSyncStatusManager;
+class RGWBucketPipeSyncStatusManager;
 class RGWBucketSyncCR;
 
 struct rgw_bucket_shard_full_sync_marker {
@@ -709,7 +709,7 @@ public:
   void wakeup();
 };
 
-class RGWBucketSyncStatusManager : public DoutPrefixProvider {
+class RGWBucketPipeSyncStatusManager : public DoutPrefixProvider {
   RGWRados *store;
 
   RGWCoroutinesManager cr_mgr;
@@ -734,9 +734,10 @@ class RGWBucketSyncStatusManager : public DoutPrefixProvider {
   int num_shards;
 
 public:
-  RGWBucketSyncStatusManager(RGWRados *_store, const string& _source_zone,
+  RGWBucketPipeSyncStatusManager(RGWRados *_store,
+                             const string& _source_zone,
                              const rgw_bucket& bucket);
-  ~RGWBucketSyncStatusManager();
+  ~RGWBucketPipeSyncStatusManager();
 
   int init();
 

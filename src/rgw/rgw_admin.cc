@@ -7290,7 +7290,7 @@ next:
     if (ret < 0) {
       return -ret;
     }
-    RGWBucketSyncStatusManager sync(store, source_zone, bucket);
+    RGWBucketPipeSyncStatusManager sync(store, source_zone, bucket);
 
     ret = sync.init();
     if (ret < 0) {
@@ -7361,7 +7361,7 @@ next:
     if (ret < 0) {
       return -ret;
     }
-    RGWBucketSyncStatusManager sync(store, source_zone, bucket);
+    RGWBucketPipeSyncStatusManager sync(store, source_zone, bucket);
 
     ret = sync.init();
     if (ret < 0) {
@@ -7394,7 +7394,7 @@ next:
     if (ret < 0) {
       return -ret;
     }
-    RGWBucketSyncStatusManager sync(store, source_zone, bucket);
+    RGWBucketPipeSyncStatusManager sync(store, source_zone, bucket);
 
     ret = sync.init();
     if (ret < 0) {
