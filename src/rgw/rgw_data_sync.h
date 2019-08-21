@@ -412,39 +412,35 @@ WRITE_CLASS_ENCODER(rgw_sync_policy_info)
 
 class RGWSyncErrorLogger;
 class RGWRESTConn;
+class RGWServices;
 
 struct RGWDataSyncEnv {
   const DoutPrefixProvider *dpp{nullptr};
   CephContext *cct{nullptr};
   RGWRados *store{nullptr};
   RGWServices *svc{nullptr};
-  RGWRESTConn *conn{nullptr};
   RGWAsyncRadosProcessor *async_rados{nullptr};
   RGWHTTPManager *http_manager{nullptr};
   RGWSyncErrorLogger *error_logger{nullptr};
   RGWSyncTraceManager *sync_tracer{nullptr};
-  string source_zone;
   RGWSyncModuleInstanceRef sync_module{nullptr};
   PerfCounters* counters{nullptr};
 
   RGWDataSyncEnv() {}
 
-  void init(const DoutPrefixProvider *_dpp, CephContext *_cct, RGWRados *_store,
-            RGWRESTConn *_conn, RGWServices *_svc,
+  void init(const DoutPrefixProvider *_dpp, CephContext *_cct, RGWRados *_store, RGWServices *_svc,
             RGWAsyncRadosProcessor *_async_rados, RGWHTTPManager *_http_manager,
             RGWSyncErrorLogger *_error_logger, RGWSyncTraceManager *_sync_tracer,
-            const string& _source_zone, RGWSyncModuleInstanceRef& _sync_module,
+            RGWSyncModuleInstanceRef& _sync_module,
             PerfCounters* _counters) {
     dpp = _dpp;
     cct = _cct;
     store = _store;
     svc = _svc;
-    conn = _conn;
     async_rados = _async_rados;
     http_manager = _http_manager;
     error_logger = _error_logger;
     sync_tracer = _sync_tracer;
-    source_zone = _source_zone;
     sync_module = _sync_module;
     counters = _counters;
   }
@@ -453,16 +449,36 @@ struct RGWDataSyncEnv {
   string status_oid();
 };
 
+struct RGWDataSyncCtx {
+  CephContext *cct{nullptr};
+  RGWDataSyncEnv *env{nullptr};
+
+  RGWRESTConn *conn{nullptr};
+  string source_zone;
+
+  void init(RGWDataSyncEnv *_env,
+            RGWRESTConn *_conn,
+            const string& _source_zone) {
+    cct = _env->cct;
+    env = _env;
+    conn = _conn;
+    source_zone = _source_zone;
+  }
+};
+
 class RGWRados;
 class RGWDataChangesLogInfo;
 
 class RGWRemoteDataLog : public RGWCoroutinesManager {
   const DoutPrefixProvider *dpp;
+  RGWRados *store;
   CephContext *cct;
+  RGWCoroutinesManagerRegistry *cr_registry;
   RGWAsyncRadosProcessor *async_rados;
   RGWHTTPManager http_manager;
 
   RGWDataSyncEnv sync_env;
+  RGWDataSyncCtx sc;
 
   ceph::shared_mutex lock = ceph::make_shared_mutex("RGWRemoteDataLog::lock");
   RGWDataSyncControlCR *data_sync_cr;
@@ -473,8 +489,7 @@ class RGWRemoteDataLog : public RGWCoroutinesManager {
 
 public:
   RGWRemoteDataLog(const DoutPrefixProvider *dpp,
-                   CephContext *_cct,
-                   RGWCoroutinesManagerRegistry *_cr_registry,
+                   RGWRados *store,
                    RGWAsyncRadosProcessor *async_rados);
   int init(const string& _source_zone, RGWRESTConn *_conn, RGWSyncErrorLogger *_error_logger,
            RGWSyncTraceManager *_sync_tracer, RGWSyncModuleInstanceRef& module,
@@ -691,6 +706,7 @@ class RGWRemoteBucketLog : public RGWCoroutinesManager {
   RGWHTTPManager *http_manager;
 
   RGWDataSyncEnv sync_env;
+  RGWDataSyncCtx sc;
   rgw_bucket_shard_sync_info init_status;
 
   RGWBucketSyncCR *sync_cr{nullptr};
