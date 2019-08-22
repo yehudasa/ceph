@@ -21,6 +21,7 @@
 #include "rgw_formats.h"
 
 #include "services/svc_bucket_types.h"
+#include "services/svc_bucket_sync.h"
 
 class RGWSI_Meta;
 class RGWBucketMetadataHandler;
@@ -851,6 +852,9 @@ public:
   int sync_user_stats(const rgw_user& user_id, const RGWBucketInfo& bucket_info);
 
   /* bucket sync */
+  int get_sync_policy_handler(const rgw_bucket& bucket,
+			      RGWBucketSyncPolicyHandlerRef *phandler,
+			      optional_yield y);
   int bucket_exports_data(const rgw_bucket& bucket,
                           optional_yield y);
   int bucket_imports_data(const rgw_bucket& bucket,
