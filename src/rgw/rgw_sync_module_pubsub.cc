@@ -1349,7 +1349,7 @@ public:
   RGWPSHandleRemoteObjCBCR(RGWDataSyncCtx *_sc,
                           rgw_bucket_sync_pipe& _sync_pipe, rgw_obj_key& _key,
                           PSEnvRef _env, std::optional<uint64_t> _versioned_epoch,
-                          TopicsRef& _topics) : RGWStatRemoteObjCBCR(_sc, _sync_pipe.source_bs.bucket, _key),
+                          TopicsRef& _topics) : RGWStatRemoteObjCBCR(_sc, _sync_pipe.info.source_bs.bucket, _key),
                                                                       sc(_sc),
                                                                       sync_pipe(_sync_pipe),
                                                                       env(_env),
@@ -1359,7 +1359,7 @@ public:
   int operate() override {
     reenter(this) {
       ldout(sc->cct, 20) << ": stat of remote obj: z=" << sc->source_zone
-                               << " b=" << sync_pipe.source_bs.bucket << " k=" << key << " size=" << size << " mtime=" << mtime
+                               << " b=" << sync_pipe.info.source_bs.bucket << " k=" << key << " size=" << size << " mtime=" << mtime
                                << " attrs=" << attrs << dendl;
       {
         std::vector<std::pair<std::string, std::string> > attrs;
@@ -1374,11 +1374,11 @@ public:
         // this is why both are created here, once we have information about the 
         // subscription, we will store/push only the relevant ones
         make_event_ref(sc->cct,
-                       sync_pipe.source_bs.bucket, key,
+                       sync_pipe.info.source_bs.bucket, key,
                        mtime, &attrs,
                        EVENT_NAME_OBJECT_CREATE, &event);
         make_s3_record_ref(sc->cct,
-                       sync_pipe.source_bs.bucket, sync_pipe.dest_bucket_info.owner, key,
+                       sync_pipe.info.source_bs.bucket, sync_pipe.dest_bucket_info.owner, key,
                        mtime, &attrs,
                        EVENT_NAME_OBJECT_CREATE, &record);
       }
@@ -1403,7 +1403,7 @@ public:
   RGWPSHandleRemoteObjCR(RGWDataSyncCtx *_sc,
                         rgw_bucket_sync_pipe& _sync_pipe, rgw_obj_key& _key,
                         PSEnvRef _env, std::optional<uint64_t> _versioned_epoch,
-                        TopicsRef& _topics) : RGWCallStatRemoteObjCR(_sc, _sync_pipe.source_bs.bucket, _key),
+                        TopicsRef& _topics) : RGWCallStatRemoteObjCR(_sc, _sync_pipe.info.source_bs.bucket, _key),
                                                            sync_pipe(_sync_pipe),
                                                            env(_env), versioned_epoch(_versioned_epoch),
                                                            topics(_topics) {
@@ -1439,7 +1439,7 @@ public:
   int operate() override {
     reenter(this) {
       yield call(new RGWPSFindBucketTopicsCR(sc, env, sync_pipe.dest_bucket_info.owner,
-                                             sync_pipe.source_bs.bucket, key,
+                                             sync_pipe.info.source_bs.bucket, key,
                                              EVENT_NAME_OBJECT_CREATE,
                                              &topics));
       if (retcode < 0) {
@@ -1447,7 +1447,7 @@ public:
         return set_cr_error(retcode);
       }
       if (topics->empty()) {
-        ldout(sc->cct, 20) << "no topics found for " << sync_pipe.source_bs.bucket << "/" << key << dendl;
+        ldout(sc->cct, 20) << "no topics found for " << sync_pipe.info.source_bs.bucket << "/" << key << dendl;
         return set_cr_done();
       }
       yield call(new RGWPSHandleRemoteObjCR(sc, sync_pipe, key, env, versioned_epoch, topics));

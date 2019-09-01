@@ -24,12 +24,6 @@ struct rgw_bucket_sync_pair_info {
   string dest_prefix;
 };
 
-struct rgw_bucket_sync_pipe {
-  rgw_bucket_sync_pair_info info;
-  RGWBucketInfo source_bucket_info;
-  RGWBucketInfo dest_bucket_info;
-};
-
 inline ostream& operator<<(ostream& out, const rgw_bucket_sync_pair_info& p) {
   if (p.source_bs.bucket == p.dest_bs.bucket &&
       p.source_prefix == p.dest_prefix) {
@@ -49,6 +43,16 @@ inline ostream& operator<<(ostream& out, const rgw_bucket_sync_pair_info& p) {
   }
 
   return out;
+}
+
+struct rgw_bucket_sync_pipe {
+  rgw_bucket_sync_pair_info info;
+  RGWBucketInfo source_bucket_info;
+  RGWBucketInfo dest_bucket_info;
+};
+
+inline ostream& operator<<(ostream& out, const rgw_bucket_sync_pipe& p) {
+  return out << p.info;
 }
 
 struct rgw_datalog_info {
@@ -706,7 +710,8 @@ class RGWRemoteBucketLog : public RGWCoroutinesManager {
   RGWRados *store;
   RGWRESTConn *conn{nullptr};
   string source_zone;
-  rgw_bucket_shard bs;
+
+  rgw_bucket_sync_pair_info sync_pair;
 
   RGWAsyncRadosProcessor *async_rados;
   RGWHTTPManager *http_manager;
@@ -723,7 +728,8 @@ public:
                      RGWHTTPManager *_http_manager);
 
   int init(const string& _source_zone, RGWRESTConn *_conn,
-           const rgw_bucket& bucket, int shard_id,
+           const rgw_bucket& source_bucket, int shard_id,
+           const rgw_bucket& dest_bucket,
            RGWSyncErrorLogger *_error_logger,
            RGWSyncTraceManager *_sync_tracer,
            RGWSyncModuleInstanceRef& _sync_module);
@@ -748,7 +754,7 @@ class RGWBucketPipeSyncStatusManager : public DoutPrefixProvider {
   RGWSyncErrorLogger *error_logger;
   RGWSyncModuleInstanceRef sync_module;
 
-  rgw_bucket bucket;
+  rgw_bucket dest_bucket;
 
   map<int, RGWRemoteBucketLog *> source_logs;
 
@@ -763,7 +769,7 @@ class RGWBucketPipeSyncStatusManager : public DoutPrefixProvider {
 public:
   RGWBucketPipeSyncStatusManager(RGWRados *_store,
                              const string& _source_zone,
-                             const rgw_bucket& bucket);
+                             const rgw_bucket& dest_bucket);
   ~RGWBucketPipeSyncStatusManager();
 
   int init();
