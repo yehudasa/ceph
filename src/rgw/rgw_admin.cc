@@ -506,6 +506,8 @@ enum {
   OPT_MDLOG_STATUS,
   OPT_SYNC_ERROR_LIST,
   OPT_SYNC_ERROR_TRIM,
+  OPT_SYNC_POLICY_GET,
+  OPT_SYNC_POLICY_CONNECT,
   OPT_BILOG_LIST,
   OPT_BILOG_TRIM,
   OPT_BILOG_STATUS,
@@ -1009,6 +1011,16 @@ static int get_cmd(const char *cmd, const char *prev_cmd, const char *prev_prev_
   } else if (strcmp(prev_cmd, "sync") == 0) {
     if (strcmp(cmd, "status") == 0)
       return OPT_SYNC_STATUS;
+    if (strcmp(cmd, "flow") == 0) {
+      *need_more = true;
+      return 0;
+    }
+  } else if ((prev_prev_cmd && strcmp(prev_prev_cmd, "sync") == 0) &&
+	     (strcmp(prev_cmd, "policy") == 0)) {
+    if (strcmp(cmd, "get") == 0)
+      return OPT_SYNC_POLICY_GET;
+    if (strcmp(cmd, "connect") == 0)
+      return OPT_SYNC_POLICY_CONNECT;
   } else if (strcmp(prev_cmd, "role") == 0) {
     if (strcmp(cmd, "create") == 0)
       return OPT_ROLE_CREATE;
@@ -3458,6 +3470,7 @@ int main(int argc, const char **argv)
 			 OPT_PERIOD_DELETE, OPT_PERIOD_GET,
 			 OPT_PERIOD_PULL,
 			 OPT_PERIOD_GET_CURRENT, OPT_PERIOD_LIST,
+                         OPT_SYNC_POLICY_GET,
 			 OPT_GLOBAL_QUOTA_GET, OPT_GLOBAL_QUOTA_SET,
 			 OPT_GLOBAL_QUOTA_ENABLE, OPT_GLOBAL_QUOTA_DISABLE,
 			 OPT_REALM_DELETE, OPT_REALM_GET, OPT_REALM_LIST,
@@ -7643,6 +7656,23 @@ next:
         break;
       }
     }
+  }
+
+ 
+  if (opt_cmd == OPT_SYNC_POLICY_GET) {
+    RGWZoneGroup zonegroup(zonegroup_id, zonegroup_name);
+    ret = zonegroup.init(g_ceph_context, store->svc.sysobj);
+    if (ret < 0) {
+      cerr << "failed to init zonegroup: " << cpp_strerror(-ret) << std::endl;
+      return -ret;
+    }
+
+    {
+      Formatter::ObjectSection os(*formatter, "result");
+      encode_json("sync_policy", zonegroup.sync_policy, formatter);
+    }
+
+    formatter->flush(cout);
   }
 
   if (opt_cmd == OPT_BILOG_TRIM) {
