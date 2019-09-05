@@ -509,6 +509,8 @@ enum {
   OPT_MDLOG_STATUS,
   OPT_SYNC_ERROR_LIST,
   OPT_SYNC_ERROR_TRIM,
+  OPT_SYNC_POLICY_GET,
+  OPT_SYNC_POLICY_CONNECT,
   OPT_BILOG_LIST,
   OPT_BILOG_TRIM,
   OPT_BILOG_STATUS,
@@ -644,8 +646,12 @@ static int get_cmd(const char *cmd, const char *prev_cmd, const char *prev_prev_
     return 0;
   }
 
-  if (strcmp(cmd, "policy") == 0)
-    return OPT_POLICY;
+  if (strcmp(cmd, "policy") == 0) {
+    if (!prev_cmd)
+      return OPT_POLICY;
+    *need_more = true;
+    return 0;
+  }
 
   if (!prev_cmd)
     return -EINVAL;
@@ -1012,6 +1018,16 @@ static int get_cmd(const char *cmd, const char *prev_cmd, const char *prev_prev_
   } else if (strcmp(prev_cmd, "sync") == 0) {
     if (strcmp(cmd, "status") == 0)
       return OPT_SYNC_STATUS;
+    if (strcmp(cmd, "policy") == 0) {
+      *need_more = true;
+      return 0;
+    }
+  } else if ((prev_prev_cmd && strcmp(prev_prev_cmd, "sync") == 0) &&
+	     (strcmp(prev_cmd, "policy") == 0)) {
+    if (strcmp(cmd, "get") == 0)
+      return OPT_SYNC_POLICY_GET;
+    if (strcmp(cmd, "connect") == 0)
+      return OPT_SYNC_POLICY_CONNECT;
   } else if (strcmp(prev_cmd, "role") == 0) {
     if (strcmp(cmd, "create") == 0)
       return OPT_ROLE_CREATE;
@@ -3455,6 +3471,7 @@ int main(int argc, const char **argv)
 			 OPT_MDLOG_LIST,
 			 OPT_MDLOG_STATUS,
 			 OPT_SYNC_ERROR_LIST,
+			 OPT_SYNC_POLICY_GET,
 			 OPT_BILOG_LIST,
 			 OPT_BILOG_STATUS,
 			 OPT_DATA_SYNC_STATUS,
@@ -3476,6 +3493,7 @@ int main(int argc, const char **argv)
 			 OPT_RESHARD_LIST,
 			 OPT_RESHARD_STATUS,
   };
+
 
   bool raw_storage_op = (raw_storage_ops_list.find(opt_cmd) != raw_storage_ops_list.end() ||
                          raw_period_update);
@@ -7609,6 +7627,23 @@ next:
         break;
       }
     }
+  }
+
+ 
+  if (opt_cmd == OPT_SYNC_POLICY_GET) {
+    RGWZoneGroup zonegroup(zonegroup_id, zonegroup_name);
+    ret = zonegroup.init(g_ceph_context, store->svc()->sysobj);
+    if (ret < 0) {
+      cerr << "failed to init zonegroup: " << cpp_strerror(-ret) << std::endl;
+      return -ret;
+    }
+
+    {
+      Formatter::ObjectSection os(*formatter, "result");
+      encode_json("sync_policy", zonegroup.sync_policy, formatter);
+    }
+
+    formatter->flush(cout);
   }
 
   if (opt_cmd == OPT_BILOG_TRIM) {
