@@ -645,6 +645,8 @@ enum class OPT {
   MDLOG_STATUS,
   SYNC_ERROR_LIST,
   SYNC_ERROR_TRIM,
+  SYNC_POLICY_GET,
+  SYNC_POLICY_CONNECT,
   BILOG_LIST,
   BILOG_TRIM,
   BILOG_STATUS,
@@ -3296,6 +3298,7 @@ int main(int argc, const char **argv)
 			 OPT::MDLOG_LIST,
 			 OPT::MDLOG_STATUS,
 			 OPT::SYNC_ERROR_LIST,
+			 OPT::SYNC_POLICY_GET,
 			 OPT::BILOG_LIST,
 			 OPT::BILOG_STATUS,
 			 OPT::DATA_SYNC_STATUS,
@@ -3317,6 +3320,7 @@ int main(int argc, const char **argv)
 			 OPT::RESHARD_LIST,
 			 OPT::RESHARD_STATUS,
   };
+
 
   bool raw_storage_op = (raw_storage_ops_list.find(opt_cmd) != raw_storage_ops_list.end() ||
                          raw_period_update);
@@ -7466,6 +7470,22 @@ next:
         break;
       }
     }
+  }
+
+  if (opt_cmd == OPT::SYNC_POLICY_GET) {
+    RGWZoneGroup zonegroup(zonegroup_id, zonegroup_name);
+    ret = zonegroup.init(g_ceph_context, store->svc()->sysobj);
+    if (ret < 0) {
+      cerr << "failed to init zonegroup: " << cpp_strerror(-ret) << std::endl;
+      return -ret;
+    }
+
+    {
+      Formatter::ObjectSection os(*formatter, "result");
+      encode_json("sync_policy", zonegroup.sync_policy, formatter);
+    }
+
+    formatter->flush(cout);
   }
 
   if (opt_cmd == OPT::BILOG_TRIM) {
