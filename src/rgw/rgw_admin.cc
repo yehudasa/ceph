@@ -643,8 +643,12 @@ static int get_cmd(const char *cmd, const char *prev_cmd, const char *prev_prev_
     return 0;
   }
 
-  if (strcmp(cmd, "policy") == 0)
-    return OPT_POLICY;
+  if (strcmp(cmd, "policy") == 0) {
+    if (!prev_cmd)
+      return OPT_POLICY;
+    *need_more = true;
+    return 0;
+  }
 
   if (!prev_cmd)
     return -EINVAL;
@@ -1011,7 +1015,7 @@ static int get_cmd(const char *cmd, const char *prev_cmd, const char *prev_prev_
   } else if (strcmp(prev_cmd, "sync") == 0) {
     if (strcmp(cmd, "status") == 0)
       return OPT_SYNC_STATUS;
-    if (strcmp(cmd, "flow") == 0) {
+    if (strcmp(cmd, "policy") == 0) {
       *need_more = true;
       return 0;
     }
@@ -3470,7 +3474,6 @@ int main(int argc, const char **argv)
 			 OPT_PERIOD_DELETE, OPT_PERIOD_GET,
 			 OPT_PERIOD_PULL,
 			 OPT_PERIOD_GET_CURRENT, OPT_PERIOD_LIST,
-                         OPT_SYNC_POLICY_GET,
 			 OPT_GLOBAL_QUOTA_GET, OPT_GLOBAL_QUOTA_SET,
 			 OPT_GLOBAL_QUOTA_ENABLE, OPT_GLOBAL_QUOTA_DISABLE,
 			 OPT_REALM_DELETE, OPT_REALM_GET, OPT_REALM_LIST,
@@ -3511,6 +3514,7 @@ int main(int argc, const char **argv)
 			 OPT_MDLOG_LIST,
 			 OPT_MDLOG_STATUS,
 			 OPT_SYNC_ERROR_LIST,
+			 OPT_SYNC_POLICY_GET,
 			 OPT_BILOG_LIST,
 			 OPT_BILOG_STATUS,
 			 OPT_DATA_SYNC_STATUS,
@@ -3532,6 +3536,7 @@ int main(int argc, const char **argv)
 			 OPT_RESHARD_LIST,
 			 OPT_RESHARD_STATUS,
   };
+
 
   bool raw_storage_op = (raw_storage_ops_list.find(opt_cmd) != raw_storage_ops_list.end() ||
                          raw_period_update);
