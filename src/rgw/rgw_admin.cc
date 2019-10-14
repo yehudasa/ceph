@@ -2463,7 +2463,7 @@ static int bucket_sync_info(rgw::sal::RGWRadosStore *store, const RGWBucketInfo&
 
 #if 0
 #warning need to use bucket sources
-  auto& zone_conn_map = store->svc.zone->get_zone_conn_map();
+  auto& zone_conn_map = store->svc()->zone->get_zone_conn_map();
   if (!source_zone_id.empty()) {
     auto z = zonegroup.zones.find(source_zone_id);
     if (z == zonegroup.zones.end()) {
