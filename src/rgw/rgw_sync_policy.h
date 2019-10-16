@@ -217,13 +217,11 @@ struct rgw_sync_directional_rule {
 WRITE_CLASS_ENCODER(rgw_sync_directional_rule)
 
 struct rgw_sync_bucket_entity {
-  bool wildcard{false};
-  std::optional<rgw_bucket> bucket;
-  std::optional<std::set<string> > zones;
+  std::optional<rgw_bucket> bucket; /* define specific bucket */
+  std::optional<std::set<string> > zones; /* define specific zones, if not set then all zones */
 
   void encode(bufferlist& bl) const {
     ENCODE_START(1, 1, bl);
-    encode(wildcard, bl);
     encode(bucket, bl);
     encode(zones, bl);
     ENCODE_FINISH(bl);
@@ -231,7 +229,6 @@ struct rgw_sync_bucket_entity {
 
   void decode(bufferlist::const_iterator& bl) {
     DECODE_START(1, bl);
-    decode(wildcard, bl);
     decode(bucket, bl);
     decode(zones, bl);
     DECODE_FINISH(bl);
@@ -239,6 +236,32 @@ struct rgw_sync_bucket_entity {
 
   void dump(ceph::Formatter *f) const;
   void decode_json(JSONObj *obj);
+
+  bool match_bucket(std::optional<rgw_bucket> b) {
+    if (!b) {
+      return true;
+    }
+
+    if (!bucket ||
+        bucket->empty()) {
+      return true;
+    }
+
+    return (*bucket == *b);
+  }
+
+  bool match_zone(const string& zone) {
+    if (!zones) { /* all zones */
+      return true;
+    }
+
+    return (zones->find(zone) != zones->end());
+  }
+
+  rgw_bucket get_bucket() {
+    return bucket.value_or(rgw_bucket());
+  }
+    
 };
 WRITE_CLASS_ENCODER(rgw_sync_bucket_entity)
 
@@ -260,25 +283,42 @@ struct rgw_sync_bucket_pipe {
     DECODE_FINISH(bl);
   }
 
+  bool contains_bucket(std::optional<rgw_bucket> b) {
+    return (source.match_bucket(b) || target.match_bucket(b));
+  }
+  bool contains_zone(const string& zone) {
+    return (source.match_zone(zone) || target.match_zone(zone));
+  }
+
   void dump(ceph::Formatter *f) const;
   void decode_json(JSONObj *obj);
+
+  void get_bucket_pair(rgw_bucket *source_bucket,
+                       rgw_bucket *target_bucket) {
+    *source_bucket = source.get_bucket();
+    *target_bucket = target.get_bucket();
+
+    if (*source_bucket.empty()) {
+      *source_bucket = *target_bucket;
+    } else if (*target_bucket.emty()) {
+      *target_bucket = *source_bucket;
+    }
+  }
 };
 WRITE_CLASS_ENCODER(rgw_sync_bucket_pipe)
 
-
-
-struct rgw_sync_policy_info {
-  /* zone data flow */
+/*
+ * define data flow between zones. Symmetrical: zones sync from each other.
+ * Directional: one zone fetches data from another.
+ */
+struct rgw_sync_data_flow_group {
   std::optional<std::vector<rgw_sync_symmetric_group> > symmetrical;
   std::optional<std::vector<rgw_sync_directional_rule> > directional;
-
-  std::optional<std::vector<rgw_sync_bucket_pipe> > pipes;
 
   void encode(bufferlist& bl) const {
     ENCODE_START(1, 1, bl);
     encode(symmetrical, bl);
     encode(directional, bl);
-    encode(pipes, bl);
     ENCODE_FINISH(bl);
   }
 
@@ -286,24 +326,71 @@ struct rgw_sync_policy_info {
     DECODE_START(1, bl);
     decode(symmetrical, bl);
     decode(directional, bl);
-    decode(pipes, bl);
     DECODE_FINISH(bl);
   }
 
   void dump(ceph::Formatter *f) const;
   void decode_json(JSONObj *obj);
+};
+WRITE_CLASS_ENCODER(rgw_sync_data_flow_group)
 
-  template <class O>
-  bool empty_opt(O& o) const {
-    return (!o || o->empty());
+
+struct rgw_sync_policy_group {
+  string id;
+
+  std::optional<rgw_sync_data_flow_group> data_flow; /* override data flow, howver, will not be able to
+                                                        add new flows that don't exist at higher level */
+  std::optional<std::vector<rgw_sync_bucket_pipe> > pipes; /* if not defined then applies to all
+                                                              buckets (DR sync) */
+
+  enum Status {
+    NOT_ALLOWED = 0,  /* sync not allowed */
+    ALLOWED     = 1,  /* sync allowed */
+    ACTIVATED   = 2,  /* sync should happen */
+  } status;
+
+  void encode(bufferlist& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(id, bl);
+    encode(data_flow, bl);
+    encode(pipes, bl);
+    encode((uint32_t)status, bl);
+    ENCODE_FINISH(bl);
   }
 
-  bool empty() const {
-    return (empty_opt(symmetrical) &&
-            empty_opt(directional) &&
-            empty_opt(pipes));
+  void decode(bufferlist::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(id, bl);
+    decode(data_flow, bl);
+    decode(pipes, bl);
+    uint32_t s;
+    decode(s, bl);
+    status = (Status)s;
+    DECODE_FINISH(bl);
   }
 
+  void dump(ceph::Formatter *f) const;
+  void decode_json(JSONObj *obj);
+};
+WRITE_CLASS_ENCODER(rgw_sync_policy_group)
+
+struct rgw_sync_policy_info {
+  std::optional<std::map<string, rgw_sync_policy_group> > groups;
+
+  void encode(bufferlist& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(groups, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(bufferlist::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(groups, bl);
+    DECODE_FINISH(bl);
+  }
+
+  void dump(ceph::Formatter *f) const;
+  void decode_json(JSONObj *obj);
 };
 WRITE_CLASS_ENCODER(rgw_sync_policy_info)
 
