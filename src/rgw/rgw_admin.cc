@@ -2609,48 +2609,29 @@ static bool directional_flow_opt(const string& opt)
 }
 
 template <class T>
-static bool require_opt(std::optional<T> opt, const string& err_msg)
-{
-  if (!opt) {
-    cerr << err_msg << std::endl;
-    return false;
-  }
-  return true;
-}
-
-template <class T>
-static bool require_opt(std::optional<T> opt, bool extra_check, const string& err_msg)
+static bool require_opt(std::optional<T> opt, bool extra_check = true)
 {
   if (!opt || !extra_check) {
-    cerr << err_msg << std::endl;
     return false;
   }
   return true;
 }
 
 template <class T>
-static bool require_non_empty_opt(std::optional<T> opt, const string& err_msg)
-{
-  if (!opt || opt->empty()) {
-    cerr << err_msg << std::endl;
-    return false;
-  }
-  return true;
-}
-
-template <class T>
-static bool require_non_empty_opt(std::optional<T> opt, bool extra_check, const string& err_msg)
+static bool require_non_empty_opt(std::optional<T> opt, bool extra_check = true)
 {
   if (!opt || opt->empty() || !extra_check) {
-    cerr << err_msg << std::endl;
     return false;
   }
   return true;
 }
 
-#define CHECK_TRUE(x, err) \
+#define CHECK_TRUE(x, msg, err) \
   do { \
-    if (!x) return err; \
+    if (!x) { \
+      cerr << msg << std::endl; \
+      return err; \
+    } \
   } while (0)
 
 template <class T>
@@ -7665,8 +7646,8 @@ next:
 
   if (opt_cmd == OPT::SYNC_GROUP_CREATE ||
       opt_cmd == OPT::SYNC_GROUP_MODIFY) {
-    CHECK_TRUE(require_opt(opt_group_id, "ERROR: --group-id not specified"), EINVAL);
-    CHECK_TRUE(require_opt(opt_status, "ERROR: --status is not specified (options: forbidden, enabled, activated)"), EINVAL);
+    CHECK_TRUE(require_opt(opt_group_id), "ERROR: --group-id not specified", EINVAL);
+    CHECK_TRUE(require_opt(opt_status), "ERROR: --status is not specified (options: forbidden, enabled, activated)", EINVAL);
 
     RGWZoneGroup zonegroup(zonegroup_id, zonegroup_name);
     ret = zonegroup.init(g_ceph_context, store->svc()->sysobj);
@@ -7731,7 +7712,7 @@ next:
   }
 
   if (opt_cmd == OPT::SYNC_GROUP_REMOVE) {
-    CHECK_TRUE(require_opt(opt_group_id, "ERROR: --group-id not specified"), EINVAL);
+    CHECK_TRUE(require_opt(opt_group_id), "ERROR: --group-id not specified", EINVAL);
 
     RGWZoneGroup zonegroup(zonegroup_id, zonegroup_name);
     ret = zonegroup.init(g_ceph_context, store->svc()->sysobj);
@@ -7757,12 +7738,12 @@ next:
   }
 
   if (opt_cmd == OPT::SYNC_GROUP_FLOW_CREATE) {
-    CHECK_TRUE(require_opt(opt_group_id, "ERROR: --group-id not specified"), EINVAL);
-    CHECK_TRUE(require_opt(opt_flow_id, "ERROR: --flow-id not specified"), EINVAL);
+    CHECK_TRUE(require_opt(opt_group_id), "ERROR: --group-id not specified", EINVAL);
+    CHECK_TRUE(require_opt(opt_flow_id), "ERROR: --flow-id not specified", EINVAL);
     CHECK_TRUE(require_opt(opt_flow_type,
                            (symmetrical_flow_opt(*opt_flow_type) ||
-                            directional_flow_opt(*opt_flow_type)),
-                           "ERROR: --flow-type not specified or invalid (options: symmetrical, directional)"), EINVAL);
+                            directional_flow_opt(*opt_flow_type))),
+                           "ERROR: --flow-type not specified or invalid (options: symmetrical, directional)", EINVAL);
 
     RGWZoneGroup zonegroup(zonegroup_id, zonegroup_name);
     ret = zonegroup.init(g_ceph_context, store->svc()->sysobj);
@@ -7780,7 +7761,7 @@ next:
     auto& group = iter->second;
 
     if (symmetrical_flow_opt(*opt_flow_type)) {
-      CHECK_TRUE(require_non_empty_opt(opt_zones, "ERROR: --zones not provided for symmetrical flow, or is empty"), EINVAL);
+      CHECK_TRUE(require_non_empty_opt(opt_zones), "ERROR: --zones not provided for symmetrical flow, or is empty", EINVAL);
 
       rgw_sync_symmetric_group *flow_group;
 
@@ -7790,8 +7771,8 @@ next:
         flow_group->zones.insert(z);
       }
     } else { /* directional */
-      CHECK_TRUE(require_non_empty_opt(opt_source_zone, "ERROR: --source-zone not provided for directional flow rule, or is empty"), EINVAL);
-      CHECK_TRUE(require_non_empty_opt(opt_dest_zone, "ERROR: --dest-zone not provided for directional flow rule, or is empty"), EINVAL);
+      CHECK_TRUE(require_non_empty_opt(opt_source_zone), "ERROR: --source-zone not provided for directional flow rule, or is empty", EINVAL);
+      CHECK_TRUE(require_non_empty_opt(opt_dest_zone), "ERROR: --dest-zone not provided for directional flow rule, or is empty", EINVAL);
 
       rgw_sync_directional_rule *flow_rule;
 
@@ -7808,12 +7789,12 @@ next:
   }
 
   if (opt_cmd == OPT::SYNC_GROUP_FLOW_REMOVE) {
-    CHECK_TRUE(require_opt(opt_group_id, "ERROR: --group-id not specified"), EINVAL);
-    CHECK_TRUE(require_opt(opt_flow_id, "ERROR: --flow-id not specified"), EINVAL);
+    CHECK_TRUE(require_opt(opt_group_id), "ERROR: --group-id not specified", EINVAL);
+    CHECK_TRUE(require_opt(opt_flow_id), "ERROR: --flow-id not specified", EINVAL);
     CHECK_TRUE(require_opt(opt_flow_type,
                            (symmetrical_flow_opt(*opt_flow_type) ||
-                            directional_flow_opt(*opt_flow_type)),
-                           "ERROR: --flow-type not specified or invalid (options: symmetrical, directional)"), EINVAL);
+                            directional_flow_opt(*opt_flow_type))),
+                           "ERROR: --flow-type not specified or invalid (options: symmetrical, directional)", EINVAL);
 
     RGWZoneGroup zonegroup(zonegroup_id, zonegroup_name);
     ret = zonegroup.init(g_ceph_context, store->svc()->sysobj);
@@ -7833,8 +7814,8 @@ next:
     if (symmetrical_flow_opt(*opt_flow_type)) {
       group.data_flow.remove_symmetrical(*opt_flow_id, opt_zones);
     } else { /* directional */
-      CHECK_TRUE(require_non_empty_opt(opt_source_zone, "ERROR: --source-zone not provided for directional flow rule, or is empty"), EINVAL);
-      CHECK_TRUE(require_non_empty_opt(opt_dest_zone, "ERROR: --dest-zone not provided for directional flow rule, or is empty"), EINVAL);
+      CHECK_TRUE(require_non_empty_opt(opt_source_zone), "ERROR: --source-zone not provided for directional flow rule, or is empty", EINVAL);
+      CHECK_TRUE(require_non_empty_opt(opt_dest_zone), "ERROR: --dest-zone not provided for directional flow rule, or is empty", EINVAL);
 
       group.data_flow.remove_directional(*opt_source_zone, *opt_dest_zone);
     }
@@ -7849,10 +7830,10 @@ next:
   }
 
   if (opt_cmd == OPT::SYNC_GROUP_PIPE_CREATE) {
-    CHECK_TRUE(require_opt(opt_group_id, "ERROR: --group-id not specified"), EINVAL);
-    CHECK_TRUE(require_opt(opt_pipe_id, "ERROR: --pipe-id not specified"), EINVAL);
-    CHECK_TRUE(require_non_empty_opt(opt_source_zones, "ERROR: --source-zones not provided or is empty; should be list of zones or '*'"), EINVAL);
-    CHECK_TRUE(require_non_empty_opt(opt_dest_zones, "ERROR: --dest-zones not provided or is empty; should be list of zones or '*'"), EINVAL);
+    CHECK_TRUE(require_opt(opt_group_id), "ERROR: --group-id not specified", EINVAL);
+    CHECK_TRUE(require_opt(opt_pipe_id), "ERROR: --pipe-id not specified", EINVAL);
+    CHECK_TRUE(require_non_empty_opt(opt_source_zones), "ERROR: --source-zones not provided or is empty; should be list of zones or '*'", EINVAL);
+    CHECK_TRUE(require_non_empty_opt(opt_dest_zones), "ERROR: --dest-zones not provided or is empty; should be list of zones or '*'", EINVAL);
 
 
     RGWZoneGroup zonegroup(zonegroup_id, zonegroup_name);
@@ -7893,8 +7874,8 @@ next:
   }
 
   if (opt_cmd == OPT::SYNC_GROUP_PIPE_REMOVE) {
-    CHECK_TRUE(require_opt(opt_group_id, "ERROR: --group-id not specified"), EINVAL);
-    CHECK_TRUE(require_opt(opt_pipe_id, "ERROR: --pipe-id not specified"), EINVAL);
+    CHECK_TRUE(require_opt(opt_group_id), "ERROR: --group-id not specified", EINVAL);
+    CHECK_TRUE(require_opt(opt_pipe_id), "ERROR: --pipe-id not specified", EINVAL);
 
     RGWZoneGroup zonegroup(zonegroup_id, zonegroup_name);
     ret = zonegroup.init(g_ceph_context, store->svc()->sysobj);
