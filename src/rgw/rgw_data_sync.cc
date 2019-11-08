@@ -3646,7 +3646,7 @@ class RGWGetBucketPeersCR : public RGWCoroutine {
           continue;
         }
         if (source_bucket &&
-            *source_bucket != *pipe.source.bucket) {
+            !source_bucket->match(*pipe.source.bucket)) {
           continue;
         }
         ldpp_dout(sync_env->dpp, 20) << __func__ << ": pipe=" << pipe << ": adding" << dendl;
@@ -3667,7 +3667,7 @@ class RGWGetBucketPeersCR : public RGWCoroutine {
       for (auto& pipe : i->second.pipes) {
         if (target_bucket &&
             pipe.dest.bucket &&
-            *target_bucket != *pipe.dest.bucket) {
+            !target_bucket->match(*pipe.dest.bucket)) {
           ldpp_dout(sync_env->dpp, 20) << __func__ << ": pipe=" << pipe << ": skipping" << dendl;
           continue;
         }
@@ -3722,12 +3722,6 @@ public:
                                          SSTR( "target=" << target_bucket.value_or(rgw_bucket())
                                                << ":source=" << target_bucket.value_or(rgw_bucket())
                                                << ":source_zone=" << source_zone.value_or("*")))) {
-        if (target_bucket) {
-          target_policy = make_shared<rgw_bucket_get_sync_policy_result>();
-        }
-        if (source_bucket) {
-          source_policy = make_shared<rgw_bucket_get_sync_policy_result>();
-        }
       }
 
   int operate() override;
@@ -3997,6 +3991,7 @@ int RGWGetBucketPeersCR::operate()
     if (source_bucket && source_zone) {
       get_policy_params.zone = source_zone;
       get_policy_params.bucket = *source_bucket;
+      source_policy = make_shared<rgw_bucket_get_sync_policy_result>();
       yield call(new RGWBucketGetSyncPolicyHandlerCR(sync_env->async_rados,
                                                      sync_env->store,
                                                      get_policy_params,
@@ -4028,6 +4023,7 @@ int RGWGetBucketPeersCR::operate()
 
           get_policy_params.zone = nullopt;
           get_policy_params.bucket = *hiter;
+          target_policy = make_shared<rgw_bucket_get_sync_policy_result>();
           yield call(new RGWBucketGetSyncPolicyHandlerCR(sync_env->async_rados,
                                                          sync_env->store,
                                                          get_policy_params,
