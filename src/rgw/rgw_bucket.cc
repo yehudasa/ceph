@@ -3665,7 +3665,7 @@ int RGWBucketCtl::get_sync_policy_handler(std::optional<string> zone,
                                           optional_yield y)
 {
   int r = call([&](RGWSI_Bucket_X_Ctx& ctx) {
-    return svc.bucket_sync->get_policy_handler(ctx.bi, zone, bucket, phandler, y);
+    return svc.bucket_sync->get_policy_handler(ctx, zone, bucket, phandler, y);
   });
   if (r < 0) {
     ldout(cct, 20) << __func__ << "(): failed to get policy gabdker for bucket=" << bucket << " (r=" << r << ")" << dendl;
