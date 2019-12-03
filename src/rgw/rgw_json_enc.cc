@@ -942,7 +942,6 @@ void rgw_sync_pipe_dest_params::decode_json(JSONObj *obj)
   JSONDecoder::decode_json("storage_class", storage_class, obj);
 }
 
-#warning flatten binary encoding of rgw_sync_pipe_params
 void rgw_sync_pipe_params::dump(Formatter *f) const
 {
   encode_json("source", source, f);
