@@ -2172,7 +2172,9 @@ int RGWRados::create_bucket(const RGWUserInfo& owner, rgw_bucket& bucket,
 	  ldout(cct, 0) << "WARNING: could not remove bucket index (r=" << r << ")" << dendl;
 	}
       }
-      /* ret == -ENOENT here */
+
+      info = std::move(orig_info);
+      /* ret == -EEXIST here */
     }
     return ret;
   }
