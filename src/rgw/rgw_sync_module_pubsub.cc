@@ -582,6 +582,7 @@ class PSSubscription {
   friend class InitCR;
   friend class RGWPSHandleObjEventCR;
 
+  RGWDataSyncCtx *sc;
   RGWDataSyncEnv *sync_env;
   PSEnvRef env;
   PSSubConfigRef sub_conf;
@@ -593,6 +594,7 @@ class PSSubscription {
   InitCR *init_cr{nullptr};
 
   class InitBucketLifecycleCR : public RGWCoroutine {
+    RGWDataSyncCtx *sc;
     RGWDataSyncEnv *sync_env;
     PSConfigRef& conf;
     LCRule rule;
@@ -602,11 +604,11 @@ class PSSubscription {
     rgw_bucket_lifecycle_config_params lc_config;
 
   public:
-    InitBucketLifecycleCR(RGWDataSyncEnv *_sync_env,
+    InitBucketLifecycleCR(RGWDataSyncCtx *_sc,
            PSConfigRef& _conf,
            RGWBucketInfo& _bucket_info,
-           std::map<string, bufferlist>& _bucket_attrs) : RGWCoroutine(_sync_env->cct),
-                                                     sync_env(_sync_env),
+           std::map<string, bufferlist>& _bucket_attrs) : RGWCoroutine(_sc->cct),
+                                                     sc(_sc), sync_env(_sc->env),
                                                      conf(_conf) {
       lc_config.bucket_info = _bucket_info;
       lc_config.bucket_attrs = _bucket_attrs;
@@ -661,6 +663,7 @@ class PSSubscription {
   };
 
   class InitCR : public RGWSingletonCR<bool> {
+    RGWDataSyncCtx *sc;
     RGWDataSyncEnv *sync_env;
     PSSubscriptionRef sub;
     rgw_get_bucket_info_params get_bucket_info;
@@ -670,9 +673,9 @@ class PSSubscription {
     int i;
 
   public:
-    InitCR(RGWDataSyncEnv *_sync_env,
-           PSSubscriptionRef& _sub) : RGWSingletonCR<bool>(_sync_env->cct),
-                                    sync_env(_sync_env),
+    InitCR(RGWDataSyncCtx *_sc,
+           PSSubscriptionRef& _sub) : RGWSingletonCR<bool>(_sc->cct),
+                                    sc(_sc), sync_env(_sc->env),
                                     sub(_sub), conf(sub->env->conf),
                                     sub_conf(sub->sub_conf) {
     }
@@ -704,7 +707,7 @@ class PSSubscription {
               }
             }
 
-            yield call(new InitBucketLifecycleCR(sync_env, conf,
+            yield call(new InitBucketLifecycleCR(sc, conf,
                                                  sub->get_bucket_info_result->bucket_info,
                                                  sub->get_bucket_info_result->attrs));
             if (retcode < 0) {
@@ -742,16 +745,17 @@ class PSSubscription {
 
   template<typename EventType>
   class StoreEventCR : public RGWCoroutine {
+    RGWDataSyncCtx* const sc;
     RGWDataSyncEnv* const sync_env;
     const PSSubscriptionRef sub;
     const PSEvent<EventType> pse;
     const string oid_prefix;
 
   public:
-    StoreEventCR(RGWDataSyncEnv* const _sync_env,
+    StoreEventCR(RGWDataSyncCtx* const _sc,
                  const PSSubscriptionRef& _sub,
-                 const EventRef<EventType>& _event) : RGWCoroutine(_sync_env->cct),
-                                     sync_env(_sync_env),
+                 const EventRef<EventType>& _event) : RGWCoroutine(_sc->cct),
+                                     sc(_sc), sync_env(_sc->env),
                                      sub(_sub),
                                      pse(_event),
                                      oid_prefix(sub->sub_conf->data_oid_prefix) {
@@ -793,15 +797,16 @@ class PSSubscription {
 
   template<typename EventType>
   class PushEventCR : public RGWCoroutine {
+    RGWDataSyncCtx* const sc;
     RGWDataSyncEnv* const sync_env;
     const EventRef<EventType> event;
     const PSSubConfigRef& sub_conf;
 
   public:
-    PushEventCR(RGWDataSyncEnv* const _sync_env,
+    PushEventCR(RGWDataSyncCtx* const _sc,
                  const PSSubscriptionRef& _sub,
-                 const EventRef<EventType>& _event) : RGWCoroutine(_sync_env->cct),
-                                     sync_env(_sync_env),
+                 const EventRef<EventType>& _event) : RGWCoroutine(_sc->cct),
+                                     sc(_sc), sync_env(_sc->env),
                                      event(_event),
                                      sub_conf(_sub->sub_conf) {
     }
@@ -826,16 +831,16 @@ class PSSubscription {
   };
 
 public:
-  PSSubscription(RGWDataSyncEnv *_sync_env,
+  PSSubscription(RGWDataSyncCtx *_sc,
                  PSEnvRef _env,
-                 PSSubConfigRef& _sub_conf) : sync_env(_sync_env),
+                 PSSubConfigRef& _sub_conf) : sc(_sc), sync_env(_sc->env),
                                       env(_env),
                                       sub_conf(_sub_conf),
                                       data_access(std::make_shared<RGWDataAccess>(sync_env->store)) {}
 
-  PSSubscription(RGWDataSyncEnv *_sync_env,
+  PSSubscription(RGWDataSyncCtx *_sc,
                  PSEnvRef _env,
-                 rgw_pubsub_sub_config& user_sub_conf) : sync_env(_sync_env),
+                 rgw_pubsub_sub_config& user_sub_conf) : sc(_sc), sync_env(_sc->env),
                                       env(_env),
                                       sub_conf(std::make_shared<PSSubConfig>()),
                                       data_access(std::make_shared<RGWDataAccess>(sync_env->store)) {
@@ -848,11 +853,11 @@ public:
   }
 
   template <class C>
-  static PSSubscriptionRef get_shared(RGWDataSyncEnv *_sync_env,
+  static PSSubscriptionRef get_shared(RGWDataSyncCtx *_sc,
                                 PSEnvRef _env,
                                 C& _sub_conf) {
-    auto sub = std::make_shared<PSSubscription>(_sync_env, _env, _sub_conf);
-    sub->init_cr = new InitCR(_sync_env, sub);
+    auto sub = std::make_shared<PSSubscription>(_sc, _env, _sub_conf);
+    sub->init_cr = new InitCR(_sc, sub);
     sub->init_cr->get();
     return sub;
   }
@@ -862,25 +867,27 @@ public:
   }
 
   template<typename EventType>
-  static RGWCoroutine *store_event_cr(RGWDataSyncEnv* const sync_env, const PSSubscriptionRef& sub, const EventRef<EventType>& event) {
-    return new StoreEventCR<EventType>(sync_env, sub, event);
+  static RGWCoroutine *store_event_cr(RGWDataSyncCtx* const sc, const PSSubscriptionRef& sub, const EventRef<EventType>& event) {
+    return new StoreEventCR<EventType>(sc, sub, event);
   }
 
   template<typename EventType>
-  static RGWCoroutine *push_event_cr(RGWDataSyncEnv* const sync_env, const PSSubscriptionRef& sub, const EventRef<EventType>& event) {
-    return new PushEventCR<EventType>(sync_env, sub, event);
+  static RGWCoroutine *push_event_cr(RGWDataSyncCtx* const sc, const PSSubscriptionRef& sub, const EventRef<EventType>& event) {
+    return new PushEventCR<EventType>(sc, sub, event);
   }
   friend class InitCR;
 };
 
 class PSManager
 {
+  RGWDataSyncCtx *sc;
   RGWDataSyncEnv *sync_env;
   PSEnvRef env;
 
   std::map<string, PSSubscriptionRef> subs;
 
   class GetSubCR : public RGWSingletonCR<PSSubscriptionRef> {
+    RGWDataSyncCtx *sc;
     RGWDataSyncEnv *sync_env;
     PSManagerRef mgr;
     rgw_user owner;
@@ -894,12 +901,12 @@ class PSManager
     rgw_pubsub_sub_config user_sub_conf;
 
   public:
-    GetSubCR(RGWDataSyncEnv *_sync_env,
+    GetSubCR(RGWDataSyncCtx *_sc,
                       PSManagerRef& _mgr,
                       const rgw_user& _owner,
                       const string& _sub_name,
-                      PSSubscriptionRef *_ref) : RGWSingletonCR<PSSubscriptionRef>(_sync_env->cct),
-                                                 sync_env(_sync_env),
+                      PSSubscriptionRef *_ref) : RGWSingletonCR<PSSubscriptionRef>(_sc->cct),
+                                                 sc(_sc), sync_env(_sc->env),
                                                  mgr(_mgr),
                                                  owner(_owner),
                                                  sub_name(_sub_name),
@@ -917,7 +924,7 @@ class PSManager
             return set_cr_error(-ENOENT);
           }
 
-          *ref = PSSubscription::get_shared(sync_env, mgr->env, sub_conf);
+          *ref = PSSubscription::get_shared(sc, mgr->env, sub_conf);
         } else {
           using ReadInfoCR = RGWSimpleRadosReadCR<rgw_pubsub_sub_config>;
           yield {
@@ -934,7 +941,7 @@ class PSManager
             return set_cr_error(retcode);
           }
 
-          *ref = PSSubscription::get_shared(sync_env, mgr->env, user_sub_conf);
+          *ref = PSSubscription::get_shared(sc, mgr->env, user_sub_conf);
         }
 
         yield (*ref)->call_init_cr(this);
@@ -990,28 +997,28 @@ class PSManager
     return false;
   }
 
-  PSManager(RGWDataSyncEnv *_sync_env,
-            PSEnvRef _env) : sync_env(_sync_env),
+  PSManager(RGWDataSyncCtx *_sc,
+            PSEnvRef _env) : sc(_sc), sync_env(_sc->env),
                              env(_env) {}
 
 public:
-  static PSManagerRef get_shared(RGWDataSyncEnv *_sync_env,
+  static PSManagerRef get_shared(RGWDataSyncCtx *_sc,
                                  PSEnvRef _env) {
-    return std::shared_ptr<PSManager>(new PSManager(_sync_env, _env));
+    return std::shared_ptr<PSManager>(new PSManager(_sc, _env));
   }
 
-  static int call_get_subscription_cr(RGWDataSyncEnv *sync_env, PSManagerRef& mgr, 
+  static int call_get_subscription_cr(RGWDataSyncCtx *sc, PSManagerRef& mgr, 
       RGWCoroutine *caller, const rgw_user& owner, const string& sub_name, PSSubscriptionRef *ref) {
     if (mgr->find_sub_instance(owner, sub_name, ref)) {
       /* found it! nothing to execute */
-      ldout(sync_env->cct, 20) << __func__ << "(): found sub instance" << dendl;
+      ldout(sc->cct, 20) << __func__ << "(): found sub instance" << dendl;
     }
     auto& gs = mgr->get_get_subs(owner, sub_name);
     if (!gs) {
-      ldout(sync_env->cct, 20) << __func__ << "(): first get subs" << dendl;
-      gs = new GetSubCR(sync_env, mgr, owner, sub_name, ref);
+      ldout(sc->cct, 20) << __func__ << "(): first get subs" << dendl;
+      gs = new GetSubCR(sc, mgr, owner, sub_name, ref);
     }
-    ldout(sync_env->cct, 20) << __func__ << "(): executing get subs" << dendl;
+    ldout(sc->cct, 20) << __func__ << "(): executing get subs" << dendl;
     return gs->execute(caller, ref);
   }
 
@@ -1024,6 +1031,7 @@ void PSEnv::init_instance(const RGWRealm& realm, uint64_t instance_id, PSManager
 }
 
 class RGWPSInitEnvCBCR : public RGWCoroutine {
+  RGWDataSyncCtx *sc;
   RGWDataSyncEnv *sync_env;
   PSEnvRef env;
   PSConfigRef& conf;
@@ -1031,13 +1039,13 @@ class RGWPSInitEnvCBCR : public RGWCoroutine {
   rgw_user_create_params create_user;
   rgw_get_user_info_params get_user_info;
 public:
-  RGWPSInitEnvCBCR(RGWDataSyncEnv *_sync_env,
-                       PSEnvRef& _env) : RGWCoroutine(_sync_env->cct),
-                                                    sync_env(_sync_env),
+  RGWPSInitEnvCBCR(RGWDataSyncCtx *_sc,
+                       PSEnvRef& _env) : RGWCoroutine(_sc->cct),
+                                                    sc(_sc), sync_env(_sc->env),
                                                     env(_env), conf(env->conf) {}
   int operate() override {
     reenter(this) {
-      ldpp_dout(sync_env->dpp, 1) << ": init pubsub config zone=" << sync_env->source_zone << dendl;
+      ldpp_dout(sync_env->dpp, 1) << ": init pubsub config zone=" << sc->source_zone << dendl;
 
       /* nothing to do here right now */
       create_user.user = conf->user;
@@ -1077,6 +1085,7 @@ bool match(const rgw_pubsub_topic_filter& filter, const std::string& key_name, r
 }
 
 class RGWPSFindBucketTopicsCR : public RGWCoroutine {
+  RGWDataSyncCtx *sc;
   RGWDataSyncEnv *sync_env;
   PSEnvRef env;
   rgw_user owner;
@@ -1092,20 +1101,20 @@ class RGWPSFindBucketTopicsCR : public RGWCoroutine {
   rgw_pubsub_user_topics user_topics;
   TopicsRef *topics;
 public:
-  RGWPSFindBucketTopicsCR(RGWDataSyncEnv *_sync_env,
+  RGWPSFindBucketTopicsCR(RGWDataSyncCtx *_sc,
                       PSEnvRef& _env,
                       const rgw_user& _owner,
                       const rgw_bucket& _bucket,
                       const rgw_obj_key& _key,
                       rgw::notify::EventType _event_type,
-                      TopicsRef *_topics) : RGWCoroutine(_sync_env->cct),
-                                                          sync_env(_sync_env),
+                      TopicsRef *_topics) : RGWCoroutine(_sc->cct),
+                                                          sc(_sc), sync_env(_sc->env),
                                                           env(_env),
                                                           owner(_owner),
                                                           bucket(_bucket),
                                                           key(_key),
                                                           event_type(_event_type),
-                                                          ups(_sync_env->store, owner),
+                                                          ups(sync_env->store, owner),
                                                           topics(_topics) {
     *topics = std::make_shared<vector<PSTopicConfigRef> >();
   }
@@ -1160,7 +1169,7 @@ public:
 };
 
 class RGWPSHandleObjEventCR : public RGWCoroutine {
-  RGWDataSyncEnv* const sync_env;
+  RGWDataSyncCtx* const sc;
   const PSEnvRef env;
   const rgw_user& owner;
   const EventRef<rgw_pubsub_event> event;
@@ -1177,13 +1186,13 @@ class RGWPSHandleObjEventCR : public RGWCoroutine {
   int last_sub_conf_error;
 
 public:
-  RGWPSHandleObjEventCR(RGWDataSyncEnv* const _sync_env,
+  RGWPSHandleObjEventCR(RGWDataSyncCtx* const _sc,
                       const PSEnvRef _env,
                       const rgw_user& _owner,
                       const EventRef<rgw_pubsub_event>& _event,
                       const EventRef<rgw_pubsub_s3_record>& _record,
-                      const TopicsRef& _topics) : RGWCoroutine(_sync_env->cct),
-                                          sync_env(_sync_env),
+                      const TopicsRef& _topics) : RGWCoroutine(_sc->cct),
+                                          sc(_sc),
                                           env(_env),
                                           owner(_owner),
                                           event(_event),
@@ -1195,11 +1204,11 @@ public:
 
   int operate() override {
     reenter(this) {
-      ldout(sync_env->cct, 20) << ": handle event: obj: z=" << sync_env->source_zone
+      ldout(sc->cct, 20) << ": handle event: obj: z=" << sc->source_zone
                                << " event=" << json_str("event", *event, false)
                                << " owner=" << owner << dendl;
 
-      ldout(sync_env->cct, 20) << "pubsub: " << topics->size() << " topics found for path" << dendl;
+      ldout(sc->cct, 20) << "pubsub: " << topics->size() << " topics found for path" << dendl;
      
       // outside caller should check that
       ceph_assert(!topics->empty());
@@ -1208,17 +1217,17 @@ public:
 
       // loop over all topics related to the bucket/object
       for (titer = topics->begin(); titer != topics->end(); ++titer) {
-        ldout(sync_env->cct, 20) << ": notification for " << event->source << ": topic=" << 
+        ldout(sc->cct, 20) << ": notification for " << event->source << ": topic=" << 
           (*titer)->name << ", has " << (*titer)->subs.size() << " subscriptions" << dendl;
         // loop over all subscriptions of the topic
         for (siter = (*titer)->subs.begin(); siter != (*titer)->subs.end(); ++siter) {
-          ldout(sync_env->cct, 20) << ": subscription: " << *siter << dendl;
+          ldout(sc->cct, 20) << ": subscription: " << *siter << dendl;
           has_subscriptions = true;
           sub_conf_found = false;
           // try to read subscription configuration from global/user cond
           // configuration is considered missing only if does not exist in either
           for (oiter = owners.begin(); oiter != owners.end(); ++oiter) {
-            yield PSManager::call_get_subscription_cr(sync_env, env->manager, this, *oiter, *siter, &sub);
+            yield PSManager::call_get_subscription_cr(sc, env->manager, this, *oiter, *siter, &sub);
             if (retcode < 0) {
               if (sub_conf_found) {
                 // not a real issue, sub conf already found
@@ -1230,21 +1239,21 @@ public:
             sub_conf_found = true;
             if (sub->sub_conf->s3_id.empty()) {
               // subscription was not made by S3 compatible API
-              ldout(sync_env->cct, 20) << "storing event for subscription=" << *siter << " owner=" << *oiter << " ret=" << retcode << dendl;
-              yield call(PSSubscription::store_event_cr(sync_env, sub, event));
+              ldout(sc->cct, 20) << "storing event for subscription=" << *siter << " owner=" << *oiter << " ret=" << retcode << dendl;
+              yield call(PSSubscription::store_event_cr(sc, sub, event));
               if (retcode < 0) {
                 if (perfcounter) perfcounter->inc(l_rgw_pubsub_store_fail);
-                ldout(sync_env->cct, 1) << "ERROR: failed to store event for subscription=" << *siter << " ret=" << retcode << dendl;
+                ldout(sc->cct, 1) << "ERROR: failed to store event for subscription=" << *siter << " ret=" << retcode << dendl;
               } else {
                 if (perfcounter) perfcounter->inc(l_rgw_pubsub_store_ok);
                 event_handled = true;
               }
               if (sub->sub_conf->push_endpoint) {
-                ldout(sync_env->cct, 20) << "push event for subscription=" << *siter << " owner=" << *oiter << " ret=" << retcode << dendl;
-                yield call(PSSubscription::push_event_cr(sync_env, sub, event));
+                ldout(sc->cct, 20) << "push event for subscription=" << *siter << " owner=" << *oiter << " ret=" << retcode << dendl;
+                yield call(PSSubscription::push_event_cr(sc, sub, event));
                 if (retcode < 0) {
                   if (perfcounter) perfcounter->inc(l_rgw_pubsub_push_failed);
-                  ldout(sync_env->cct, 1) << "ERROR: failed to push event for subscription=" << *siter << " ret=" << retcode << dendl;
+                  ldout(sc->cct, 1) << "ERROR: failed to push event for subscription=" << *siter << " ret=" << retcode << dendl;
                 } else {
                   if (perfcounter) perfcounter->inc(l_rgw_pubsub_push_ok);
                   event_handled = true;
@@ -1252,22 +1261,22 @@ public:
               } 
             } else {
               // subscription was made by S3 compatible API
-              ldout(sync_env->cct, 20) << "storing record for subscription=" << *siter << " owner=" << *oiter << " ret=" << retcode << dendl;
+              ldout(sc->cct, 20) << "storing record for subscription=" << *siter << " owner=" << *oiter << " ret=" << retcode << dendl;
               record->configurationId = sub->sub_conf->s3_id;
-              yield call(PSSubscription::store_event_cr(sync_env, sub, record));
+              yield call(PSSubscription::store_event_cr(sc, sub, record));
               if (retcode < 0) {
                 if (perfcounter) perfcounter->inc(l_rgw_pubsub_store_fail);
-                ldout(sync_env->cct, 1) << "ERROR: failed to store record for subscription=" << *siter << " ret=" << retcode << dendl;
+                ldout(sc->cct, 1) << "ERROR: failed to store record for subscription=" << *siter << " ret=" << retcode << dendl;
               } else {
                 if (perfcounter) perfcounter->inc(l_rgw_pubsub_store_ok);
                 event_handled = true;
               }
               if (sub->sub_conf->push_endpoint) {
-                  ldout(sync_env->cct, 20) << "push record for subscription=" << *siter << " owner=" << *oiter << " ret=" << retcode << dendl;
-                yield call(PSSubscription::push_event_cr(sync_env, sub, record));
+                  ldout(sc->cct, 20) << "push record for subscription=" << *siter << " owner=" << *oiter << " ret=" << retcode << dendl;
+                yield call(PSSubscription::push_event_cr(sc, sub, record));
                 if (retcode < 0) {
                   if (perfcounter) perfcounter->inc(l_rgw_pubsub_push_failed);
-                  ldout(sync_env->cct, 1) << "ERROR: failed to push record for subscription=" << *siter << " ret=" << retcode << dendl;
+                  ldout(sc->cct, 1) << "ERROR: failed to push record for subscription=" << *siter << " ret=" << retcode << dendl;
                 } else {
                   if (perfcounter) perfcounter->inc(l_rgw_pubsub_push_ok);
                   event_handled = true;
@@ -1278,7 +1287,7 @@ public:
           if (!sub_conf_found) {
             // could not find conf for subscription at user or global levels
             if (perfcounter) perfcounter->inc(l_rgw_pubsub_missing_conf);
-            ldout(sync_env->cct, 1) << "ERROR: failed to find subscription config for subscription=" << *siter 
+            ldout(sc->cct, 1) << "ERROR: failed to find subscription config for subscription=" << *siter 
               << " ret=" << last_sub_conf_error << dendl;
               if (retcode == -ENOENT) {
                 // missing subscription info should be reflected back as invalid argument
@@ -1304,26 +1313,28 @@ public:
 
 // coroutine invoked on remote object creation
 class RGWPSHandleRemoteObjCBCR : public RGWStatRemoteObjCBCR {
-  RGWDataSyncEnv *sync_env;
+  RGWDataSyncCtx *sc;
+  rgw_bucket_sync_pipe sync_pipe;
   PSEnvRef env;
   std::optional<uint64_t> versioned_epoch;
   EventRef<rgw_pubsub_event> event;
   EventRef<rgw_pubsub_s3_record> record;
   TopicsRef topics;
 public:
-  RGWPSHandleRemoteObjCBCR(RGWDataSyncEnv *_sync_env,
-                          RGWBucketInfo& _bucket_info, rgw_obj_key& _key,
+  RGWPSHandleRemoteObjCBCR(RGWDataSyncCtx *_sc,
+                          rgw_bucket_sync_pipe& _sync_pipe, rgw_obj_key& _key,
                           PSEnvRef _env, std::optional<uint64_t> _versioned_epoch,
-                          TopicsRef& _topics) : RGWStatRemoteObjCBCR(_sync_env, _bucket_info, _key),
-                                                                      sync_env(_sync_env),
+                          TopicsRef& _topics) : RGWStatRemoteObjCBCR(_sc, _sync_pipe.info.source_bs.bucket, _key),
+                                                                      sc(_sc),
+                                                                      sync_pipe(_sync_pipe),
                                                                       env(_env),
                                                                       versioned_epoch(_versioned_epoch),
                                                                       topics(_topics) {
   }
   int operate() override {
     reenter(this) {
-      ldout(sync_env->cct, 20) << ": stat of remote obj: z=" << sync_env->source_zone
-                               << " b=" << bucket_info.bucket << " k=" << key << " size=" << size << " mtime=" << mtime
+      ldout(sc->cct, 20) << ": stat of remote obj: z=" << sc->source_zone
+                               << " b=" << sync_pipe.info.source_bs.bucket << " k=" << key << " size=" << size << " mtime=" << mtime
                                << " attrs=" << attrs << dendl;
       {
         std::vector<std::pair<std::string, std::string> > attrs;
@@ -1337,17 +1348,17 @@ public:
         // at this point we don't know whether we need the ceph event or S3 record
         // this is why both are created here, once we have information about the 
         // subscription, we will store/push only the relevant ones
-        make_event_ref(sync_env->cct,
-                       bucket_info.bucket, key,
+        make_event_ref(sc->cct,
+                       sync_pipe.info.source_bs.bucket, key,
                        mtime, &attrs,
                        rgw::notify::ObjectCreated, &event);
-        make_s3_record_ref(sync_env->cct,
-                       bucket_info.bucket, bucket_info.owner, key,
+        make_s3_record_ref(sc->cct,
+                       sync_pipe.info.source_bs.bucket, sync_pipe.dest_bucket_info.owner, key,
                        mtime, &attrs,
                        rgw::notify::ObjectCreated, &record);
       }
 
-      yield call(new RGWPSHandleObjEventCR(sync_env, env, bucket_info.owner, event, record, topics));
+      yield call(new RGWPSHandleObjEventCR(sc, env, sync_pipe.source_bucket_info.owner, event, record, topics));
       if (retcode < 0) {
         return set_cr_error(retcode);
       }
@@ -1358,14 +1369,16 @@ public:
 };
 
 class RGWPSHandleRemoteObjCR : public RGWCallStatRemoteObjCR {
+  rgw_bucket_sync_pipe sync_pipe;
   PSEnvRef env;
   std::optional<uint64_t> versioned_epoch;
   TopicsRef topics;
 public:
-  RGWPSHandleRemoteObjCR(RGWDataSyncEnv *_sync_env,
-                        RGWBucketInfo& _bucket_info, rgw_obj_key& _key,
+  RGWPSHandleRemoteObjCR(RGWDataSyncCtx *_sc,
+                        rgw_bucket_sync_pipe& _sync_pipe, rgw_obj_key& _key,
                         PSEnvRef _env, std::optional<uint64_t> _versioned_epoch,
-                        TopicsRef& _topics) : RGWCallStatRemoteObjCR(_sync_env, _bucket_info, _key),
+                        TopicsRef& _topics) : RGWCallStatRemoteObjCR(_sc, _sync_pipe.info.source_bs.bucket, _key),
+                                                           sync_pipe(_sync_pipe),
                                                            env(_env), versioned_epoch(_versioned_epoch),
                                                            topics(_topics) {
   }
@@ -1373,24 +1386,23 @@ public:
   ~RGWPSHandleRemoteObjCR() override {}
 
   RGWStatRemoteObjCBCR *allocate_callback() override {
-    return new RGWPSHandleRemoteObjCBCR(sync_env, bucket_info, key, env, versioned_epoch, topics);
+    return new RGWPSHandleRemoteObjCBCR(sc, sync_pipe, key, env, versioned_epoch, topics);
   }
 };
 
 class RGWPSHandleObjCreateCR : public RGWCoroutine {
-  
-  RGWDataSyncEnv *sync_env;
-  RGWBucketInfo bucket_info;
+  RGWDataSyncCtx *sc;
+  rgw_bucket_sync_pipe sync_pipe;
   rgw_obj_key key;
   PSEnvRef env;
   std::optional<uint64_t> versioned_epoch;
   TopicsRef topics;
 public:
-  RGWPSHandleObjCreateCR(RGWDataSyncEnv *_sync_env,
-                       RGWBucketInfo& _bucket_info, rgw_obj_key& _key,
-                       PSEnvRef _env, std::optional<uint64_t> _versioned_epoch) : RGWCoroutine(_sync_env->cct),
-                                                                   sync_env(_sync_env),
-                                                                   bucket_info(_bucket_info),
+  RGWPSHandleObjCreateCR(RGWDataSyncCtx *_sc,
+                       rgw_bucket_sync_pipe& _sync_pipe, rgw_obj_key& _key,
+                       PSEnvRef _env, std::optional<uint64_t> _versioned_epoch) : RGWCoroutine(_sc->cct),
+                                                                   sc(_sc),
+                                                                   sync_pipe(_sync_pipe),
                                                                    key(_key),
                                                                    env(_env),
                                                                    versioned_epoch(_versioned_epoch) {
@@ -1400,19 +1412,19 @@ public:
 
   int operate() override {
     reenter(this) {
-      yield call(new RGWPSFindBucketTopicsCR(sync_env, env, bucket_info.owner,
-                                             bucket_info.bucket, key,
+      yield call(new RGWPSFindBucketTopicsCR(sc, env, sync_pipe.dest_bucket_info.owner,
+                                             sync_pipe.info.source_bs.bucket, key,
                                              rgw::notify::ObjectCreated,
                                              &topics));
       if (retcode < 0) {
-        ldout(sync_env->cct, 1) << "ERROR: RGWPSFindBucketTopicsCR returned ret=" << retcode << dendl;
+        ldout(sc->cct, 1) << "ERROR: RGWPSFindBucketTopicsCR returned ret=" << retcode << dendl;
         return set_cr_error(retcode);
       }
       if (topics->empty()) {
-        ldout(sync_env->cct, 20) << "no topics found for " << bucket_info.bucket << "/" << key << dendl;
+        ldout(sc->cct, 20) << "no topics found for " << sync_pipe.info.source_bs.bucket << "/" << key << dendl;
         return set_cr_done();
       }
-      yield call(new RGWPSHandleRemoteObjCR(sync_env, bucket_info, key, env, versioned_epoch, topics));
+      yield call(new RGWPSHandleRemoteObjCR(sc, sync_pipe, key, env, versioned_epoch, topics));
       if (retcode < 0) {
         return set_cr_error(retcode);
       }
@@ -1424,7 +1436,7 @@ public:
 
 // coroutine invoked on remote object deletion
 class RGWPSGenericObjEventCBCR : public RGWCoroutine {
-  RGWDataSyncEnv *sync_env;
+  RGWDataSyncCtx *sc;
   PSEnvRef env;
   rgw_user owner;
   rgw_bucket bucket;
@@ -1435,41 +1447,41 @@ class RGWPSGenericObjEventCBCR : public RGWCoroutine {
   EventRef<rgw_pubsub_s3_record> record;
   TopicsRef topics;
 public:
-  RGWPSGenericObjEventCBCR(RGWDataSyncEnv *_sync_env,
+  RGWPSGenericObjEventCBCR(RGWDataSyncCtx *_sc,
                            PSEnvRef _env,
-                           RGWBucketInfo& _bucket_info, rgw_obj_key& _key, const ceph::real_time& _mtime,
-                           rgw::notify::EventType _event_type) : RGWCoroutine(_sync_env->cct),
-                                                             sync_env(_sync_env),
+                           rgw_bucket_sync_pipe& _sync_pipe, rgw_obj_key& _key, const ceph::real_time& _mtime,
+                           rgw::notify::EventType _event_type) : RGWCoroutine(_sc->cct),
+                                                             sc(_sc),
                                                              env(_env),
-                                                             owner(_bucket_info.owner),
-                                                             bucket(_bucket_info.bucket),
+                                                             owner(_sync_pipe.dest_bucket_info.owner),
+                                                             bucket(_sync_pipe.dest_bucket_info.bucket),
                                                              key(_key),
                                                              mtime(_mtime), event_type(_event_type) {}
   int operate() override {
     reenter(this) {
-      ldout(sync_env->cct, 20) << ": remove remote obj: z=" << sync_env->source_zone
+      ldout(sc->cct, 20) << ": remove remote obj: z=" << sc->source_zone
                                << " b=" << bucket << " k=" << key << " mtime=" << mtime << dendl;
-      yield call(new RGWPSFindBucketTopicsCR(sync_env, env, owner, bucket, key, event_type, &topics));
+      yield call(new RGWPSFindBucketTopicsCR(sc, env, owner, bucket, key, event_type, &topics));
       if (retcode < 0) {
-        ldout(sync_env->cct, 1) << "ERROR: RGWPSFindBucketTopicsCR returned ret=" << retcode << dendl;
+        ldout(sc->cct, 1) << "ERROR: RGWPSFindBucketTopicsCR returned ret=" << retcode << dendl;
         return set_cr_error(retcode);
       }
       if (topics->empty()) {
-        ldout(sync_env->cct, 20) << "no topics found for " << bucket << "/" << key << dendl;
+        ldout(sc->cct, 20) << "no topics found for " << bucket << "/" << key << dendl;
         return set_cr_done();
       }
       // at this point we don't know whether we need the ceph event or S3 record
       // this is why both are created here, once we have information about the 
       // subscription, we will store/push only the relevant ones
-      make_event_ref(sync_env->cct,
+      make_event_ref(sc->cct,
                      bucket, key,
                      mtime, nullptr,
                      event_type, &event);
-      make_s3_record_ref(sync_env->cct,
+      make_s3_record_ref(sc->cct,
                      bucket, owner, key,
                      mtime, nullptr,
                      event_type, &record);
-      yield call(new RGWPSHandleObjEventCR(sync_env, env, owner, event, record, topics));
+      yield call(new RGWPSHandleObjEventCR(sc, env, owner, event, record, topics));
       if (retcode < 0) {
         return set_cr_error(retcode);
       }
@@ -1491,35 +1503,36 @@ public:
 
   ~RGWPSDataSyncModule() override {}
 
-  void init(RGWDataSyncEnv *sync_env, uint64_t instance_id) override {
-    PSManagerRef mgr = PSManager::get_shared(sync_env, env);
-    env->init_instance(sync_env->store->svc()->zone->get_realm(), instance_id, mgr);
+  void init(RGWDataSyncCtx *sc, uint64_t instance_id) override {
+    auto sync_env = sc->env;
+    PSManagerRef mgr = PSManager::get_shared(sc, env);
+    env->init_instance(sync_env->svc->zone->get_realm(), instance_id, mgr);
   }
 
-  RGWCoroutine *start_sync(RGWDataSyncEnv *sync_env) override {
-    ldout(sync_env->cct, 5) << conf->id << ": start" << dendl;
-    return new RGWPSInitEnvCBCR(sync_env, env);
+  RGWCoroutine *start_sync(RGWDataSyncCtx *sc) override {
+    ldout(sc->cct, 5) << conf->id << ": start" << dendl;
+    return new RGWPSInitEnvCBCR(sc, env);
   }
 
-  RGWCoroutine *sync_object(RGWDataSyncEnv *sync_env, RGWBucketInfo& bucket_info, 
+  RGWCoroutine *sync_object(RGWDataSyncCtx *sc, rgw_bucket_sync_pipe& sync_pipe, 
       rgw_obj_key& key, std::optional<uint64_t> versioned_epoch, rgw_zone_set *zones_trace) override {
-    ldout(sync_env->cct, 10) << conf->id << ": sync_object: b=" << bucket_info.bucket << 
+    ldout(sc->cct, 10) << conf->id << ": sync_object: b=" << sync_pipe << 
           " k=" << key << " versioned_epoch=" << versioned_epoch.value_or(0) << dendl;
-    return new RGWPSHandleObjCreateCR(sync_env, bucket_info, key, env, versioned_epoch);
+    return new RGWPSHandleObjCreateCR(sc, sync_pipe, key, env, versioned_epoch);
   }
 
-  RGWCoroutine *remove_object(RGWDataSyncEnv *sync_env, RGWBucketInfo& bucket_info, 
+  RGWCoroutine *remove_object(RGWDataSyncCtx *sc, rgw_bucket_sync_pipe& sync_pipe, 
       rgw_obj_key& key, real_time& mtime, bool versioned, uint64_t versioned_epoch, rgw_zone_set *zones_trace) override {
-    ldout(sync_env->cct, 10) << conf->id << ": rm_object: b=" << bucket_info.bucket << 
+    ldout(sc->cct, 10) << conf->id << ": rm_object: b=" << sync_pipe << 
           " k=" << key << " mtime=" << mtime << " versioned=" << versioned << " versioned_epoch=" << versioned_epoch << dendl;
-    return new RGWPSGenericObjEventCBCR(sync_env, env, bucket_info, key, mtime, rgw::notify::ObjectRemovedDelete);
+    return new RGWPSGenericObjEventCBCR(sc, env, sync_pipe, key, mtime, rgw::notify::ObjectRemovedDelete);
   }
 
-  RGWCoroutine *create_delete_marker(RGWDataSyncEnv *sync_env, RGWBucketInfo& bucket_info, 
+  RGWCoroutine *create_delete_marker(RGWDataSyncCtx *sc, rgw_bucket_sync_pipe& sync_pipe, 
       rgw_obj_key& key, real_time& mtime, rgw_bucket_entry_owner& owner, bool versioned, uint64_t versioned_epoch, rgw_zone_set *zones_trace) override {
-    ldout(sync_env->cct, 10) << conf->id << ": create_delete_marker: b=" << bucket_info.bucket << 
+    ldout(sc->cct, 10) << conf->id << ": create_delete_marker: b=" << sync_pipe << 
           " k=" << key << " mtime=" << mtime << " versioned=" << versioned << " versioned_epoch=" << versioned_epoch << dendl;
-    return new RGWPSGenericObjEventCBCR(sync_env, env, bucket_info, key, mtime, rgw::notify::ObjectRemovedDeleteMarkerCreated);
+    return new RGWPSGenericObjEventCBCR(sc, env, sync_pipe, key, mtime, rgw::notify::ObjectRemovedDeleteMarkerCreated);
   }
 
   PSConfigRef& get_conf() { return conf; }
