@@ -1659,7 +1659,7 @@ static inline vector<int> random_sequence(uint32_t n)
   return v;
 }
 
-int RGWLC::process(LCWorker* worker, bool once = false)
+int RGWLC::process(LCWorker* worker, bool once = false, const string& bucket_name)
 {
   int max_secs = cct->_conf->rgw_lc_lock_max_time;
 
@@ -1667,7 +1667,7 @@ int RGWLC::process(LCWorker* worker, bool once = false)
    * that might be running in parallel */
   vector<int> shard_seq = random_sequence(max_objs);
   for (auto index : shard_seq) {
-    int ret = process(index, max_secs, worker, once);
+    int ret = process(index, max_secs, worker, once, bucket_name);
     if (ret < 0)
       return ret;
   }
@@ -1702,7 +1702,7 @@ time_t RGWLC::thread_stop_at()
 }
 
 int RGWLC::process(int index, int max_lock_secs, LCWorker* worker,
-  bool once = false)
+  bool once = false, const string& bucket_name)
 {
   dout(5) << "RGWLC::process(): ENTER: "
 	  << "index: " << index << " worker ix: " << worker->ix
@@ -1711,10 +1711,10 @@ int RGWLC::process(int index, int max_lock_secs, LCWorker* worker,
   rgw::sal::LCSerializer* lock = sal_lc->get_serializer(lc_index_lock_name,
 							obj_names[index],
 							std::string());
+  //string = bucket_name:bucket_id, start_time, int = LC_BUCKET_STATUS
+  rgw::sal::Lifecycle::LCEntry entry;
   do {
     utime_t now = ceph_clock_now();
-    //string = bucket_name:bucket_id, start_time, int = LC_BUCKET_STATUS
-    rgw::sal::Lifecycle::LCEntry entry;
     if (max_lock_secs <= 0)
       return -EAGAIN;
 
@@ -1728,8 +1728,10 @@ int RGWLC::process(int index, int max_lock_secs, LCWorker* worker,
       sleep(5);
       continue;
     }
-    if (ret < 0)
+    if (ret < 0) {
+      ldpp_dout(this, 0) << "RGWLC::process() failed to acquire lock" << obj_names[index] << dendl;
       return 0;
+    }
 
     rgw::sal::Lifecycle::LCHead head;
     ret = sal_lc->get_head(obj_names[index], head);
@@ -1760,19 +1762,21 @@ int RGWLC::process(int index, int max_lock_secs, LCWorker* worker,
 
     if(!if_already_run_today(head.start_date) ||
        once) {
+      ldpp_dout(this, 20) << "RGWLC::process() initialize lc processing" << dendl;
       head.start_date = now;
       head.marker.clear();
       ret = bucket_lc_prepare(index, worker);
       if (ret < 0) {
-      ldpp_dout(this, 0) << "RGWLC::process() failed to update lc object "
-			 << obj_names[index]
-			 << ", ret=" << ret
-			 << dendl;
-      goto exit;
+        ldpp_dout(this, 0) << "RGWLC::process() failed to update lc object "
+          		 << obj_names[index]
+          		 << ", ret=" << ret
+          		 << dendl;
+        goto exit;
       }
     }
 
-    ret = sal_lc->get_next_entry(obj_names[index], head.marker, entry);
+    string marker = bucket_name.empty() ? head.marker : entry.bucket;
+    ret = sal_lc->get_next_entry(obj_names[index], marker, entry);
     if (ret < 0) {
       ldpp_dout(this, 0) << "RGWLC::process() failed to get obj entry "
           << obj_names[index] << dendl;
@@ -1780,22 +1784,44 @@ int RGWLC::process(int index, int max_lock_secs, LCWorker* worker,
     }
 
     /* termination condition (eof) */
-    if (entry.bucket.empty())
-      goto exit;
-
-    ldpp_dout(this, 5) << "RGWLC::process(): START entry 1: " << entry
-	    << " index: " << index << " worker ix: " << worker->ix
-	    << dendl;
-
-    entry.status = lc_processing;
-    ret = sal_lc->set_entry(obj_names[index], entry);
-    if (ret < 0) {
-      ldpp_dout(this, 0) << "RGWLC::process() failed to set obj entry "
-	      << obj_names[index] << entry.bucket << entry.status << dendl;
+    if (entry.bucket.empty()) {
+      ldpp_dout(this, 20) << "RGWLC::process() finished scanning entries" << dendl;
       goto exit;
     }
 
-    head.marker = entry.bucket;
+    bool process_entry = true;
+    // Did the admin specify running on a specific bucket?
+    if (!bucket_name.empty()) {
+      vector<std::string> result;
+      boost::split(result, entry.bucket, boost::is_any_of(":"));
+      process_entry = bucket_name.compare(result[1]) == 0;
+    }
+
+    // Should this still be processed, or is it done for today?
+    switch (entry.status) {
+      case lc_uninitial: break;
+      case lc_processing: break;
+      case lc_failed: process_entry &= false;
+      case lc_complete: process_entry &= false;
+    }
+
+    if (process_entry) {
+      ldpp_dout(this, 5) << "RGWLC::process(): START entry 1: " << entry
+  	    << " index: " << index << " worker ix: " << worker->ix
+  	    << dendl;
+
+      entry.status = lc_processing;
+      ret = sal_lc->set_entry(obj_names[index], entry);
+      if (ret < 0) {
+        ldpp_dout(this, 0) << "RGWLC::process() failed to set obj entry "
+  	      << obj_names[index] << entry.bucket << entry.status << dendl;
+        goto exit;
+      }
+    }
+
+    if (bucket_name.empty()) {
+      head.marker = entry.bucket;
+    }
     ret = sal_lc->put_head(obj_names[index],  head);
     if (ret < 0) {
       ldpp_dout(this, 0) << "RGWLC::process() failed to put head "
@@ -1804,13 +1830,20 @@ int RGWLC::process(int index, int max_lock_secs, LCWorker* worker,
       goto exit;
     }
 
-    ldpp_dout(this, 5) << "RGWLC::process(): START entry 2: " << entry
-	    << " index: " << index << " worker ix: " << worker->ix
-	    << dendl;
-
     lock->unlock();
-    ret = bucket_lc_process(entry.bucket, worker, thread_stop_at(), once);
-    bucket_lc_post(index, max_lock_secs, entry, ret, worker);
+    if (process_entry) {
+      ldpp_dout(this, 5) << "RGWLC::process(): START entry 2: " << entry
+              << " index: " << index << " worker ix: " << worker->ix
+              << dendl;
+
+      ret = bucket_lc_process(entry.bucket, worker, thread_stop_at(), once);
+      bucket_lc_post(index, max_lock_secs, entry, ret, worker);
+      ldpp_dout(this, 20) << "RGWLC::process() finished processing entry: "
+	<< entry.bucket << " " << entry.status << dendl;
+      if (!bucket_name.empty()) {
+        goto exit;
+      }
+    }
   } while(1 && !once);
 
   delete lock;
