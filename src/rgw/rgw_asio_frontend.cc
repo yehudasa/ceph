@@ -579,35 +579,47 @@ int AsioFrontend::init_ssl()
   auto& config = conf->get_config_map();
 
   // ssl configuration
-  auto cert = config.find("ssl_certificate");
-  const bool have_cert = cert != config.end();
-  if (have_cert) {
+  std::optional<string> cert;
+  bool cert_provided = conf->get_val_or_default("ssl_certificate",
+                                                "default_ssl_certificate",
+                                                &cert);
+  if (cert) {
     // only initialize the ssl context if it's going to be used
     ssl_context = boost::in_place(ssl::context::tls);
   }
 
-  auto key = config.find("ssl_private_key");
-  const bool have_private_key = key != config.end();
-  if (have_private_key) {
-    if (!have_cert) {
-      lderr(ctx()) << "no ssl_certificate configured for ssl_private_key" << dendl;
-      return -EINVAL;
-    }
-    int r = ssl_set_private_key(key->second);
-    if (r < 0) {
-      return r;
-    }
+  std::optional<string> key;
+  auto key_provided = conf->get_val_or_default("ssl_private_key",
+                                               "default_ssl_private_key",
+                                               &key);
+  bool have_private_key = false;
+  bool have_cert = false;
+
+  if (key && !cert) {
+    lderr(ctx()) << "no ssl_certificate configured for ssl_private_key" << dendl;
+    return -EINVAL;
   }
-  if (have_cert) {
-    int r = ssl_set_certificate_chain(cert->second);
-    if (r < 0) {
-      return r;
+
+  if (cert) {
+    if (!key) {
+      key = cert;
+      key_provided = cert_provided;
     }
-    if (!have_private_key) {
-      // attempt to use it as a private key if a separate one wasn't provided
-      r = ssl_set_private_key(cert->second);
-      if (r < 0) {
+
+    int r = ssl_set_private_key(*key);
+    bool have_private_key = (r >= 0);
+    if (r < 0) {
+      if (r != -ENOENT || !key_provided) {
         return r;
+      }
+    }
+    if (have_private_key) {
+      int r = ssl_set_certificate_chain(*cert);
+      have_cert = (r >= 0);
+      if (r < 0) {
+        if (cert_provided) {
+          return r;
+        }
       }
     }
   }
