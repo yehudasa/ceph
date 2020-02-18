@@ -691,7 +691,6 @@ int AsioFrontend::init_ssl()
   if (cert) {
     if (!key) {
       key = cert;
-      key_provided = cert_provided;
       key_is_cert = true;
     }
 
@@ -703,10 +702,14 @@ int AsioFrontend::init_ssl()
     int r = ssl_set_private_key(*key, key_is_cert);
     bool have_private_key = (r >= 0);
     if (r < 0) {
-      if (r != -ENOENT || !key_provided) {
+      if (key_provided) {
         return r;
+      } else  {
+        r = ssl_set_private_key(*cert, true);
+        have_private_key = (r >= 0);
       }
     }
+
     if (have_private_key) {
       int r = ssl_set_certificate_chain(*cert);
       have_cert = (r >= 0);
