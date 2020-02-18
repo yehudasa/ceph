@@ -56,6 +56,16 @@ void RGWFrontendConfig::set_default_config(RGWFrontendConfig& def_conf)
   }
 }
 
+std::optional<string> RGWFrontendConfig::get_val(const std::string& key)
+{
+ auto iter = config_map.find(key);
+ if (iter == config_map.end()) {
+   return std::nullopt;
+ }
+
+ return iter->second;
+}
+
 bool RGWFrontendConfig::get_val(const string& key, const string& def_val,
 				string *out)
 {
@@ -84,25 +94,6 @@ bool RGWFrontendConfig::get_val(const string& key, int def_val, int *out)
     return -EINVAL;
   }
   return 0;
-}
-
-bool RGWFrontendConfig::get_val_or_default(const string& key, const string& def_key,
-                                           std::optional<string> *out)
-{
- auto iter = config_map.find(key);
- if (iter != config_map.end()) {
-   *out = iter->second;
-   return true;
- }
-
- iter = config_map.find(def_key);
- if (iter != config_map.end()) {
-   *out = iter->second;
- } else {
-   out->reset();
- }
-
- return false;
 }
 
 void RGWProcessFrontend::stop()

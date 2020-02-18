@@ -665,20 +665,13 @@ int AsioFrontend::init_ssl()
   auto& config = conf->get_config_map();
 
   // ssl configuration
-  std::optional<string> cert;
-  bool cert_provided = conf->get_val_or_default("ssl_certificate",
-                                                "default_ssl_certificate",
-                                                &cert);
+  std::optional<string> cert = conf->get_val("ssl_certificate");
   if (cert) {
     // only initialize the ssl context if it's going to be used
     ssl_context = boost::in_place(ssl::context::tls);
   }
 
-  std::optional<string> key;
-  auto key_provided = conf->get_val_or_default("ssl_private_key",
-                                               "default_ssl_private_key",
-                                               &key);
-  bool have_private_key = false;
+  std::optional<string> key = conf->get_val("ssl_private_key");
   bool have_cert = false;
 
   if (key && !cert) {
@@ -702,9 +695,7 @@ int AsioFrontend::init_ssl()
     int r = ssl_set_private_key(*key, key_is_cert);
     bool have_private_key = (r >= 0);
     if (r < 0) {
-      if (key_provided) {
-        return r;
-      } else  {
+      if (!key_is_cert) {
         r = ssl_set_private_key(*cert, true);
         have_private_key = (r >= 0);
       }
@@ -713,11 +704,6 @@ int AsioFrontend::init_ssl()
     if (have_private_key) {
       int r = ssl_set_certificate_chain(*cert);
       have_cert = (r >= 0);
-      if (r < 0) {
-        if (cert_provided) {
-          return r;
-        }
-      }
     }
   }
 

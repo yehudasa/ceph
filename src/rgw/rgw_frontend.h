@@ -45,6 +45,8 @@ public:
 
   void set_default_config(RGWFrontendConfig& def_conf);
 
+  std::optional<string> get_val(const std::string& key);
+
   bool get_val(const std::string& key,
                const std::string& def_val,
                std::string* out);
@@ -56,9 +58,6 @@ public:
     get_val(key, def_val, &out);
     return out;
   }
-
-  bool get_val_or_default(const string& key, const string& def_key,
-                          std::optional<string> *out);
 
   const std::string& get_config() {
     return config;
