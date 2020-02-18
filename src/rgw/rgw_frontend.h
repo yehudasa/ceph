@@ -55,6 +55,9 @@ public:
     return out;
   }
 
+  bool get_val_or_default(const string& key, const string& def_key,
+                          std::optional<string> *out);
+
   const std::string& get_config() {
     return config;
   }

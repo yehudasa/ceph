@@ -75,6 +75,25 @@ bool RGWFrontendConfig::get_val(const string& key, int def_val, int *out)
   return 0;
 }
 
+bool RGWFrontendConfig::get_val_or_default(const string& key, const string& def_key,
+                                           std::optional<string> *out)
+{
+ auto iter = config_map.find(key);
+ if (iter != config_map.end()) {
+   *out = iter->second;
+   return true;
+ }
+
+ iter = config_map.find(def_key);
+ if (iter != config_map.end()) {
+   *out = iter->second;
+ } else {
+   out->reset();
+ }
+
+ return false;
+}
+
 void RGWProcessFrontend::stop()
 {
   pprocess->close_fd();
