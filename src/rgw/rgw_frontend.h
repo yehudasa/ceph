@@ -43,6 +43,8 @@ public:
     return ret < 0 ? ret : 0;
   }
 
+  void set_default_config(RGWFrontendConfig& def_conf);
+
   bool get_val(const std::string& key,
                const std::string& def_val,
                std::string* out);
