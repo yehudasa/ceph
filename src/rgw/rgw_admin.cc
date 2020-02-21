@@ -3765,10 +3765,6 @@ int main(int argc, const char **argv)
 
   zone_formatter = new JSONFormatter_PrettyZone(pretty_format);
 
-  realm_name = g_conf()->rgw_realm;
-  zone_name = g_conf()->rgw_zone;
-  zonegroup_name = g_conf()->rgw_zonegroup;
-
   RGWStreamFlusher f(formatter, cout);
 
   // not a raw op if 'period update' needs to commit to master
@@ -3881,6 +3877,10 @@ int main(int argc, const char **argv)
       source_zone = source_zone_name;
     }
   }
+
+  realm_name = g_conf().get_val<string>("rgw_realm");
+  zone_name = g_conf().get_val<string>("rgw_zone");
+  zonegroup_name = g_conf().get_val<string>("rgw_zonegroup");
 
   rgw_http_client_init(g_ceph_context);
 

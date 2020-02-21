@@ -132,7 +132,7 @@ int RGWSI_Zone::do_start()
   }
 
   ldout(cct, 10) << "Cannot find current period zone using local zone" << dendl;
-  if (creating_defaults && cct->_conf->rgw_zone.empty()) {
+  if (creating_defaults && cct->_conf.get_val<string>("rgw_zone").empty()) {
     ldout(cct, 10) << " Using default name "<< default_zone_name << dendl;
     zone_params->set_name(default_zone_name);
   }

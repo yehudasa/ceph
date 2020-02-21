@@ -164,8 +164,8 @@ const string& RGWZoneGroup::get_names_oid_prefix() const
   return zonegroup_names_oid_prefix;
 }
 
-const string& RGWZoneGroup::get_predefined_name(CephContext *cct) const {
-  return cct->_conf->rgw_zonegroup;
+string RGWZoneGroup::get_predefined_name(CephContext *cct) const {
+  return cct->_conf.get_val<string>("rgw_zonegroup");
 }
 
 int RGWZoneGroup::equals(const string& other_zonegroup) const
@@ -683,8 +683,8 @@ int RGWSystemMetaObj::write(bool exclusive)
 }
 
 
-const string& RGWRealm::get_predefined_name(CephContext *cct) const {
-  return cct->_conf->rgw_realm;
+string RGWRealm::get_predefined_name(CephContext *cct) const {
+  return cct->_conf.get_val<string>("rgw_realm");
 }
 
 int RGWRealm::create(bool exclusive)
@@ -1701,8 +1701,8 @@ const string& RGWZoneParams::get_info_oid_prefix(bool old_format) const
   return zone_info_oid_prefix;
 }
 
-const string& RGWZoneParams::get_predefined_name(CephContext *cct) const {
-  return cct->_conf->rgw_zone;
+string RGWZoneParams::get_predefined_name(CephContext *cct) const {
+  return cct->_conf.get_val<string>("rgw_zone");
 }
 
 int RGWZoneParams::init(CephContext *cct, RGWSI_SysObj *sysobj_svc, bool setup_obj, bool old_format)
