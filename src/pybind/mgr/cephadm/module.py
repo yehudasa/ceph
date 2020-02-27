@@ -2022,7 +2022,8 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule):
                                              spec.name, name)
             self.log.debug('Placing %s.%s on host %s' % (
                 daemon_type, daemon_id, host))
-            if daemon_type == 'mon':
+            if daemon_type == 'mon' or daemon_type == 'rgw':
+                self.log.debug('network param: %s' % (network))
                 args.append((daemon_id, host, network))  # type: ignore
             else:
                 args.append((daemon_id, host))  # type: ignore
@@ -2147,7 +2148,7 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule):
         })
 
     @async_map_completion
-    def _create_rgw(self, rgw_id, host):
+    def _create_rgw(self, rgw_id, host, network):
         ret, keyring, err = self.mon_command({
             'prefix': 'auth get-or-create',
             'entity': 'client.rgw.' + rgw_id,
@@ -2155,6 +2156,13 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule):
                      'mgr', 'allow rw',
                      'osd', 'allow rwx'],
         })
+        if network:
+            ret, out, err = self.mon_command({
+                'prefix': 'config set',
+                'who': 'client.rgw.' + rgw_id,
+                'name': 'rgw_frontends',
+                'value': 'beast port=' + network,
+            })
         return self._create_daemon('rgw', rgw_id, host, keyring=keyring)
 
     def apply_rgw(self, spec):
