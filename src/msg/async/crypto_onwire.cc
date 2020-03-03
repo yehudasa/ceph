@@ -119,6 +119,7 @@ ceph::bufferlist AES128GCM_OnWireTxHandler::authenticated_encrypt_final()
 {
   int final_len = 0;
   auto filler = buffer.append_hole(AESGCM_BLOCK_LEN);
+  memset(filler.c_str(), 0, AESGCM_BLOCK_LEN);
   if(1 != EVP_EncryptFinal_ex(ectx.get(),
 	reinterpret_cast<unsigned char*>(filler.c_str()),
 	&final_len)) {
