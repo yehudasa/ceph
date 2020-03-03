@@ -879,7 +879,7 @@ std::vector<Option> get_global_options() {
     .add_see_also("ms_type"),
 
     Option("ms_mon_cluster_mode", Option::TYPE_STR, Option::LEVEL_BASIC)
-    .set_default("secure crc")
+    .set_default("secure")
     .set_flag(Option::FLAG_STARTUP)
     .set_description("Connection modes (crc, secure) for intra-mon connections in order of preference")
     .add_see_also("ms_mon_service_mode")
@@ -889,7 +889,7 @@ std::vector<Option> get_global_options() {
     .add_see_also("ms_client_mode"),
 
     Option("ms_mon_service_mode", Option::TYPE_STR, Option::LEVEL_BASIC)
-    .set_default("secure crc")
+    .set_default("secure")
     .set_flag(Option::FLAG_STARTUP)
     .set_description("Allowed connection modes (crc, secure) for connections to mons")
     .add_see_also("ms_service_mode")
@@ -899,7 +899,7 @@ std::vector<Option> get_global_options() {
     .add_see_also("ms_client_mode"),
 
     Option("ms_mon_client_mode", Option::TYPE_STR, Option::LEVEL_BASIC)
-    .set_default("secure crc")
+    .set_default("secure")
     .set_flag(Option::FLAG_STARTUP)
     .set_description("Connection modes (crc, secure) for connections from clients to monitors in order of preference")
     .add_see_also("ms_mon_service_mode")
@@ -909,21 +909,21 @@ std::vector<Option> get_global_options() {
     .add_see_also("ms_client_mode"),
 
     Option("ms_cluster_mode", Option::TYPE_STR, Option::LEVEL_BASIC)
-    .set_default("crc secure")
+    .set_default("secure")
     .set_flag(Option::FLAG_STARTUP)
     .set_description("Connection modes (crc, secure) for intra-cluster connections in order of preference")
     .add_see_also("ms_service_mode")
     .add_see_also("ms_client_mode"),
 
     Option("ms_service_mode", Option::TYPE_STR, Option::LEVEL_BASIC)
-    .set_default("crc secure")
+    .set_default("secure")
     .set_flag(Option::FLAG_STARTUP)
     .set_description("Allowed connection modes (crc, secure) for connections to daemons")
     .add_see_also("ms_cluster_mode")
     .add_see_also("ms_client_mode"),
 
     Option("ms_client_mode", Option::TYPE_STR, Option::LEVEL_BASIC)
-    .set_default("crc secure")
+    .set_default("secure")
     .set_flag(Option::FLAG_STARTUP)
     .set_description("Connection modes (crc, secure) for connections from clients in order of preference")
     .add_see_also("ms_cluster_mode")
