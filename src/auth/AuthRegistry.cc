@@ -196,7 +196,6 @@ void AuthRegistry::get_supported_methods(
     if (modes) {
       switch (peer_type) {
       case CEPH_ENTITY_TYPE_MON:
-      case CEPH_ENTITY_TYPE_MGR:
 	*modes = mon_client_modes;
 	break;
       default:
@@ -205,12 +204,10 @@ void AuthRegistry::get_supported_methods(
     }
     return;
   case CEPH_ENTITY_TYPE_MON:
-  case CEPH_ENTITY_TYPE_MGR:
-    // i am mon/mgr
+    // i am mon
     switch (peer_type) {
     case CEPH_ENTITY_TYPE_MON:
-    case CEPH_ENTITY_TYPE_MGR:
-      // they are mon/mgr
+      // they are mon
       if (methods) {
 	*methods = cluster_methods;
       }
@@ -233,14 +230,6 @@ void AuthRegistry::get_supported_methods(
     switch (peer_type) {
     case CEPH_ENTITY_TYPE_MON:
     case CEPH_ENTITY_TYPE_MGR:
-      // they are a mon daemon
-      if (methods) {
-	*methods = cluster_methods;
-      }
-      if (modes) {
-	*modes = mon_cluster_modes;
-      }
-      break;
     case CEPH_ENTITY_TYPE_MDS:
     case CEPH_ENTITY_TYPE_OSD:
       // they are another daemon
