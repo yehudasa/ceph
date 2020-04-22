@@ -351,6 +351,16 @@ public:
 
     return 0;
   }
+  int list_keys_next(void *handle, int max, list<KeyInfo>& keys, bool *truncated) override  {
+    iter_data *data = static_cast<iter_data *>(handle);
+    for (int i = 0; i < max && data->iter != data->sections.end(); ++i, ++(data->iter)) {
+      keys.push_back({*data->iter, *data->iter});
+    }
+
+    *truncated = (data->iter != data->sections.end());
+
+    return 0;
+  }
   void list_keys_complete(void *handle) override {
     iter_data *data = static_cast<iter_data *>(handle);
 
@@ -381,6 +391,21 @@ RGWMetadataManager::~RGWMetadataManager()
 int RGWMetadataHandler::attach(RGWMetadataManager *manager)
 {
   return manager->register_handler(this);
+}
+
+int RGWMetadataHandler::list_keys_next(void *handle, int max, list<string>& keys, bool *truncated)
+{
+  list<KeyInfo> kis;
+
+  int r = list_keys_next(handle, max, kis, truncated);
+  if (r < 0) {
+    return r;
+  }
+
+  for (auto& ki : kis) {
+    keys.push_back(ki.key);
+  }
+  return 0;
 }
 
 RGWMetadataHandler_GenericMetaBE::Put::Put(RGWMetadataHandler_GenericMetaBE *_handler,
@@ -537,6 +562,24 @@ int RGWMetadataHandler_GenericMetaBE::list_keys_init(const string& marker, void 
 }
 
 int RGWMetadataHandler_GenericMetaBE::list_keys_next(void *handle, int max, list<string>& keys, bool *truncated)
+{
+  auto op = static_cast<RGWSI_MetaBackend_Handler::Op_ManagedCtx *>(handle);
+
+  int ret = op->list_next(max, &keys, truncated);
+  if (ret < 0 && ret != -ENOENT) {
+    return ret;
+  }
+  if (ret == -ENOENT) {
+    if (truncated) {
+      *truncated = false;
+    }
+    return 0;
+  }
+
+  return 0;
+}
+
+int RGWMetadataHandler_GenericMetaBE::list_keys_next(void *handle, int max, list<KeyInfo>& keys, bool *truncated)
 {
   auto op = static_cast<RGWSI_MetaBackend_Handler::Op_ManagedCtx *>(handle);
 
@@ -798,6 +841,15 @@ int RGWMetadataManager::list_keys_init(const string& section,
 }
 
 int RGWMetadataManager::list_keys_next(void *handle, int max, list<string>& keys, bool *truncated)
+{
+  list_keys_handle *h = static_cast<list_keys_handle *>(handle);
+
+  RGWMetadataHandler *handler = h->handler;
+
+  return handler->list_keys_next(h->handle, max, keys, truncated);
+}
+
+int RGWMetadataManager::list_keys_next(void *handle, int max, list<RGWMetadataHandler::KeyInfo>& keys, bool *truncated)
 {
   list_keys_handle *h = static_cast<list_keys_handle *>(handle);
 

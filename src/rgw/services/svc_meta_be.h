@@ -127,6 +127,11 @@ public:
     MDBE_OTP  = 1,
   };
 
+  struct KeyInfo {
+    string marker;
+    string key;
+  };
+
   RGWSI_MetaBackend(CephContext *cct) : RGWServiceInstance(cct) {}
   virtual ~RGWSI_MetaBackend() {}
 
@@ -155,6 +160,9 @@ public:
   virtual int list_init(RGWSI_MetaBackend::Context *ctx, const string& marker) = 0;
   virtual int list_next(RGWSI_MetaBackend::Context *ctx,
                         int max, list<string> *keys,
+                        bool *truncated)  = 0;
+  virtual int list_next(RGWSI_MetaBackend::Context *ctx,
+                        int max, list<KeyInfo> *keys,
                         bool *truncated)  = 0;
   virtual int list_get_marker(RGWSI_MetaBackend::Context *ctx,
                               string *marker) = 0;
@@ -248,6 +256,10 @@ public:
       return be->list_init(be_ctx, marker);
     }
     int list_next(int max, list<string> *keys,
+                  bool *truncated) {
+      return be->list_next(be_ctx, max, keys, truncated);
+    }
+    int list_next(int max, list<RGWSI_MetaBackend::KeyInfo> *keys,
                   bool *truncated) {
       return be->list_next(be_ctx, max, keys, truncated);
     }
