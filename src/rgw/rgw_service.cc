@@ -35,6 +35,9 @@
 #include "rgw_otp.h"
 #include "rgw_user.h"
 
+#include "rgw_sync_info.h"
+#include "rgw_sip_meta.h"
+
 #define dout_subsys ceph_subsys_rgw
 
 
@@ -380,6 +383,8 @@ int RGWCtlDef::init(RGWServices& svc)
 
   otp->init((RGWOTPMetadataHandler *)meta.otp.get());
 
+  si.mgr.reset(new RGWSIPManager());
+
   return 0;
 }
 
@@ -404,6 +409,8 @@ int RGWCtl::init(RGWServices *_svc)
   bucket = _ctl.bucket.get();
   otp = _ctl.otp.get();
 
+  si.mgr = _ctl.si.mgr.get();
+
   r = meta.user->attach(meta.mgr);
   if (r < 0) {
     ldout(cct, 0) << "ERROR: failed to start init meta.user ctl (" << cpp_strerror(-r) << dendl;
@@ -427,6 +434,14 @@ int RGWCtl::init(RGWServices *_svc)
     ldout(cct, 0) << "ERROR: failed to start init otp ctl (" << cpp_strerror(-r) << dendl;
     return r;
   }
+
+  auto sip = std::make_shared<SIProvider_MetaFull>(cct, meta.mgr);
+  r = sip->init();
+  if (r < 0) {
+    lderr(cct) << "ERROR: " << __func__ << "(): failed to initialize sync info provider (meta.full)" << dendl;
+    return r;
+  }
+  si.mgr->register_sip("meta.full", static_pointer_cast<SIProvider>(sip));
 
   return 0;
 }
