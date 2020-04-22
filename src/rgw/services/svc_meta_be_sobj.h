@@ -164,6 +164,9 @@ public:
   int list_next(RGWSI_MetaBackend::Context *_ctx,
                 int max, list<string> *keys,
                 bool *truncated) override;
+  int list_next(RGWSI_MetaBackend::Context *_ctx,
+                int max, list<KeyInfo> *keys,
+                bool *truncated) override;
   int list_get_marker(RGWSI_MetaBackend::Context *ctx,
                       string *marker) override;
 
