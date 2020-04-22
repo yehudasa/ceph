@@ -58,6 +58,7 @@ extern "C" {
 #include "rgw_pubsub.h"
 #include "rgw_sync_module_pubsub.h"
 #include "rgw_bucket_sync.h"
+#include "rgw_sync_info.h"
 
 #include "services/svc_sync_modules.h"
 #include "services/svc_cls.h"
@@ -756,6 +757,8 @@ enum class OPT {
   PUBSUB_SUB_RM,
   PUBSUB_SUB_PULL,
   PUBSUB_EVENT_RM,
+  SI_PROVIDER_LIST,
+  SI_PROVIDER_FETCH,
 };
 
 }
@@ -961,6 +964,7 @@ static SimpleCmd::Commands all_cmds = {
   { "reshard stale list", OPT::RESHARD_STALE_INSTANCES_LIST },
   { "reshard stale-instances delete", OPT::RESHARD_STALE_INSTANCES_DELETE },
   { "reshard stale delete", OPT::RESHARD_STALE_INSTANCES_DELETE },
+<<<<<<< HEAD
   { "topic list", OPT::PUBSUB_TOPICS_LIST },
   { "topic get", OPT::PUBSUB_TOPIC_GET },
   { "topic rm", OPT::PUBSUB_TOPIC_RM },
@@ -968,6 +972,21 @@ static SimpleCmd::Commands all_cmds = {
   { "subscription rm", OPT::PUBSUB_SUB_RM },
   { "subscription pull", OPT::PUBSUB_SUB_PULL },
   { "subscription ack", OPT::PUBSUB_EVENT_RM },
+=======
+  { "pubsub topics list", OPT::PUBSUB_TOPICS_LIST },
+  { "pubsub topic create", OPT::PUBSUB_TOPIC_CREATE },
+  { "pubsub topic get", OPT::PUBSUB_TOPIC_GET },
+  { "pubsub topic rm", OPT::PUBSUB_TOPIC_RM },
+  { "pubsub notification create", OPT::PUBSUB_NOTIFICATION_CREATE },
+  { "pubsub notification rm", OPT::PUBSUB_NOTIFICATION_RM },
+  { "pubsub sub get", OPT::PUBSUB_SUB_GET },
+  { "pubsub sub create", OPT::PUBSUB_SUB_CREATE },
+  { "pubsub sub rm", OPT::PUBSUB_SUB_RM },
+  { "pubsub sub pull", OPT::PUBSUB_SUB_PULL },
+  { "pubsub event rm", OPT::PUBSUB_EVENT_RM },
+  { "si provider list", OPT::SI_PROVIDER_LIST },
+  { "si provider fetch", OPT::SI_PROVIDER_FETCH },
+>>>>>>> rgw-admin: si provider list + fetch
 };
 
 static SimpleCmd::Aliases cmd_aliases = {
@@ -3246,6 +3265,8 @@ int main(int argc, const char **argv)
   std::optional<string> opt_mode;
   std::optional<rgw_user> opt_dest_owner;
 
+  std::optional<string> opt_provider;
+
   SimpleCmd cmd(all_cmds, cmd_aliases);
 
   for (std::vector<const char*>::iterator i = args.begin(); i != args.end(); ) {
@@ -3657,6 +3678,8 @@ int main(int argc, const char **argv)
     } else if (ceph_argparse_witharg(args, i, &val, "--dest-owner", (char*)NULL)) {
       opt_dest_owner.emplace(val);
       opt_dest_owner = val;
+    } else if (ceph_argparse_witharg(args, i, &val, "--provider", (char*)NULL)) {
+      opt_provider = val;
     } else if (ceph_argparse_binary_flag(args, i, &detail, NULL, "--detail", (char*)NULL)) {
       // do nothing
     } else if (strncmp(*i, "-", 1) == 0) {
@@ -3865,10 +3888,15 @@ int main(int argc, const char **argv)
 			 OPT::ROLE_POLICY_GET,
 			 OPT::RESHARD_LIST,
 			 OPT::RESHARD_STATUS,
+<<<<<<< HEAD
        OPT::PUBSUB_TOPICS_LIST,
        OPT::PUBSUB_TOPIC_GET,
        OPT::PUBSUB_SUB_GET,
        OPT::PUBSUB_SUB_PULL,
+=======
+			 OPT::SI_PROVIDER_LIST,
+			 OPT::SI_PROVIDER_FETCH,
+>>>>>>> rgw-admin: si provider list + fetch
   };
 
 
@@ -9194,6 +9222,48 @@ next:
       return -ret;
     }
   }
+
+ if (opt_cmd == OPT::SI_PROVIDER_LIST) {
+   auto providers = store->ctl()->si.mgr->list_sip();
+   {
+     Formatter::ObjectSection top_section(*formatter, "result");
+     encode_json("providers", providers, formatter);
+   }
+   formatter->flush(cout);
+ }
+
+ if (opt_cmd == OPT::SI_PROVIDER_FETCH) {
+   if (!opt_provider) {
+     cerr << "ERROR: --provider not specified" << std::endl;
+     return EINVAL;
+   }
+   auto provider = store->ctl()->si.mgr->find_sip(*opt_provider);
+   if (!provider) {
+     cerr << "ERROR: sync info provider not found" << std::endl;
+     return ENOENT;
+   }
+
+   SIProvider::fetch_result result;
+   int r = provider->fetch(marker, max_entries, &result);
+   if (r < 0) {
+     cerr << "ERROR: failed to fetch entries: " << cpp_strerror(-r) << std::endl;
+     return -r;
+   }
+
+   {
+     Formatter::ObjectSection top_section(*formatter, "result");
+     encode_json("more", result.more, formatter);
+     encode_json("done", result.done, formatter);
+
+     Formatter::ArraySection as(*formatter, "entries");
+
+     for (auto& e : result.entries) {
+       Formatter::ObjectSection hs(*formatter, "handler");
+       encode_json("key", e.key, formatter);
+     }
+   }
+   formatter->flush(cout);
+ }
 
   return 0;
 }
