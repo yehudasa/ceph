@@ -3217,6 +3217,7 @@ int main(int argc, const char **argv)
   ceph::timespan opt_timeout_sec = std::chrono::seconds(60);
 
   std::optional<string> opt_provider;
+  std::optional<int> opt_stage_id;
 
   SimpleCmd cmd(all_cmds, cmd_aliases);
 
@@ -3635,6 +3636,8 @@ int main(int argc, const char **argv)
       opt_retry_delay_ms = std::chrono::milliseconds(atoi(val.c_str()));
     } else if (ceph_argparse_witharg(args, i, &val, "--timeout-sec", (char*)NULL)) {
       opt_timeout_sec = std::chrono::seconds(atoi(val.c_str()));
+    } else if (ceph_argparse_witharg(args, i, &val, "--stage-id", (char*)NULL)) {
+      opt_stage_id = atoi(val.c_str());
     } else if (ceph_argparse_binary_flag(args, i, &detail, NULL, "--detail", (char*)NULL)) {
       // do nothing
     } else if (ceph_argparse_witharg(args, i, &val, "--context", (char*)NULL)) {
@@ -9385,8 +9388,10 @@ next:
      return ENOENT;
    }
 
+   auto stage_id = opt_stage_id.value_or(provider->get_first_stage());
+
    SIProvider::fetch_result result;
-   int r = provider->fetch(shard_id, marker, max_entries, &result);
+   int r = provider->fetch(stage_id, shard_id, marker, max_entries, &result);
    if (r < 0) {
      cerr << "ERROR: failed to fetch entries: " << cpp_strerror(-r) << std::endl;
      return -r;
