@@ -3266,6 +3266,7 @@ int main(int argc, const char **argv)
   std::optional<rgw_user> opt_dest_owner;
 
   std::optional<string> opt_provider;
+  std::optional<int> opt_stage_id;
 
   SimpleCmd cmd(all_cmds, cmd_aliases);
 
@@ -3680,6 +3681,8 @@ int main(int argc, const char **argv)
       opt_dest_owner = val;
     } else if (ceph_argparse_witharg(args, i, &val, "--provider", (char*)NULL)) {
       opt_provider = val;
+    } else if (ceph_argparse_witharg(args, i, &val, "--stage-id", (char*)NULL)) {
+      opt_stage_id = atoi(val.c_str());
     } else if (ceph_argparse_binary_flag(args, i, &detail, NULL, "--detail", (char*)NULL)) {
       // do nothing
     } else if (strncmp(*i, "-", 1) == 0) {
@@ -9243,8 +9246,10 @@ next:
      return ENOENT;
    }
 
+   auto stage_id = opt_stage_id.value_or(provider->get_first_stage());
+
    SIProvider::fetch_result result;
-   int r = provider->fetch(shard_id, marker, max_entries, &result);
+   int r = provider->fetch(stage_id, shard_id, marker, max_entries, &result);
    if (r < 0) {
      cerr << "ERROR: failed to fetch entries: " << cpp_strerror(-r) << std::endl;
      return -r;
