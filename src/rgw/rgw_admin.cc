@@ -3266,7 +3266,7 @@ int main(int argc, const char **argv)
   std::optional<rgw_user> opt_dest_owner;
 
   std::optional<string> opt_provider;
-  std::optional<int> opt_stage_id;
+  std::optional<SIProvider::stage_id_t> opt_stage_id;
 
   SimpleCmd cmd(all_cmds, cmd_aliases);
 
@@ -3682,7 +3682,7 @@ int main(int argc, const char **argv)
     } else if (ceph_argparse_witharg(args, i, &val, "--provider", (char*)NULL)) {
       opt_provider = val;
     } else if (ceph_argparse_witharg(args, i, &val, "--stage-id", (char*)NULL)) {
-      opt_stage_id = atoi(val.c_str());
+      opt_stage_id = val;
     } else if (ceph_argparse_binary_flag(args, i, &detail, NULL, "--detail", (char*)NULL)) {
       // do nothing
     } else if (strncmp(*i, "-", 1) == 0) {
