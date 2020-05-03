@@ -3231,7 +3231,7 @@ int main(int argc, const char **argv)
   ceph::timespan opt_timeout_sec = std::chrono::seconds(60);
 
   std::optional<string> opt_provider;
-  std::optional<int> opt_stage_id;
+  std::optional<SIProvider::stage_id_t> opt_stage_id;
 
   SimpleCmd cmd(all_cmds, cmd_aliases);
 
@@ -3651,7 +3651,7 @@ int main(int argc, const char **argv)
     } else if (ceph_argparse_witharg(args, i, &val, "--timeout-sec", (char*)NULL)) {
       opt_timeout_sec = std::chrono::seconds(atoi(val.c_str()));
     } else if (ceph_argparse_witharg(args, i, &val, "--stage-id", (char*)NULL)) {
-      opt_stage_id = atoi(val.c_str());
+      opt_stage_id = val;
     } else if (ceph_argparse_binary_flag(args, i, &detail, NULL, "--detail", (char*)NULL)) {
       // do nothing
     } else if (ceph_argparse_witharg(args, i, &val, "--context", (char*)NULL)) {
