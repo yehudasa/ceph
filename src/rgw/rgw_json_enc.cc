@@ -1157,8 +1157,15 @@ void RGWUploadPartInfo::dump(Formatter *f) const
   encode_json("num", num, f);
   encode_json("size", size, f);
   encode_json("etag", etag, f);
+  encode_json("account_size", accounted_size, f);
   utime_t ut(modified);
   encode_json("modified", ut, f);
+  f->open_object_section("manifest");
+    manifest.dump(f);
+  f->close_section();
+  f->open_object_section("cs_info");
+  cs_info.dump(f);
+  f->close_section();
 }
 
 void rgw_raw_obj::dump(Formatter *f) const
