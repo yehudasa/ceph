@@ -2370,6 +2370,14 @@ static inline void rgw_escape_str(const string& s, char esc_char,
   *dest = dest_buf;
 }
 
+static inline string rgw_escape_str(const string& s, char esc_char,
+				  char special_char)
+{
+  string result;
+  rgw_escape_str(s, esc_char, special_char, &result);
+  return result;
+}
+
 static inline ssize_t rgw_unescape_str(const string& s, ssize_t ofs,
 				       char esc_char, char special_char,
 				       string *dest)
