@@ -9251,8 +9251,13 @@ next:
 
    auto stage_id = opt_stage_id.value_or(provider->get_first_stage());
 
+#define MAX_FETCH_CHUNK 1000
+   if (!max_entries_specified) {
+     max_entries = MAX_FETCH_CHUNK;
+   }
+
    SIProvider::fetch_result result;
-   int r = provider->fetch(stage_id, shard_id, marker, max_entries, &result);
+   int r = provider->fetch(stage_id, shard_id, marker,  max_entries, &result);
    if (r < 0) {
      cerr << "ERROR: failed to fetch entries: " << cpp_strerror(-r) << std::endl;
      return -r;
@@ -9268,6 +9273,14 @@ next:
      for (auto& e : result.entries) {
        Formatter::ObjectSection hs(*formatter, "handler");
        encode_json("key", e.key, formatter);
+       r = provider->handle_entry(stage_id, e, [&](SIProvider::EntryInfoBase& info) {
+         encode_json("info", info, formatter);
+         return 0;
+       });
+       if (r < 0) {
+         cerr << "ERROR: provider->handle_entry() failed: " << cpp_strerror(-r) << std::endl;
+         break;
+       }
      }
    }
    formatter->flush(cout);
