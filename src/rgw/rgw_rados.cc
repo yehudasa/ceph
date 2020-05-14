@@ -1346,6 +1346,7 @@ int RGWRados::initialize()
    * ctl should not know about. The correct way would be to avoid using store at all, however this
    * requires creating svc for object listing */
   ctl.si.mgr->register_sip("bucket.full", std::make_shared<RGWSIPGen_BucketFull>(cct, store, ctl.bucket));
+  ctl.si.mgr->register_sip("bucket.inc", std::make_shared<RGWSIPGen_BucketInc>(cct, store, ctl.bucket));
 
   host_id = svc.zone_utils->gen_host_id();
 
