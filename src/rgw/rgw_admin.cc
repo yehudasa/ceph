@@ -759,6 +759,7 @@ enum class OPT {
   PUBSUB_EVENT_RM,
   SI_PROVIDER_LIST,
   SI_PROVIDER_FETCH,
+  SI_PROVIDER_TRIM,
 };
 
 }
@@ -964,7 +965,6 @@ static SimpleCmd::Commands all_cmds = {
   { "reshard stale list", OPT::RESHARD_STALE_INSTANCES_LIST },
   { "reshard stale-instances delete", OPT::RESHARD_STALE_INSTANCES_DELETE },
   { "reshard stale delete", OPT::RESHARD_STALE_INSTANCES_DELETE },
-<<<<<<< HEAD
   { "topic list", OPT::PUBSUB_TOPICS_LIST },
   { "topic get", OPT::PUBSUB_TOPIC_GET },
   { "topic rm", OPT::PUBSUB_TOPIC_RM },
@@ -972,21 +972,9 @@ static SimpleCmd::Commands all_cmds = {
   { "subscription rm", OPT::PUBSUB_SUB_RM },
   { "subscription pull", OPT::PUBSUB_SUB_PULL },
   { "subscription ack", OPT::PUBSUB_EVENT_RM },
-=======
-  { "pubsub topics list", OPT::PUBSUB_TOPICS_LIST },
-  { "pubsub topic create", OPT::PUBSUB_TOPIC_CREATE },
-  { "pubsub topic get", OPT::PUBSUB_TOPIC_GET },
-  { "pubsub topic rm", OPT::PUBSUB_TOPIC_RM },
-  { "pubsub notification create", OPT::PUBSUB_NOTIFICATION_CREATE },
-  { "pubsub notification rm", OPT::PUBSUB_NOTIFICATION_RM },
-  { "pubsub sub get", OPT::PUBSUB_SUB_GET },
-  { "pubsub sub create", OPT::PUBSUB_SUB_CREATE },
-  { "pubsub sub rm", OPT::PUBSUB_SUB_RM },
-  { "pubsub sub pull", OPT::PUBSUB_SUB_PULL },
-  { "pubsub event rm", OPT::PUBSUB_EVENT_RM },
   { "si provider list", OPT::SI_PROVIDER_LIST },
   { "si provider fetch", OPT::SI_PROVIDER_FETCH },
->>>>>>> rgw-admin: si provider list + fetch
+  { "si provider trim", OPT::SI_PROVIDER_TRIM },
 };
 
 static SimpleCmd::Aliases cmd_aliases = {
@@ -3894,15 +3882,12 @@ int main(int argc, const char **argv)
 			 OPT::ROLE_POLICY_GET,
 			 OPT::RESHARD_LIST,
 			 OPT::RESHARD_STATUS,
-<<<<<<< HEAD
-       OPT::PUBSUB_TOPICS_LIST,
-       OPT::PUBSUB_TOPIC_GET,
-       OPT::PUBSUB_SUB_GET,
-       OPT::PUBSUB_SUB_PULL,
-=======
+                         OPT::PUBSUB_TOPICS_LIST,
+                         OPT::PUBSUB_TOPIC_GET,
+                         OPT::PUBSUB_SUB_GET,
+                         OPT::PUBSUB_SUB_PULL,
 			 OPT::SI_PROVIDER_LIST,
 			 OPT::SI_PROVIDER_FETCH,
->>>>>>> rgw-admin: si provider list + fetch
   };
 
 
@@ -9284,6 +9269,25 @@ next:
      }
    }
    formatter->flush(cout);
+ }
+
+ if (opt_cmd == OPT::SI_PROVIDER_TRIM) {
+   if (!opt_sip) {
+     cerr << "ERROR: --sip not specified" << std::endl;
+     return EINVAL;
+   }
+   auto provider = store->ctl()->si.mgr->find_sip(*opt_sip, opt_sip_instance);
+   if (!provider) {
+     cerr << "ERROR: sync info provider not found" << std::endl;
+     return ENOENT;
+   }
+
+   auto stage_id = opt_stage_id.value_or(provider->get_first_stage());
+   int r = provider->trim(stage_id, shard_id, marker);
+   if (r < 0) {
+     cerr << "ERROR: failed to trim sync info provider: " << cpp_strerror(-r) << std::endl;
+     return -r;
+   }
  }
 
   return 0;
