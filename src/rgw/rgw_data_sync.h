@@ -473,7 +473,7 @@ struct rgw_bucket_shard_full_sync_marker {
 
   rgw_bucket_shard_full_sync_marker() : count(0) {}
 
-  void encode_attr(map<string, bufferlist>& attrs);
+  void encode_attr(map<string, bufferlist>& attrs) const;
 
   void encode(bufferlist& bl) const {
     ENCODE_START(1, 1, bl);
@@ -498,7 +498,7 @@ struct rgw_bucket_shard_inc_sync_marker {
   string position;
   ceph::real_time timestamp;
 
-  void encode_attr(map<string, bufferlist>& attrs);
+  void encode_attr(map<string, bufferlist>& attrs) const;
 
   void encode(bufferlist& bl) const {
     ENCODE_START(2, 1, bl);
@@ -534,8 +534,8 @@ struct rgw_bucket_shard_sync_info {
   rgw_bucket_shard_inc_sync_marker inc_marker;
 
   void decode_from_attrs(CephContext *cct, map<string, bufferlist>& attrs);
-  void encode_all_attrs(map<string, bufferlist>& attrs);
-  void encode_state_attr(map<string, bufferlist>& attrs);
+  void encode_all_attrs(map<string, bufferlist>& attrs) const;
+  void encode_state_attr(map<string, bufferlist>& attrs) const;
 
   void encode(bufferlist& bl) const {
     ENCODE_START(1, 1, bl);
@@ -575,6 +575,8 @@ struct rgw_bucket_index_marker_info {
   }
 };
 
+class RGWBucketPipeSyncInfoCRHandler;
+
 
 class RGWRemoteBucketManager {
   const DoutPrefixProvider *dpp;
@@ -591,19 +593,22 @@ class RGWRemoteBucketManager {
 
   RGWBucketSyncCR *sync_cr{nullptr};
 
+  vector<std::shared_ptr<RGWBucketPipeSyncInfoCRHandler> > bsis;
+
 public:
   RGWRemoteBucketManager(const DoutPrefixProvider *_dpp,
                      RGWDataSyncEnv *_sync_env,
                      const rgw_zone_id& _source_zone, RGWRESTConn *_conn,
                      const RGWBucketInfo& source_bucket_info,
                      const rgw_bucket& dest_bucket);
+  ~RGWRemoteBucketManager();
 
   void init(const rgw_zone_id& _source_zone, RGWRESTConn *_conn,
             const rgw_bucket& source_bucket, int shard_id,
             const rgw_bucket& dest_bucket);
 
   RGWCoroutine *read_sync_status_cr(int num, rgw_bucket_shard_sync_info *sync_status);
-  RGWCoroutine *init_sync_status_cr(int num, RGWObjVersionTracker& objv_tracker);
+  RGWCoroutine *init_sync_status_cr(int num);
   RGWCoroutine *run_sync_cr(int num);
 
   int num_pipes() {
