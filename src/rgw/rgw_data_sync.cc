@@ -1028,7 +1028,6 @@ class RGWRunBucketSyncCoroutine : public RGWCoroutine {
   rgw_bucket_sync_pipe sync_pipe;
   rgw_bucket_shard_sync_info sync_status;
   RGWMetaSyncEnv meta_sync_env;
-  RGWObjVersionTracker objv_tracker;
   ceph::real_time* progress;
 
   const std::string status_oid;
@@ -2842,7 +2841,7 @@ public:
 
   RGWCoroutine *write_status_cr(const rgw_bucket_shard_sync_info& status) override {
     map<string, bufferlist> attrs;
-    status.encode_all_attrs(attrs);
+    status.encode_dirty_attrs(attrs);
     return new RGWSimpleRadosWriteAttrsCR(sync_env->async_rados, sync_env->svc->sysobj, status_obj, attrs, &objv_tracker);
   }
 
@@ -2892,16 +2891,16 @@ public:
           // whether or not to do full sync, incremental sync will follow anyway
           if (sync_env->sync_module->should_full_sync()) {
             status.state = rgw_bucket_shard_sync_info::StateFullSync;
-            status.inc_marker.position = info.max_marker;
+            status.inc_marker.modify().position = info.max_marker;
           } else {
             // clear the marker position unless we're resuming from SYNCSTOP
             if (!stopped) {
-              status.inc_marker.position = "";
+              status.inc_marker.modify().position = "";
             }
             status.state = rgw_bucket_shard_sync_info::StateIncrementalSync;
           }
           write_status = true;
-          status.inc_marker.timestamp = ceph::real_clock::now();
+          status.inc_marker.modify().timestamp = ceph::real_clock::now();
         }
 
         if (write_status) {
@@ -3007,11 +3006,17 @@ void rgw_bucket_shard_sync_info::decode_from_attrs(CephContext *cct, map<string,
   }
 }
 
-void rgw_bucket_shard_sync_info::encode_all_attrs(map<string, bufferlist>& attrs) const
+void rgw_bucket_shard_sync_info::encode_dirty_attrs(map<string, bufferlist>& attrs) const
 {
-  encode_state_attr(attrs);
-  full_marker.encode_attr(attrs);
-  inc_marker.encode_attr(attrs);
+  if (state) {
+    encode_state_attr(attrs);
+  }
+  if (full_marker) {
+    full_marker->encode_attr(attrs);
+  }
+  if (inc_marker) {
+    inc_marker->encode_attr(attrs);
+  }
 }
 
 void rgw_bucket_shard_sync_info::encode_state_attr(map<string, bufferlist>& attrs) const
@@ -3371,7 +3376,7 @@ class RGWListBucketIndexLogCR: public RGWCoroutine {
 
 public:
   RGWListBucketIndexLogCR(RGWDataSyncCtx *_sc, const rgw_bucket_shard& bs,
-                          string& _marker, list<rgw_bi_log_entry> *_result)
+                          const string& _marker, list<rgw_bi_log_entry> *_result)
     : RGWCoroutine(_sc->cct), sc(_sc), sync_env(_sc->env),
       instance_key(bs.get_key()), marker(_marker), result(_result) {}
 
@@ -3408,33 +3413,34 @@ class RGWBucketFullSyncShardMarkerTrack : public RGWSyncShardMarkerTrack<rgw_obj
   RGWDataSyncCtx *sc;
   RGWDataSyncEnv *sync_env;
 
-  string marker_oid;
-  rgw_bucket_shard_full_sync_marker sync_marker;
+  RGWBucketPipeInfoHandlerRef bsi;
+  rgw_bucket_shard_sync_info status;
   RGWSyncTraceNodeRef tn;
-  RGWObjVersionTracker& objv_tracker;
 
 public:
   RGWBucketFullSyncShardMarkerTrack(RGWDataSyncCtx *_sc,
-                                    const string& _marker_oid,
+                                    RGWBucketPipeInfoHandlerRef _bsi,
                                     const rgw_bucket_shard_full_sync_marker& _marker,
-                                    RGWSyncTraceNodeRef tn,
-                                    RGWObjVersionTracker& objv_tracker)
+                                    RGWSyncTraceNodeRef tn)
     : RGWSyncShardMarkerTrack(BUCKET_SYNC_UPDATE_MARKER_WINDOW),
-      sc(_sc), sync_env(_sc->env), marker_oid(_marker_oid),
-      sync_marker(_marker), tn(std::move(tn)), objv_tracker(objv_tracker)
-  {}
+      sc(_sc), sync_env(_sc->env), bsi(_bsi),
+      tn(std::move(tn))
+  {
+    status.full_marker = _marker;
+  }
 
   RGWCoroutine *store_marker(const rgw_obj_key& new_marker, uint64_t index_pos, const real_time& timestamp) override {
+    auto& sync_marker = status.full_marker.modify();
     sync_marker.position = new_marker;
     sync_marker.count = index_pos;
 
-    map<string, bufferlist> attrs;
-    sync_marker.encode_attr(attrs);
+    tn->log(20, SSTR("updating marker=" << new_marker));
 
-    tn->log(20, SSTR("updating marker marker_oid=" << marker_oid << " marker=" << new_marker));
-    return new RGWSimpleRadosWriteAttrsCR(sync_env->async_rados, sync_env->svc->sysobj,
-                                          rgw_raw_obj(sync_env->svc->zone->get_zone_params().log_pool, marker_oid),
-                                          attrs, &objv_tracker);
+    auto cr = bsi->write_status_cr(status);
+
+    status.full_marker.clean();
+
+    return cr;
   }
 
   RGWOrderCallCR *allocate_order_control_cr() override {
@@ -3445,32 +3451,29 @@ public:
 // write the incremental sync status and update 'stable_timestamp' on success
 class RGWWriteBucketShardIncSyncStatus : public RGWCoroutine {
   RGWDataSyncEnv *sync_env;
-  rgw_raw_obj obj;
-  rgw_bucket_shard_inc_sync_marker sync_marker;
+  RGWBucketPipeInfoHandlerRef bsi;
+  rgw_bucket_shard_sync_info status;
   ceph::real_time* stable_timestamp;
-  RGWObjVersionTracker& objv_tracker;
   std::map<std::string, bufferlist> attrs;
  public:
   RGWWriteBucketShardIncSyncStatus(RGWDataSyncEnv *sync_env,
-                                   const rgw_raw_obj& obj,
+                                   RGWBucketPipeInfoHandlerRef bsi,
                                    const rgw_bucket_shard_inc_sync_marker& sync_marker,
-                                   ceph::real_time* stable_timestamp,
-                                   RGWObjVersionTracker& objv_tracker)
-    : RGWCoroutine(sync_env->cct), sync_env(sync_env), obj(obj),
-      sync_marker(sync_marker), stable_timestamp(stable_timestamp),
-      objv_tracker(objv_tracker)
-  {}
+                                   ceph::real_time* stable_timestamp)
+    : RGWCoroutine(sync_env->cct), sync_env(sync_env),
+      stable_timestamp(stable_timestamp)
+  {
+    status.inc_marker = sync_marker;
+  }
+
   int operate() {
     reenter(this) {
-      sync_marker.encode_attr(attrs);
-
-      yield call(new RGWSimpleRadosWriteAttrsCR(sync_env->async_rados, sync_env->svc->sysobj,
-                                                obj, attrs, &objv_tracker));
+      yield call(bsi->write_status_cr(status));
       if (retcode < 0) {
         return set_cr_error(retcode);
       }
       if (stable_timestamp) {
-        *stable_timestamp = sync_marker.timestamp;
+        *stable_timestamp = status.inc_marker->timestamp;
       }
       return set_cr_done();
     }
@@ -3482,9 +3485,8 @@ class RGWBucketIncSyncShardMarkerTrack : public RGWSyncShardMarkerTrack<string, 
   RGWDataSyncCtx *sc;
   RGWDataSyncEnv *sync_env;
 
-  rgw_raw_obj obj;
+  RGWBucketPipeInfoHandlerRef bsi;
   rgw_bucket_shard_inc_sync_marker sync_marker;
-
   map<rgw_obj_key, string> key_to_marker;
 
   struct operation {
@@ -3495,7 +3497,6 @@ class RGWBucketIncSyncShardMarkerTrack : public RGWSyncShardMarkerTrack<string, 
   std::set<std::string> pending_olh; // object names with pending olh operations
 
   RGWSyncTraceNodeRef tn;
-  RGWObjVersionTracker& objv_tracker;
   ceph::real_time* stable_timestamp;
 
   void handle_finish(const string& marker) override {
@@ -3514,15 +3515,13 @@ class RGWBucketIncSyncShardMarkerTrack : public RGWSyncShardMarkerTrack<string, 
 
 public:
   RGWBucketIncSyncShardMarkerTrack(RGWDataSyncCtx *_sc,
-                         const string& _marker_oid,
+                         RGWBucketPipeInfoHandlerRef _bsi,
                          const rgw_bucket_shard_inc_sync_marker& _marker,
                          RGWSyncTraceNodeRef tn,
-                         RGWObjVersionTracker& objv_tracker,
                          ceph::real_time* stable_timestamp)
     : RGWSyncShardMarkerTrack(BUCKET_SYNC_UPDATE_MARKER_WINDOW),
-      sc(_sc), sync_env(_sc->env),
-      obj(sync_env->svc->zone->get_zone_params().log_pool, _marker_oid),
-      sync_marker(_marker), tn(std::move(tn)), objv_tracker(objv_tracker),
+      sc(_sc), sync_env(_sc->env), bsi(_bsi),
+      sync_marker(_marker), tn(std::move(tn)),
       stable_timestamp(stable_timestamp)
   {}
 
@@ -3530,9 +3529,10 @@ public:
     sync_marker.position = new_marker;
     sync_marker.timestamp = timestamp;
 
-    tn->log(20, SSTR("updating marker marker_oid=" << obj.oid << " marker=" << new_marker << " timestamp=" << timestamp));
-    return new RGWWriteBucketShardIncSyncStatus(sync_env, obj, sync_marker,
-                                                stable_timestamp, objv_tracker);
+    tn->log(20, SSTR("updating marker=" << new_marker << " timestamp=" << timestamp));
+    return new RGWWriteBucketShardIncSyncStatus(sync_env, bsi, sync_marker,
+                                                stable_timestamp);
+
   }
 
   /*
@@ -3831,7 +3831,7 @@ class RGWBucketShardFullSyncCR : public RGWCoroutine {
 
   int sync_status{0};
 
-  const string& status_oid;
+  RGWBucketPipeInfoHandlerRef bsi;
 
   rgw_zone_set zones_trace;
 
@@ -3885,18 +3885,17 @@ class RGWBucketShardFullSyncCR : public RGWCoroutine {
 public:
   RGWBucketShardFullSyncCR(RGWDataSyncCtx *_sc,
                            rgw_bucket_sync_pipe& _sync_pipe,
-                           const std::string& status_oid,
+                           RGWBucketPipeInfoHandlerRef _bsi,
                            boost::intrusive_ptr<const RGWContinuousLeaseCR> lease_cr,
                            rgw_bucket_shard_sync_info& sync_info,
-                           RGWSyncTraceNodeRef tn_parent,
-                           RGWObjVersionTracker& objv_tracker)
+                           RGWSyncTraceNodeRef tn_parent)
     : RGWCoroutine(_sc->cct), sc(_sc), sync_env(_sc->env),
       sync_pipe(_sync_pipe), bs(_sync_pipe.info.source_bs),
       lease_cr(std::move(lease_cr)), sync_info(sync_info),
-      status_oid(status_oid),
+      bsi(_bsi),
       tn(sync_env->sync_tracer->add_node(tn_parent, "full_sync",
                                          SSTR(bucket_shard_str{bs}))),
-      marker_tracker(sc, status_oid, sync_info.full_marker, tn, objv_tracker)
+      marker_tracker(sc, bsi, *sync_info.full_marker, tn)
   {
     zones_trace.insert(sc->source_zone.id, sync_pipe.info.dest_bs.bucket.get_key());
     prefix_handler.set_rules(sync_pipe.get_rules());
@@ -3908,9 +3907,9 @@ public:
 int RGWBucketShardFullSyncCR::operate()
 {
   reenter(this) {
-    list_marker = sync_info.full_marker.position;
+    list_marker = sync_info.full_marker->position;
 
-    total_entries = sync_info.full_marker.count;
+    total_entries = sync_info.full_marker->count;
     do {
       if (lease_cr && !lease_cr->is_locked()) {
         drain_all();
@@ -3990,11 +3989,7 @@ int RGWBucketShardFullSyncCR::operate()
     if (sync_status == 0) {
       yield {
         sync_info.state = rgw_bucket_shard_sync_info::StateIncrementalSync;
-        map<string, bufferlist> attrs;
-        sync_info.encode_state_attr(attrs);
-        call(new RGWSimpleRadosWriteAttrsCR(sync_env->async_rados, sync_env->svc->sysobj,
-                                            rgw_raw_obj(sync_env->svc->zone->get_zone_params().log_pool, status_oid),
-                                            attrs));
+        call(bsi->write_status_cr(sync_info));
       }
     } else {
       tn->log(10, SSTR("backing out with sync_status=" << sync_status));
@@ -4044,11 +4039,10 @@ class RGWBucketShardIncrementalSyncCR : public RGWCoroutine {
 public:
   RGWBucketShardIncrementalSyncCR(RGWDataSyncCtx *_sc,
                                   rgw_bucket_sync_pipe& _sync_pipe,
-                                  const std::string& status_oid,
+                                  RGWBucketPipeInfoHandlerRef _bsi,
                                   boost::intrusive_ptr<const RGWContinuousLeaseCR> lease_cr,
                                   rgw_bucket_shard_sync_info& sync_info,
                                   RGWSyncTraceNodeRef& _tn_parent,
-                                  RGWObjVersionTracker& objv_tracker,
                                   ceph::real_time* stable_timestamp)
     : RGWCoroutine(_sc->cct), sc(_sc), sync_env(_sc->env),
       sync_pipe(_sync_pipe), bs(_sync_pipe.info.source_bs),
@@ -4056,8 +4050,8 @@ public:
       zone_id(sync_env->svc->zone->get_zone().id),
       tn(sync_env->sync_tracer->add_node(_tn_parent, "inc_sync",
                                          SSTR(bucket_shard_str{bs}))),
-      marker_tracker(sc, status_oid, sync_info.inc_marker, tn,
-                     objv_tracker, stable_timestamp)
+      marker_tracker(sc, _bsi, *sync_info.inc_marker, tn,
+                     stable_timestamp)
   {
     set_description() << "bucket shard incremental sync bucket="
         << bucket_shard_str{bs};
@@ -4090,9 +4084,9 @@ int RGWBucketShardIncrementalSyncCR::operate()
         tn->log(0, "ERROR: lease is not taken, abort");
         return set_cr_error(-ECANCELED);
       }
-      tn->log(20, SSTR("listing bilog for incremental sync" << sync_info.inc_marker.position));
-      set_status() << "listing bilog; position=" << sync_info.inc_marker.position;
-      yield call(new RGWListBucketIndexLogCR(sc, bs, sync_info.inc_marker.position,
+      tn->log(20, SSTR("listing bilog for incremental sync position=" << sync_info.inc_marker->position));
+      set_status() << "listing bilog; position=" << sync_info.inc_marker->position;
+      yield call(new RGWListBucketIndexLogCR(sc, bs, sync_info.inc_marker->position,
                                              &list_result));
       if (retcode < 0 && retcode != -ENOENT) {
         /* wait for all operations to complete */
@@ -4147,7 +4141,7 @@ int RGWBucketShardIncrementalSyncCR::operate()
             cur_id = entry->id.substr(p + 1);
           }
         }
-        sync_info.inc_marker.position = cur_id;
+        sync_info.inc_marker.modify().position = cur_id;
 
         if (entry->op == RGWModifyOp::CLS_RGW_OP_SYNCSTOP || entry->op == RGWModifyOp::CLS_RGW_OP_RESYNC) {
           ldout(sync_env->cct, 20) << "detected syncstop or resync on " << entries_iter->timestamp << ", skipping entry" << dendl;
@@ -4879,13 +4873,13 @@ int RGWRunBucketSyncCoroutine::operate()
         }
       }
       if (progress) {
-        *progress = sync_status.inc_marker.timestamp;
+        *progress = sync_status.inc_marker->timestamp;
       }
 
       if (sync_status.state == rgw_bucket_shard_sync_info::StateFullSync) {
         yield call(new RGWBucketShardFullSyncCR(sc, sync_pipe,
-                                                status_oid, lease_cr,
-                                                sync_status, tn, objv_tracker));
+                                                bsi, lease_cr,
+                                                sync_status, tn));
         if (retcode < 0) {
           tn->log(5, SSTR("full sync on bucket failed, retcode=" << retcode));
           drain_all();
@@ -4895,9 +4889,9 @@ int RGWRunBucketSyncCoroutine::operate()
 
       if (sync_status.state == rgw_bucket_shard_sync_info::StateIncrementalSync) {
         yield call(new RGWBucketShardIncrementalSyncCR(sc, sync_pipe,
-                                                       status_oid, lease_cr,
+                                                       bsi, lease_cr,
                                                        sync_status, tn,
-                                                       objv_tracker, progress));
+                                                       progress));
         if (retcode < 0) {
           tn->log(5, SSTR("incremental sync on bucket failed, retcode=" << retcode));
           drain_all();

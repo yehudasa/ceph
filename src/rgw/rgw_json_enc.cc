@@ -1781,23 +1781,26 @@ void rgw_bucket_shard_sync_info::decode_json(JSONObj *obj)
 {
   std::string s;
   JSONDecoder::decode_json("status", s, obj);
+
+  auto& _state = state.raw();
+  
   if (s == "full-sync") {
-    state = StateFullSync;
+    _state = StateFullSync;
   } else if (s == "incremental-sync") {
-    state = StateIncrementalSync;
+    _state = StateIncrementalSync;
   } else if (s == "stopped") {
-    state = StateStopped;
+    _state = StateStopped;
   } else {
-    state = StateInit;
+    _state = StateInit;
   }
-  JSONDecoder::decode_json("full_marker", full_marker, obj);
-  JSONDecoder::decode_json("inc_marker", inc_marker, obj);
+  JSONDecoder::decode_json("full_marker", full_marker.raw(), obj);
+  JSONDecoder::decode_json("inc_marker", inc_marker.raw(), obj);
 }
 
 void rgw_bucket_shard_sync_info::dump(Formatter *f) const
 {
   const char *s{nullptr};
-  switch ((SyncState)state) {
+  switch ((SyncState)*state) {
     case StateInit:
     s = "init";
     break;
@@ -1815,8 +1818,8 @@ void rgw_bucket_shard_sync_info::dump(Formatter *f) const
     break;
   }
   encode_json("status", s, f);
-  encode_json("full_marker", full_marker, f);
-  encode_json("inc_marker", inc_marker, f);
+  encode_json("full_marker", *full_marker, f);
+  encode_json("inc_marker", *inc_marker, f);
 }
 
 /* This utility function shouldn't conflict with the overload of std::to_string
