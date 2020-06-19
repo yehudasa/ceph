@@ -8,6 +8,7 @@
 
 #include "common/RWLock.h"
 #include "common/ceph_json.h"
+#include "common/dirty_val.h"
 
 #include "rgw_coroutine.h"
 #include "rgw_http_client.h"
@@ -529,11 +530,12 @@ struct rgw_bucket_shard_sync_info {
     StateStopped = 3,
   };
 
-  uint16_t state;
-  rgw_bucket_shard_full_sync_marker full_marker;
-  rgw_bucket_shard_inc_sync_marker inc_marker;
+  dirty_val<uint16_t> state{(int)StateInit};
+  dirty_val<rgw_bucket_shard_full_sync_marker> full_marker;
+  dirty_val<rgw_bucket_shard_inc_sync_marker> inc_marker;
 
   void decode_from_attrs(CephContext *cct, map<string, bufferlist>& attrs);
+  void encode_dirty_attrs(map<string, bufferlist>& attrs) const;
   void encode_all_attrs(map<string, bufferlist>& attrs) const;
   void encode_state_attr(map<string, bufferlist>& attrs) const;
 
@@ -546,17 +548,15 @@ struct rgw_bucket_shard_sync_info {
   }
 
   void decode(bufferlist::const_iterator& bl) {
-     DECODE_START(1, bl);
-     decode(state, bl);
-     decode(full_marker, bl);
-     decode(inc_marker, bl);
-     DECODE_FINISH(bl);
+    DECODE_START(1, bl);
+    decode(state, bl);
+    decode(full_marker, bl);
+    decode(inc_marker, bl);
+    DECODE_FINISH(bl);
   }
 
   void dump(Formatter *f) const;
   void decode_json(JSONObj *obj);
-
-  rgw_bucket_shard_sync_info() : state((int)StateInit) {}
 
 };
 WRITE_CLASS_ENCODER(rgw_bucket_shard_sync_info)
