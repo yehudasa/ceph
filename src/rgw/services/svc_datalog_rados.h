@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include "rgw/rgw_service.h"
+#include "svc_datalog.h"
 
 
 class RGWDataChangesLog;
@@ -28,7 +28,7 @@ namespace rgw {
   class BucketChangeObserver;
 }
 
-class RGWSI_DataLog_RADOS : public RGWServiceInstance
+class RGWSI_DataLog_RADOS : public RGWSI_DataLog
 {
   std::unique_ptr<RGWDataChangesLog> log;
 
@@ -47,24 +47,24 @@ public:
   int do_start() override;
   void shutdown() override;
 
-  RGWDataChangesLog *get_log() {
+  RGWDataChangesLog *get_log() override {
     return log.get();
   }
 
-  void set_observer(rgw::BucketChangeObserver *observer);
+  void set_observer(rgw::BucketChangeObserver *observer) override;
 
-  int get_log_shard_id(rgw_bucket& bucket, int shard_id);
+  int get_log_shard_id(rgw_bucket& bucket, int shard_id) override;
   std::string get_oid(int shard_id) const;
 
-  int get_info(int shard_id, RGWDataChangesLogInfo *info);
+  int get_info(int shard_id, RGWDataChangesLogInfo *info) override;
 
-  int add_entry(const RGWBucketInfo& bucket_info, int shard_id);
+  int add_entry(const RGWBucketInfo& bucket_info, int shard_id) override;
   int list_entries(int shard, int max_entries,
 		   std::vector<rgw_data_change_log_entry>& entries,
 		   std::optional<std::string_view> marker,
-		   std::string* out_marker, bool* truncated);
+		   std::string* out_marker, bool* truncated) override;
   int list_entries(int max_entries,
 		   std::vector<rgw_data_change_log_entry>& entries,
-		   RGWDataChangesLogMarker& marker, bool *ptruncated);
-  int trim_entries(int shard_id, std::string_view marker);
+		   RGWDataChangesLogMarker& marker, bool *ptruncated) override;
+  int trim_entries(int shard_id, std::string_view marker) override;
 };
