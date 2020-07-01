@@ -10,7 +10,7 @@
 
 #define dout_subsys ceph_subsys_rgw
 
-RGWSI_DataLog_RADOS::RGWSI_DataLog_RADOS(CephContext *cct) : RGWServiceInstance(cct) {
+RGWSI_DataLog_RADOS::RGWSI_DataLog_RADOS(CephContext *cct) : RGWSI_DataLog(cct) {
 }
 
 RGWSI_DataLog_RADOS::~RGWSI_DataLog_RADOS() {

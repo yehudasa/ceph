@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include "rgw/rgw_service.h"
+#include "svc_datalog.h"
 
 
 class RGWDataChangesLog;
@@ -28,7 +28,7 @@ namespace rgw {
   class BucketChangeObserver;
 }
 
-class RGWSI_DataLog_RADOS : public RGWServiceInstance
+class RGWSI_DataLog_RADOS : public RGWSI_DataLog
 {
   std::unique_ptr<RGWDataChangesLog> log;
 
@@ -47,26 +47,26 @@ public:
   int do_start() override;
   void shutdown() override;
 
-  RGWDataChangesLog *get_log() {
+  RGWDataChangesLog *get_log() override {
     return log.get();
   }
 
-  void set_observer(rgw::BucketChangeObserver *observer);
+  void set_observer(rgw::BucketChangeObserver *observer) override;
 
-  int get_log_shard_id(rgw_bucket& bucket, int shard_id);
+  int get_log_shard_id(rgw_bucket& bucket, int shard_id) override;
   const std::string& get_oid(int shard_id) const;
 
-  int get_info(int shard_id, RGWDataChangesLogInfo *info);
+  int get_info(int shard_id, RGWDataChangesLogInfo *info) override;
 
-  int add_entry(const RGWBucketInfo& bucket_info, int shard_id);
+  int add_entry(const RGWBucketInfo& bucket_info, int shard_id) override;
   int list_entries(int shard, const real_time& start_time, const real_time& end_time, int max_entries,
 		   list<rgw_data_change_log_entry>& entries,
 		   const string& marker,
 		   string *out_marker,
-		   bool *truncated);
+		   bool *truncated) override;
   int list_entries(const real_time& start_time, const real_time& end_time, int max_entries,
-		   list<rgw_data_change_log_entry>& entries, RGWDataChangesLogMarker& marker, bool *ptruncated);
+		   list<rgw_data_change_log_entry>& entries, RGWDataChangesLogMarker& marker, bool *ptruncated) override;
   int trim_entries(int shard_id, const real_time& start_time, const real_time& end_time,
-                   const string& start_marker, const string& end_marker);
+                   const string& start_marker, const string& end_marker) override;
 };
 
