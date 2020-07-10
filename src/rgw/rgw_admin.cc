@@ -9286,6 +9286,12 @@ next:
      return -r;
    }
 
+   auto type_handler = provider->get_type_handler(stage_id);
+   if (!type_handler) {
+     cerr << "ERROR: no type handler for stage_id=" << stage_id << std::endl;
+     return EIO;
+   }
+
    {
      Formatter::ObjectSection top_section(*formatter, "result");
      encode_json("more", result.more, formatter);
@@ -9296,7 +9302,7 @@ next:
      for (auto& e : result.entries) {
        Formatter::ObjectSection hs(*formatter, "handler");
        encode_json("key", e.key, formatter);
-       r = provider->handle_entry(stage_id, e, [&](SIProvider::EntryInfoBase& info) {
+       r = type_handler->handle_entry(stage_id, e, [&](SIProvider::EntryInfoBase& info) {
          encode_json("info", info, formatter);
          return 0;
        });

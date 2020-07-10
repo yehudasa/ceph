@@ -145,6 +145,13 @@ void RGWOp_SIP_Fetch::execute() {
 
   stage_id = opt_stage_id.value_or(sip->get_first_stage());
 
+  type_handler = sip->get_type_handler(stage_id);
+  if (!type_handler) {
+    ldout(s->cct, 0) << "ERROR: " << __func__ << "(): null type handler, likely a bug" << dendl;
+    http_ret = -EIO;
+    return;
+  }
+
   http_ret = sip->fetch(stage_id, shard_id, marker, max_entries, &result);
   if (http_ret < 0) {
     ldout(s->cct, 0) << "ERROR: failed to fetch entries: " << http_ret << dendl;
@@ -172,10 +179,10 @@ void RGWOp_SIP_Fetch::send_response() {
     for (auto& e : result.entries) {
       Formatter::ObjectSection hs(*formatter, "handler");
       encode_json("key", e.key, formatter);
-      int r = sip->handle_entry(stage_id, e, [&](SIProvider::EntryInfoBase& info) {
-                                encode_json("info", info, formatter);
-                                return 0;
-                                });
+      int r = type_handler->handle_entry(stage_id, e, [&](SIProvider::EntryInfoBase& info) {
+                                         encode_json("info", info, formatter);
+                                         return 0;
+                                       });
       if (r < 0) {
         ldout(s->cct, 0) << "ERROR: provider->handle_entry() failed: r=" << r << dendl;
         break;
