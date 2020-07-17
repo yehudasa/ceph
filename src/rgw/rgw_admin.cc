@@ -764,6 +764,7 @@ enum class OPT {
   SI_PROVIDER_INFO,
   SI_PROVIDER_FETCH,
   SI_PROVIDER_TRIM,
+  SI_PROVIDER_STATE,
 };
 
 }
@@ -980,6 +981,7 @@ static SimpleCmd::Commands all_cmds = {
   { "sip info", OPT::SI_PROVIDER_INFO },
   { "sip fetch", OPT::SI_PROVIDER_FETCH },
   { "sip trim", OPT::SI_PROVIDER_TRIM },
+  { "sip state", OPT::SI_PROVIDER_STATE },
 };
 
 static SimpleCmd::Aliases cmd_aliases = {
@@ -3931,6 +3933,7 @@ int main(int argc, const char **argv)
 			 OPT::SI_PROVIDER_LIST,
 			 OPT::SI_PROVIDER_INFO,
 			 OPT::SI_PROVIDER_FETCH,
+			 OPT::SI_PROVIDER_STATE,
   };
 
 
@@ -9383,6 +9386,49 @@ next:
      cerr << "ERROR: failed to trim sync info provider: " << cpp_strerror(-r) << std::endl;
      return -r;
    }
+ }
+
+ if (opt_cmd == OPT::SI_PROVIDER_STATE) {
+   if (!opt_sip) {
+     cerr << "ERROR: --sip not specified" << std::endl;
+     return EINVAL;
+   }
+   auto provider = store->ctl()->si.mgr->find_sip(*opt_sip, opt_sip_instance);
+   if (!provider) {
+     cerr << "ERROR: sync info provider not found" << std::endl;
+     return ENOENT;
+   }
+
+   string marker;
+
+   auto stage_id = opt_stage_id.value_or(provider->get_first_stage());
+
+   SIProvider::StageInfo stage_info;
+   int r = provider->get_stage_info(stage_id, &stage_info);
+   if (r < 0) {
+     cerr << "ERROR: could not get stage info for sid=" << stage_id << ": " << cpp_strerror(-r) << std::endl;
+     return -r;
+   }
+
+   if (shard_id < 0) {
+     if (stage_info.num_shards <= 1) { /* shouldn't have 0 shards anyway */
+       shard_id = 0;
+     } else {
+       cerr << "ERROR: --shard-id not specified (stage has " << stage_info.num_shards << " shards)" << std::endl;
+       return EINVAL;
+     }
+   }
+   r = provider->get_cur_state(stage_id, shard_id, &marker);
+   if (r < 0) {
+     cerr << "ERROR: failed to trim sync info provider: " << cpp_strerror(-r) << std::endl;
+     return -r;
+   }
+
+   {
+     Formatter::ObjectSection top_section(*formatter, "result");
+     encode_json("marker", marker, formatter);
+   }
+   formatter->flush(cout);
  }
 
   return 0;
