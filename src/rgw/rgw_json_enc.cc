@@ -1359,6 +1359,28 @@ void RGWZoneParams::decode_json(JSONObj *obj)
 
 }
 
+void RGWDataProvider::dump_dp_extra(Formatter *f) const
+{
+  encode_json("sip_config", sip_config, f);
+}
+
+void RGWDataProvider::decode_json_dp_extra(JSONObj *obj)
+{
+  JSONDecoder::decode_json("sip_config", sip_config, obj);
+}
+
+void RGWDataProvider::SIPConfig::dump(Formatter *f) const
+{
+  encode_json("access_key", access_key, f);
+  encode_json("path_prefix", path_prefix, f);
+}
+
+void RGWDataProvider::SIPConfig::decode_json(JSONObj *obj)
+{
+  JSONDecoder::decode_json("access_key", access_key, obj);
+  JSONDecoder::decode_json("path_prefix", path_prefix, obj);
+}
+
 void RGWZone::dump(Formatter *f) const
 {
   encode_json("id", id, f);
@@ -1372,6 +1394,7 @@ void RGWZone::dump(Formatter *f) const
   encode_json("sync_from_all", sync_from_all, f);
   encode_json("sync_from", sync_from, f);
   encode_json("redirect_zone", redirect_zone, f);
+  dump_dp_extra(f);
 }
 
 void RGWZone::decode_json(JSONObj *obj)
@@ -1390,6 +1413,7 @@ void RGWZone::decode_json(JSONObj *obj)
   JSONDecoder::decode_json("sync_from_all", sync_from_all, true, obj);
   JSONDecoder::decode_json("sync_from", sync_from, obj);
   JSONDecoder::decode_json("redirect_zone", redirect_zone, obj);
+  decode_json_dp_extra(obj);
 }
 
 void RGWZoneGroupPlacementTarget::dump(Formatter *f) const
