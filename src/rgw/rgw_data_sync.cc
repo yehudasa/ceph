@@ -29,6 +29,7 @@
 #include "rgw_sync_module.h"
 #include "rgw_sync_info.h"
 #include "rgw_sal.h"
+#include "rgw_b64.h"
 
 #include "cls/lock/cls_lock_client.h"
 
@@ -497,6 +498,9 @@ public:
 
   virtual ~RGWDataSyncInfoCRHandler() {}
 
+  virtual string get_sip_name() const = 0;
+  virtual int validate_sync_marker(rgw_data_sync_marker& marker) const = 0;
+
   virtual RGWCoroutine *init_cr() = 0;
 
   virtual RGWCoroutine *get_pos_cr(int shard_id, string *marker, ceph::real_time *timestamp) = 0;
@@ -910,6 +914,15 @@ public:
     path = "/admin/metadata/bucket.instance";
   }
 
+  int validate_sync_marker(rgw_data_sync_marker& marker) const override {
+    /* markers are not used during this stage anyway at the moment */
+    return 0;
+  }
+
+  string get_sip_name() const override {
+    return "legacy/data.full";
+  }
+
   RGWCoroutine *init_cr() override {
     /* nothing to init */
     return nullptr;
@@ -1026,6 +1039,29 @@ class RGWDataIncSyncInfoCRHandler_Legacy : public RGWDataSyncInfoCRHandler {
 public:
 
   RGWDataIncSyncInfoCRHandler_Legacy(RGWDataSyncCtx *_sc) : RGWDataSyncInfoCRHandler(_sc) {
+  }
+
+  string get_sip_name() const override {
+    return "legacy/data.inc";
+  }
+
+  int validate_sync_marker(rgw_data_sync_marker& marker) const override {
+    if (marker.sip_name.empty() ||
+        marker.sip_name == "legacy/data.inc") {
+      return 0;
+    }
+
+    if (marker.sip_name == "data.inc") {
+      if (!marker.marker.empty()) {
+        marker.marker = rgw::from_base64(marker.marker);
+      }
+      marker.sip_name =  get_sip_name();
+      return 0;
+    }
+
+    /* unsupported marker type */
+
+    return -ENOTSUP;
   }
 
   RGWCoroutine *init_cr() override {
@@ -1178,6 +1214,29 @@ public:
                                        nullopt));
   }
 
+  string get_sip_name() const override {
+    return sip_name;
+  }
+
+  int validate_sync_marker(rgw_data_sync_marker& marker) const override {
+    if (marker.sip_name == sip_name) {
+      return 0;
+    }
+
+    if (marker.sip_name.empty() ||
+        marker.sip_name == "legacy/data.inc") {
+      if (!marker.marker.empty()) {
+        marker.marker = rgw::to_base64(marker.marker);
+      }
+      marker.sip_name =  sip_name;
+      return 0;
+    }
+
+    /* unsupported marker type */
+
+    return -ENOTSUP;
+  }
+
   RGWCoroutine *init_cr() override {
     return new InitCR(sc, this);
   }
@@ -1185,7 +1244,6 @@ public:
   RGWCoroutine *fetch_cr(int shard_id,
                          const string& marker,
                          sip_data_list_result *result) {
-#warning FIXME sid
     auto& sid = stages.front();
     return new FetchCR(this, sc, sip.get(), sid, shard_id, marker, result);
   }
@@ -2103,6 +2161,7 @@ public:
         /* update marker to reflect we're done with full sync */
         sync_marker.state = rgw_data_sync_marker::IncrementalSync;
         sync_marker.marker = sync_marker.next_step_marker;
+        sync_marker.sip_name = sync_marker.next_sip_name;
         sync_marker.next_step_marker.clear();
         call(new RGWSimpleRadosWriteCR<rgw_data_sync_marker>(sync_env->async_rados, sync_env->svc->sysobj,
                                                              rgw_raw_obj(pool, status_oid),
@@ -2138,6 +2197,13 @@ public:
         }
         set_status("lease acquired");
         tn->log(10, "took lease");
+      }
+      retcode = sc->dsi.inc->validate_sync_marker(sync_marker);
+      if (retcode < 0) {
+        tn->log(0, SSTR("ERROR: failed to validate marker: ret=" << retcode));
+        lease_cr->go_down();
+        drain_all();
+        return set_cr_error(retcode);
       }
       marker_tracker.emplace(sc, status_oid, sync_marker, tn);
       do {
