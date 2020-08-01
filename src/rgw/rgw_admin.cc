@@ -2267,7 +2267,7 @@ static int remote_bilog_markers(rgw::sal::RGWRadosStore *store, const RGWZone& s
     { "info" , nullptr },
     { nullptr, nullptr }
   };
-  rgw_bucket_index_marker_info result;
+  rgw_bilog_marker_info result;
   int r = conn->get_json_resource("/admin/log/", params, result);
   if (r < 0) {
     lderr(store->ctx()) << "failed to fetch remote log markers: " << cpp_strerror(r) << dendl;
