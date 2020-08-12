@@ -92,7 +92,7 @@ static const DoutPrefixProvider* dpp() {
 
 #define CHECK_TRUE(x, msg, err) \
   do { \
-    if (!x) { \
+    if (!(x)) { \
       cerr << msg << std::endl; \
       return err; \
     } \
@@ -3110,6 +3110,35 @@ public:
   }
 };
 
+RGWRESTConn *get_source_conn(RGWSI_Zone *zone_svc,
+                             std::optional<rgw_zone_id> source_zone,
+                             std::optional<string> endpoint,
+                             const string& access_key,
+                             const string& secret)
+{
+  if (source_zone) {
+    auto conn = zone_svc->get_zone_conn(*source_zone);
+    if (!conn) {
+      cerr << "ERROR: could not find zone connection for source zone (" << *source_zone << ")" << std::endl;
+      return nullptr;
+    }
+    return conn;
+  }
+
+  if (!endpoint) {
+    return nullptr;
+  }
+
+  list<string> endpoints = { *endpoint };
+
+  RGWAccessKey k(access_key, secret);
+
+  auto remote_id = *endpoint;
+  auto cct = zone_svc->ctx();
+
+  return new RGWRESTConn(cct, zone_svc, remote_id, endpoints, k);
+}
+
 int main(int argc, const char **argv)
 {
   vector<const char*> args;
@@ -3340,6 +3369,8 @@ int main(int argc, const char **argv)
   std::optional<string> opt_dest_object_name;
   std::optional<string> opt_dest_object_version;
   std::optional<rgw_obj_key> opt_dest_object;
+
+  std::optional<string> opt_endpoint;
 
   SimpleCmd cmd(all_cmds, cmd_aliases);
 
@@ -3624,6 +3655,9 @@ int main(int argc, const char **argv)
       zone_new_name = val;
     } else if (ceph_argparse_witharg(args, i, &val, "--endpoints", (char*)NULL)) {
       get_str_list(val, endpoints);
+      if (!endpoints.empty()) {
+        opt_endpoint = endpoints.front();
+      }
     } else if (ceph_argparse_witharg(args, i, &val, "--sync-from", (char*)NULL)) {
       get_str_list(val, sync_from);
     } else if (ceph_argparse_witharg(args, i, &val, "--sync-from-rm", (char*)NULL)) {
@@ -3775,6 +3809,9 @@ int main(int argc, const char **argv)
       opt_dest_object_name = val;
     } else if (ceph_argparse_witharg(args, i, &val, "--dest-object-version", (char*)NULL)) {
       opt_dest_object_version = val;
+    } else if (ceph_argparse_witharg(args, i, &val, "--endpoint", (char*)NULL)) {
+      opt_endpoint = val;
+      endpoints = { val };
     } else if (strncmp(*i, "-", 1) == 0) {
       cerr << "ERROR: invalid flag " << *i << std::endl;
       return EINVAL;
@@ -7303,8 +7340,7 @@ next:
     }
 
     CHECK_TRUE(require_opt(opt_dest_object), "ERROR: --dest-object was not specified", EINVAL);
-    CHECK_TRUE(require_opt(opt_source_zone_id), "ERROR: --source-zone was not specified", EINVAL);
-    CHECK_TRUE(!user_id.empty(), "ERROR: --uid was not specified", EINVAL);
+    CHECK_TRUE(opt_source_zone_id || opt_endpoint, "ERROR: either--source-zone or --endpoint needs to be specified", EINVAL);
 
     if (!opt_source_object) {
       opt_source_object = opt_dest_object;
@@ -7337,10 +7373,21 @@ next:
     rgw_obj source_object(source_bucket, *opt_source_object);
     rgw_obj dest_object(dest_bucket, *opt_dest_object);
 
-    auto conn = store->svc()->zone->get_zone_conn(*opt_source_zone_id);
+    auto conn  = get_source_conn(store->svc()->zone,
+                                 opt_source_zone_id,
+                                 opt_endpoint,
+                                 access_key,
+                                 secret_key);
     if (!conn) {
-      cerr << "ERROR: could not fine zone connection for sourece zone (" << *opt_source_zone_id << ")" << std::endl;
       return ENOENT;
+    }
+
+    if (!opt_dest_owner) {
+      if (!user_id.empty()) {
+        opt_dest_owner = user_id;
+      } else {
+        opt_dest_owner = dest_bucket_info.owner;
+      }
     }
 
     RGWRados::FetchRemoteObjParams params;
@@ -7349,7 +7396,7 @@ next:
     ret = store->getRados()->fetch_remote_obj(obj_ctx,
                                               conn,
                                               false, /* foreign source */
-                                              user_id,
+                                              *opt_dest_owner,
                                               dest_object,
                                               source_object,
                                               dest_bucket_info,
