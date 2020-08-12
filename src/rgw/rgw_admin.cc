@@ -619,6 +619,7 @@ enum class OPT {
   OBJECT_RM,
   OBJECT_UNLINK,
   OBJECT_STAT,
+  OBJECT_FETCH,
   OBJECT_REWRITE,
   OBJECTS_EXPIRE,
   OBJECTS_EXPIRE_STALE_LIST,
@@ -832,6 +833,7 @@ static SimpleCmd::Commands all_cmds = {
   { "objects expire", OPT::OBJECTS_EXPIRE },
   { "objects expire-stale list", OPT::OBJECTS_EXPIRE_STALE_LIST },
   { "objects expire-stale rm", OPT::OBJECTS_EXPIRE_STALE_RM },
+  { "object fetch", OPT::OBJECT_FETCH },
   { "bi get", OPT::BI_GET },
   { "bi put", OPT::BI_PUT },
   { "bi list", OPT::BI_LIST },
@@ -2912,6 +2914,20 @@ void init_optional_bucket(std::optional<rgw_bucket>& opt_bucket,
   }
 }
 
+void init_optional_object_key(std::optional<rgw_obj_key>& opt_object,
+                              std::optional<string>& opt_object_name,
+                              std::optional<string>& opt_object_version)
+{
+  if (! opt_object_name) {
+    return;
+  }
+
+  opt_object.emplace(*opt_object_name);
+  if (opt_object_version) {
+    opt_object->set_instance(*opt_object_version);
+  }
+}
+
 class SyncPolicyContext
 {
   RGWZoneGroup zonegroup;
@@ -3315,6 +3331,16 @@ int main(int argc, const char **argv)
   std::optional<string> opt_target_id;
   std::optional<bool> opt_init_target;
 
+  std::optional<string> opt_object_name;
+  std::optional<string> opt_object_version;
+  std::optional<rgw_obj_key> opt_object;
+  std::optional<string> opt_source_object_name;
+  std::optional<string> opt_source_object_version;
+  std::optional<rgw_obj_key> opt_source_object;
+  std::optional<string> opt_dest_object_name;
+  std::optional<string> opt_dest_object_version;
+  std::optional<rgw_obj_key> opt_dest_object;
+
   SimpleCmd cmd(all_cmds, cmd_aliases);
 
   for (std::vector<const char*>::iterator i = args.begin(); i != args.end(); ) {
@@ -3350,8 +3376,10 @@ int main(int argc, const char **argv)
       pool = rgw_pool(pool_name);
     } else if (ceph_argparse_witharg(args, i, &val, "-o", "--object", (char*)NULL)) {
       object = val;
+      opt_object_name = object;
     } else if (ceph_argparse_witharg(args, i, &val, "--object-version", (char*)NULL)) {
       object_version = val;
+      opt_object_version = object_version;
     } else if (ceph_argparse_witharg(args, i, &val, "--client-id", (char*)NULL)) {
       client_id = val;
     } else if (ceph_argparse_witharg(args, i, &val, "--op-id", (char*)NULL)) {
@@ -3739,6 +3767,14 @@ int main(int argc, const char **argv)
       opt_init_target = (bool)tmp_int;
     } else if (ceph_argparse_binary_flag(args, i, &detail, NULL, "--detail", (char*)NULL)) {
       // do nothing
+    } else if (ceph_argparse_witharg(args, i, &val, "--source-object", (char*)NULL)) {
+      opt_source_object_name = val;
+    } else if (ceph_argparse_witharg(args, i, &val, "--source-object-version", (char*)NULL)) {
+      opt_source_object_version = val;
+    } else if (ceph_argparse_witharg(args, i, &val, "--dest-object", (char*)NULL)) {
+      opt_dest_object_name = val;
+    } else if (ceph_argparse_witharg(args, i, &val, "--dest-object-version", (char*)NULL)) {
+      opt_dest_object_version = val;
     } else if (strncmp(*i, "-", 1) == 0) {
       cerr << "ERROR: invalid flag " << *i << std::endl;
       return EINVAL;
@@ -3799,6 +3835,9 @@ int main(int argc, const char **argv)
                          opt_source_bucket_name, opt_source_bucket_id);
     init_optional_bucket(opt_dest_bucket, opt_dest_tenant,
                          opt_dest_bucket_name, opt_dest_bucket_id);
+    init_optional_object_key(opt_object, opt_object_name, opt_object_version);
+    init_optional_object_key(opt_source_object, opt_source_object_name, opt_source_object_version);
+    init_optional_object_key(opt_dest_object, opt_dest_object_name, opt_dest_object_version);
 
     if (tenant.empty()) {
       tenant = user_id.tenant;
@@ -7253,6 +7292,71 @@ next:
       do_check_object_locator(tenant, bucket_name, fix, remove_bad, formatter);
     } else {
       RGWBucketAdminOp::check_index(store, bucket_op, f, null_yield);
+    }
+  }
+
+  if (opt_cmd == OPT::OBJECT_FETCH) {
+    CHECK_TRUE(require_opt(opt_dest_bucket), "ERROR: --dest-bucket was not specified", EINVAL);
+
+    if (!opt_dest_object) {
+      opt_dest_object = opt_object;
+    }
+
+    CHECK_TRUE(require_opt(opt_dest_object), "ERROR: --dest-object was not specified", EINVAL);
+    CHECK_TRUE(require_opt(opt_source_zone_id), "ERROR: --source-zone was not specified", EINVAL);
+    CHECK_TRUE(!user_id.empty(), "ERROR: --uid was not specified", EINVAL);
+
+    if (!opt_source_object) {
+      opt_source_object = opt_dest_object;
+    }
+
+    rgw_bucket dest_bucket;
+
+    RGWBucketInfo dest_bucket_info;
+    int ret = init_bucket(*opt_dest_bucket, dest_bucket_info, dest_bucket);
+    if (ret < 0) {
+      cerr << "ERROR: could not init bucket: " << cpp_strerror(-ret) << std::endl;
+      return -ret;
+    }
+
+    rgw_bucket source_bucket;
+    RGWBucketInfo _source_bucket_info;
+    RGWBucketInfo *psource_bucket_info{nullptr};
+    if (opt_source_bucket) {
+      ret = init_bucket(*opt_source_bucket, _source_bucket_info, source_bucket);
+      if (ret < 0) {
+        cerr << "ERROR: could not init bucket: " << cpp_strerror(-ret) << std::endl;
+        return -ret;
+      }
+      psource_bucket_info = &_source_bucket_info;
+    } else {
+      source_bucket = dest_bucket;
+      psource_bucket_info = &dest_bucket_info;
+    }
+
+    rgw_obj source_object(source_bucket, *opt_source_object);
+    rgw_obj dest_object(dest_bucket, *opt_dest_object);
+
+    auto conn = store->svc()->zone->get_zone_conn(*opt_source_zone_id);
+    if (!conn) {
+      cerr << "ERROR: could not fine zone connection for sourece zone (" << *opt_source_zone_id << ")" << std::endl;
+      return ENOENT;
+    }
+
+    RGWRados::FetchRemoteObjParams params;
+
+    RGWObjectCtx obj_ctx(store);
+    ret = store->getRados()->fetch_remote_obj(obj_ctx,
+                                              conn,
+                                              false, /* foreign source */
+                                              user_id,
+                                              dest_object,
+                                              source_object,
+                                              dest_bucket_info,
+                                              psource_bucket_info,
+                                              params);
+    if (ret < 0) {
+      cerr << "ERROR: fetch_remote_obj() failed: " << cpp_strerror(-ret) << std::endl;
     }
   }
 
