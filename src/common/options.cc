@@ -7570,6 +7570,10 @@ std::vector<Option> get_rgw_options() {
     .set_default("")
 #endif
     .set_description("Directory where luarocks install packages from allowlist"),
+
+    Option("rgw_auto_remove_old_shards", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    .set_default(false)
+    .set_description("automatically remove old shard after a bucket reshard"),
   });
 }
 
