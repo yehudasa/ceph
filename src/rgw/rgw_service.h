@@ -169,6 +169,7 @@ class RGWMetadataHandler;
 class RGWUserCtl;
 class RGWBucketCtl;
 class RGWOTPCtl;
+class RGWRemoteCtl;
 
 class RGWSIPManager;
 
@@ -187,6 +188,7 @@ struct RGWCtlDef {
   std::unique_ptr<RGWUserCtl> user;
   std::unique_ptr<RGWBucketCtl> bucket;
   std::unique_ptr<RGWOTPCtl> otp;
+  std::unique_ptr<RGWRemoteCtl> remote;
 
   struct _si {
     std::unique_ptr<RGWSIPManager> mgr;
@@ -216,6 +218,7 @@ struct RGWCtl {
   RGWUserCtl *user{nullptr};
   RGWBucketCtl *bucket{nullptr};
   RGWOTPCtl *otp{nullptr};
+  RGWRemoteCtl *remote{nullptr};
 
   struct _si {
     RGWSIPManager *mgr{nullptr};

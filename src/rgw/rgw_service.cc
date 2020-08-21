@@ -35,6 +35,7 @@
 #include "rgw_user.h"
 #include "rgw_bucket.h"
 #include "rgw_otp.h"
+#include "rgw_remote.h"
 
 #include "rgw_sync_info.h"
 #include "rgw_sip_meta.h"
@@ -372,6 +373,7 @@ int RGWCtlDef::init(RGWServices& svc)
                                 svc.bucket_sync,
                                 svc.bi));
   otp.reset(new RGWOTPCtl(svc.zone, svc.otp));
+  remote.reset(new RGWRemoteCtl(svc.zone, user.get()));
 
   RGWBucketMetadataHandlerBase *bucket_meta_handler = static_cast<RGWBucketMetadataHandlerBase *>(meta.bucket.get());
   RGWBucketInstanceMetadataHandlerBase *bi_meta_handler = static_cast<RGWBucketInstanceMetadataHandlerBase *>(meta.bucket_instance.get());
@@ -389,6 +391,8 @@ int RGWCtlDef::init(RGWServices& svc)
 	       svc.datalog_rados->get_log());
 
   otp->init((RGWOTPMetadataHandler *)meta.otp.get());
+
+  remote->init();
 
   si.mgr.reset(new RGWSIPManager());
 
@@ -415,6 +419,7 @@ int RGWCtl::init(RGWServices *_svc)
   user = _ctl.user.get();
   bucket = _ctl.bucket.get();
   otp = _ctl.otp.get();
+  remote = _ctl.remote.get();
 
   si.mgr = _ctl.si.mgr.get();
 
