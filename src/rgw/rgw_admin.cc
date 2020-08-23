@@ -2244,10 +2244,10 @@ static void sync_status(Formatter *formatter)
 
   list<string> data_status;
 
-  auto& zone_conn_map = store->svc()->zone->get_zone_conn_map();
+  auto& source_zones = store->svc()->zone->get_data_sync_source_zones();
 
-  for (auto iter : zone_conn_map) {
-    const rgw_zone_id& source_id = iter.first;
+  for (auto& source_zone : source_zones) {
+    rgw_zone_id source_id = source_zone->id;
     string source_str = "source: ";
     string s = source_str + source_id.id;
     RGWZone *sz;
@@ -2626,7 +2626,6 @@ static int bucket_sync_status(rgw::sal::RGWRadosStore *store, const RGWBucketInf
 
   auto sources = handler->get_all_sources();
 
-  auto& zone_conn_map = store->svc()->zone->get_zone_conn_map();
   set<rgw_zone_id> zone_ids;
 
   if (!source_zone_id.empty()) {
@@ -2636,8 +2635,8 @@ static int bucket_sync_status(rgw::sal::RGWRadosStore *store, const RGWBucketInf
           << zonegroup.get_name() << dendl;
       return -EINVAL;
     }
-    auto c = zone_conn_map.find(source_zone_id);
-    if (c == zone_conn_map.end()) {
+    auto c = store->ctl()->remote->zone_conns(source_zone_id);
+    if (!c) {
       lderr(store->ctx()) << "No connection to zone " << z->second.name << dendl;
       return -EINVAL;
     }
@@ -2653,8 +2652,8 @@ static int bucket_sync_status(rgw::sal::RGWRadosStore *store, const RGWBucketInf
     if (z == zonegroup.zones.end()) { /* should't happen */
       continue;
     }
-    auto c = zone_conn_map.find(zone_id.id);
-    if (c == zone_conn_map.end()) { /* should't happen */
+    auto c = store->ctl()->remote->zone_conns(zone_id.id);
+    if (!c) {
       continue;
     }
 
@@ -2666,7 +2665,7 @@ static int bucket_sync_status(rgw::sal::RGWRadosStore *store, const RGWBucketInf
       }
       if (pipe.source.zone.value_or(rgw_zone_id()) == z->second.id) {
 	bucket_source_sync_status(store, zone, z->second,
-				  c->second,
+				  c->data,
 				  info, pipe,
 				  width, out);
       }
@@ -3080,16 +3079,16 @@ class SIPRESTMgr : public RGWCoroutinesManager {
   RGWCoroutinesManagerRegistry *cr_registry;
 
   struct {
-    RGWSI_Zone *zone;
-  } svc;
+    RGWRemoteCtl *remote;
+  } ctl;
 
 public:
   SIPRESTMgr(CephContext *_cct,
-             RGWSI_Zone *_zone_svc,
+             RGWRemoteCtl *_remote_ctl,
              RGWCoroutinesManagerRegistry *_cr_registry) : RGWCoroutinesManager(_cct, _cr_registry),
                                                            cct(_cct),
                                                            http_manager(_cct, completion_mgr) {
-    svc.zone = _zone_svc;
+    ctl.remote = _remote_ctl;
     http_manager.start();
   }
 
@@ -3097,14 +3096,13 @@ public:
                           const string& remote_provider_name,
                           std::optional<string> instance,
                          SIProvider::TypeHandlerProviderRef type_provider) {
-    auto& conn_map = svc.zone->get_zone_conn_map();
-    auto iter = conn_map.find(zid);
-    if (iter == conn_map.end()) {
+    auto c = ctl.remote->zone_conns(zid);
+    if (!c) {
       return nullptr;
     }
 
     return new SIProvider_REST_SingleType(cct, this,
-                                          iter->second, &http_manager,
+                                          c->data, &http_manager,
                                           remote_provider_name,
                                           instance,
                                           type_provider);
@@ -5569,6 +5567,8 @@ int main(int argc, const char **argv)
     return 0;
   }
 
+#warning clean me
+#if 0
   SIPRESTMgr sip_rest_mgr(store->ctx(), store->svc()->zone, store->getRados()->get_cr_registry());
 
   auto si_mgr = store->ctl()->si.mgr;
@@ -5579,6 +5579,7 @@ int main(int argc, const char **argv)
                                           std::make_shared<SITypeHandlerProvider_Default<siprovider_meta_info> >());
     si_mgr->register_sip("remote:meta.full", std::make_shared<RGWSIPGen_Single>(remote_sip));
   }
+#endif
 
   resolve_zone_id_opt(opt_effective_zone_name, opt_effective_zone_id);
   resolve_zone_id_opt(opt_source_zone_name, opt_source_zone_id);
