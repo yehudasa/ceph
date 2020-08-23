@@ -50,6 +50,7 @@
 #include "rgw_notify.h"
 #include "rgw_notify_event_type.h"
 #include "rgw_sal_rados.h"
+#include "rgw_remote.h"
 
 #include "services/svc_zone.h"
 #include "services/svc_quota.h"
@@ -695,7 +696,7 @@ int rgw_build_bucket_policies(const DoutPrefixProvider *dpp, rgw::sal::RGWRadosS
     ret = -EACCES;
   }
 
-  bool success = store->svc()->zone->get_redirect_zone_endpoint(&s->redirect_zone_endpoint);
+  bool success = store->ctl()->remote->get_redirect_zone_endpoint(&s->redirect_zone_endpoint);
   if (success) {
     ldpp_dout(dpp, 20) << "redirect_zone_endpoint=" << s->redirect_zone_endpoint << dendl;
   }
