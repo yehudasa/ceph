@@ -73,11 +73,15 @@ static void apply_opt(const std::optional<T>& t, std::optional<T> *result)
   *result = t;
 }
 
+void RGWDataProvider::RESTConfig::apply(const RGWDataProvider::RESTConfig& rc) {
+  apply_opt(rc.endpoints, &endpoints);
+  apply_opt(rc.uid, &uid);
+  apply_opt(rc.access_key, &access_key);
+  apply_opt(rc.secret, &secret);
+}
+
 void RGWDataProvider::SIPConfig::apply(const RGWDataProvider::SIPConfig& sc) {
-  apply_opt(sc.endpoints, &endpoints);
-  apply_opt(sc.uid, &uid);
-  apply_opt(sc.access_key, &access_key);
-  apply_opt(sc.secret, &secret);
+  rest_conf.apply(sc.rest_conf);
   apply_opt(sc.path_prefix, &path_prefix);
 }
 
@@ -296,6 +300,7 @@ static string gen_uuid()
 int RGWZoneGroup::modify_foreign_zone(string zone_name,
 				      rgw_zone_id zone_id,
 				      const list<std::string>& endpoints,
+				      const RGWDataProvider::RESTConfig& data_access_config,
 				      const RGWDataProvider::SIPConfig& sip_config,
 				      bool add)
 {
@@ -332,10 +337,18 @@ int RGWZoneGroup::modify_foreign_zone(string zone_name,
   }
 
   auto& z = foreign_zones[zone_id];
-  if (!z.sip_config) {
-    z.sip_config.emplace(sip_config);
+  if (!z.sip_conf) {
+    z.sip_conf.emplace(sip_config);
   } else {
-    z.sip_config->apply(sip_config);
+    z.sip_conf->apply(sip_config);
+  }
+
+  if (!data_access_config.empty()) {
+    if (!z.data_access_conf) {
+      z.data_access_conf.emplace(data_access_config);
+    } else {
+      z.data_access_conf->apply(data_access_config);
+    }
   }
 
   z.id = zone_id.id;
