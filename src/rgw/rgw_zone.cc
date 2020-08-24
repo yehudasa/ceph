@@ -73,11 +73,15 @@ static void apply_opt(const std::optional<T>& t, std::optional<T> *result)
   *result = t;
 }
 
+void RGWDataProvider::RESTConfig::apply(const RGWDataProvider::RESTConfig& rc) {
+  apply_opt(rc.endpoints, &endpoints);
+  apply_opt(rc.uid, &uid);
+  apply_opt(rc.access_key, &access_key);
+  apply_opt(rc.secret, &secret);
+}
+
 void RGWDataProvider::SIPConfig::apply(const RGWDataProvider::SIPConfig& sc) {
-  apply_opt(sc.endpoints, &endpoints);
-  apply_opt(sc.uid, &uid);
-  apply_opt(sc.access_key, &access_key);
-  apply_opt(sc.secret, &secret);
+  rest_conf.apply(sc.rest_conf);
   apply_opt(sc.path_prefix, &path_prefix);
 }
 
@@ -282,8 +286,113 @@ int RGWZoneGroup::rename_zone(const RGWZoneParams& zone_params,
 {
   RGWZone& zone = zones[zone_params.get_id()];
   zone.name = zone_params.get_name();
-
+  
   return update(y);
+}
+
+static string gen_uuid()
+{
+  uuid_d new_uuid;
+  char uuid_str[37];
+  new_uuid.generate_random();
+  new_uuid.print(uuid_str);
+  return string(uuid_str);
+}
+
+int RGWZoneGroup::modify_foreign_zone(string zone_name,
+				      rgw_zone_id zone_id,
+				      const list<std::string>& endpoints,
+				      const RGWDataProvider::RESTConfig& data_access_config,
+				      const RGWDataProvider::SIPConfig& sip_config,
+				      bool add)
+{
+  if (zone_name.empty()) {
+    if (add) {
+      return -EINVAL;
+    }
+
+    auto iter = foreign_zones.find(zone_id);
+    if (iter == foreign_zones.end()) {
+      return -ENOENT;
+    }
+
+    zone_name = iter->second.name;
+  }
+
+  for (auto& iter : foreign_zones) {
+    auto& z = iter.second;
+    if (z.name == zone_name) {
+      if (zone_id.empty()) {
+	zone_id = z.id;
+      } else if (zone_id != z.id) {
+	ldout(cct, 0) << "ERROR: zone id mismatch: zone_id=" << zone_id << ", existing zone id=" << z.id << dendl;
+	return -EEXIST;
+      }
+      break;
+    }
+  }
+  if (zone_id.empty()) {
+    zone_id = gen_uuid();
+    ldout(cct, 20) << "new foreign zone: " << zone_name << " (" << zone_id << ")" << dendl;
+  } else {
+    ldout(cct, 20) << "found foreign zone: " << zone_name << " (" << zone_id << ")" << dendl;
+  }
+
+  auto& z = foreign_zones[zone_id];
+  if (!z.sip_conf) {
+    z.sip_conf.emplace(sip_config);
+  } else {
+    z.sip_conf->apply(sip_config);
+  }
+
+  if (!data_access_config.empty()) {
+    if (!z.data_access_conf) {
+      z.data_access_conf.emplace(data_access_config);
+    } else {
+      z.data_access_conf->apply(data_access_config);
+    }
+  }
+
+  z.id = zone_id.id;
+  z.name = zone_name;
+  z.endpoints = endpoints;
+
+  return 0;
+}
+
+int RGWZoneGroup::remove_foreign_zone(string zone_name,
+				      rgw_zone_id zone_id)
+{
+  if (zone_name.empty()) {
+    auto iter = foreign_zones.find(zone_id);
+    if (iter == foreign_zones.end()) {
+      return -ENOENT;
+    }
+
+    zone_name = iter->second.name;
+  }
+
+  for (auto& iter : foreign_zones) {
+    auto& z = iter.second;
+    if (z.name == zone_name) {
+      if (zone_id.empty()) {
+	zone_id = z.id;
+      } else if (zone_id != z.id) {
+	ldout(cct, 0) << "ERROR: zone id mismatch: zone_id=" << zone_id << ", existing zone id=" << z.id << dendl;
+	return -EINVAL;
+      }
+      break;
+    }
+  }
+  if (zone_id.empty()) {
+    ldout(cct, 20) << "couldn't find zone id for foreign zone (name=" << zone_name << "), assuming already removed" << dendl;
+    return 0;
+  }
+  ldout(cct, 20) << "found foreign zone: " << zone_name << " (" << zone_id << ")" << dendl;
+
+  foreign_zones.erase(zone_id);
+
+  return 0;
 }
 
 void RGWZoneGroup::post_process_params(optional_yield y)
