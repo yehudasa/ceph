@@ -1361,29 +1361,41 @@ void RGWZoneParams::decode_json(JSONObj *obj)
 
 void RGWDataProvider::dump_dp_extra(Formatter *f) const
 {
-  encode_json("sip_config", sip_config, f);
+  encode_json("data_access_conf", data_access_conf, f);
+  encode_json("sip_conf", sip_conf, f);
 }
 
 void RGWDataProvider::decode_json_dp_extra(JSONObj *obj)
 {
-  JSONDecoder::decode_json("sip_config", sip_config, obj);
+  JSONDecoder::decode_json("data_access_conf", data_access_conf, obj);
+  JSONDecoder::decode_json("sip_conf", sip_conf, obj);
 }
 
-void RGWDataProvider::SIPConfig::dump(Formatter *f) const
+void RGWDataProvider::RESTConfig::dump(Formatter *f) const
 {
   encode_json("endpoints", endpoints, f);
   encode_json("uid", uid, f);
   encode_json("access_key", access_key, f);
   encode_json("secret", secret, f);
-  encode_json("path_prefix", path_prefix, f);
 }
 
-void RGWDataProvider::SIPConfig::decode_json(JSONObj *obj)
+void RGWDataProvider::RESTConfig::decode_json(JSONObj *obj)
 {
   JSONDecoder::decode_json("endpoints", endpoints, obj);
   JSONDecoder::decode_json("uid", uid, obj);
   JSONDecoder::decode_json("access_key", access_key, obj);
   JSONDecoder::decode_json("secret", secret, obj);
+}
+
+void RGWDataProvider::SIPConfig::dump(Formatter *f) const
+{
+  encode_json("rest_conf", rest_conf, f);
+  encode_json("path_prefix", path_prefix, f);
+}
+
+void RGWDataProvider::SIPConfig::decode_json(JSONObj *obj)
+{
+  JSONDecoder::decode_json("rest_conf", rest_conf, obj);
   JSONDecoder::decode_json("path_prefix", path_prefix, obj);
 }
 
