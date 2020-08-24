@@ -58,6 +58,29 @@ void RGWDefaultZoneGroupInfo::decode_json(JSONObj *obj) {
   }
 }
 
+template <class T>
+static void apply_opt(const std::optional<T>& t, std::optional<T> *result)
+{
+  if (!t) {
+    return;
+  }
+
+  if (t->empty()) {
+    result->reset();
+    return;
+  }
+
+  *result = t;
+}
+
+void RGWDataProvider::SIPConfig::apply(const RGWDataProvider::SIPConfig& sc) {
+  apply_opt(sc.endpoints, &endpoints);
+  apply_opt(sc.uid, &uid);
+  apply_opt(sc.access_key, &access_key);
+  apply_opt(sc.secret, &secret);
+  apply_opt(sc.path_prefix, &path_prefix);
+}
+
 rgw_pool RGWZoneGroup::get_pool(CephContext *cct_) const
 {
   if (cct_->_conf->rgw_zonegroup_root_pool.empty()) {
@@ -649,11 +672,7 @@ int RGWSystemMetaObj::create(optional_yield y, bool exclusive)
 
   if (id.empty()) {
     /* create unique id */
-    uuid_d new_uuid;
-    char uuid_str[37];
-    new_uuid.generate_random();
-    new_uuid.print(uuid_str);
-    id = uuid_str;
+    id = gen_uuid();
   }
 
   ret = store_info(exclusive, y);
