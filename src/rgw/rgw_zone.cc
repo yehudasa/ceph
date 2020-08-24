@@ -58,6 +58,29 @@ void RGWDefaultZoneGroupInfo::decode_json(JSONObj *obj) {
   }
 }
 
+template <class T>
+static void apply_opt(const std::optional<T>& t, std::optional<T> *result)
+{
+  if (!t) {
+    return;
+  }
+
+  if (t->empty()) {
+    result->reset();
+    return;
+  }
+
+  *result = t;
+}
+
+void RGWDataProvider::SIPConfig::apply(const RGWDataProvider::SIPConfig& sc) {
+  apply_opt(sc.endpoints, &endpoints);
+  apply_opt(sc.uid, &uid);
+  apply_opt(sc.access_key, &access_key);
+  apply_opt(sc.secret, &secret);
+  apply_opt(sc.path_prefix, &path_prefix);
+}
+
 rgw_pool RGWZoneGroup::get_pool(CephContext *cct_) const
 {
   if (cct_->_conf->rgw_zonegroup_root_pool.empty()) {
@@ -259,6 +282,102 @@ int RGWZoneGroup::rename_zone(const RGWZoneParams& zone_params)
   zone.name = zone_params.get_name();
   
   return update();
+}
+
+static string gen_uuid()
+{
+  uuid_d new_uuid;
+  char uuid_str[37];
+  new_uuid.generate_random();
+  new_uuid.print(uuid_str);
+  return string(uuid_str);
+}
+
+int RGWZoneGroup::modify_foreign_zone(string zone_name,
+				      rgw_zone_id zone_id,
+				      const list<std::string>& endpoints,
+				      const RGWDataProvider::SIPConfig& sip_config,
+				      bool add)
+{
+  if (zone_name.empty()) {
+    if (add) {
+      return -EINVAL;
+    }
+
+    auto iter = foreign_zones.find(zone_id);
+    if (iter == foreign_zones.end()) {
+      return -ENOENT;
+    }
+
+    zone_name = iter->second.name;
+  }
+
+  for (auto& iter : foreign_zones) {
+    auto& z = iter.second;
+    if (z.name == zone_name) {
+      if (zone_id.empty()) {
+	zone_id = z.id;
+      } else if (zone_id != z.id) {
+	ldout(cct, 0) << "ERROR: zone id mismatch: zone_id=" << zone_id << ", existing zone id=" << z.id << dendl;
+	return -EEXIST;
+      }
+      break;
+    }
+  }
+  if (zone_id.empty()) {
+    zone_id = gen_uuid();
+    ldout(cct, 20) << "new foreign zone: " << zone_name << " (" << zone_id << ")" << dendl;
+  } else {
+    ldout(cct, 20) << "found foreign zone: " << zone_name << " (" << zone_id << ")" << dendl;
+  }
+
+  auto& z = foreign_zones[zone_id];
+  if (!z.sip_config) {
+    z.sip_config.emplace(sip_config);
+  } else {
+    z.sip_config->apply(sip_config);
+  }
+
+  z.id = zone_id.id;
+  z.name = zone_name;
+  z.endpoints = endpoints;
+
+  return 0;
+}
+
+int RGWZoneGroup::remove_foreign_zone(string zone_name,
+				      rgw_zone_id zone_id)
+{
+  if (zone_name.empty()) {
+    auto iter = foreign_zones.find(zone_id);
+    if (iter == foreign_zones.end()) {
+      return -ENOENT;
+    }
+
+    zone_name = iter->second.name;
+  }
+
+  for (auto& iter : foreign_zones) {
+    auto& z = iter.second;
+    if (z.name == zone_name) {
+      if (zone_id.empty()) {
+	zone_id = z.id;
+      } else if (zone_id != z.id) {
+	ldout(cct, 0) << "ERROR: zone id mismatch: zone_id=" << zone_id << ", existing zone id=" << z.id << dendl;
+	return -EINVAL;
+      }
+      break;
+    }
+  }
+  if (zone_id.empty()) {
+    ldout(cct, 20) << "couldn't find zone id for foreign zone (name=" << zone_name << "), assuming already removed" << dendl;
+    return 0;
+  }
+  ldout(cct, 20) << "found foreign zone: " << zone_name << " (" << zone_id << ")" << dendl;
+
+  foreign_zones.erase(zone_id);
+
+  return 0;
 }
 
 void RGWZoneGroup::post_process_params()
@@ -640,11 +759,7 @@ int RGWSystemMetaObj::create(bool exclusive)
 
   if (id.empty()) {
     /* create unique id */
-    uuid_d new_uuid;
-    char uuid_str[37];
-    new_uuid.generate_random();
-    new_uuid.print(uuid_str);
-    id = uuid_str;
+    id = gen_uuid();
   }
 
   ret = store_info(exclusive);
