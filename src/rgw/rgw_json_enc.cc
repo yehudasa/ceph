@@ -1484,7 +1484,13 @@ void RGWZoneGroup::dump(Formatter *f) const
   encode_json("default_placement", default_placement, f);
   encode_json("realm_id", realm_id, f);
   encode_json("sync_policy", sync_policy, f);
-  encode_json("foreign_zones", foreign_zones, f);
+
+  {
+    Formatter::ArraySection section(*f, "foreign_zones");
+    for (auto& entry : foreign_zones) {
+      encode_json("fz", entry.second, f);
+    }
+  }
 }
 
 static void decode_zones(map<rgw_zone_id, RGWZone>& zones, JSONObj *o)
@@ -1522,7 +1528,12 @@ void RGWZoneGroup::decode_json(JSONObj *obj)
   JSONDecoder::decode_json("default_storage_class", default_placement.storage_class, obj);
   JSONDecoder::decode_json("realm_id", realm_id, obj);
   JSONDecoder::decode_json("sync_policy", sync_policy, obj);
-  JSONDecoder::decode_json("foreign_zones", foreign_zones, obj);
+  vector<RGWForeignZone> fz_vec;
+  JSONDecoder::decode_json("foreign_zones", fz_vec, obj);
+  foreign_zones.clear();
+  for (auto& fz : fz_vec) {
+    foreign_zones.emplace(fz.id, std::move(fz));
+  }
 }
 
 
