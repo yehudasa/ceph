@@ -71,6 +71,8 @@ extern "C" {
 #include "services/svc_zone.h"
 
 #include "rgw_sip_meta.h"
+#include "rgw_sip_data.h"
+#include "rgw_sip_bucket.h"
 #include "rgw_sip_rest.h"
 
 #define dout_context g_ceph_context
@@ -3144,6 +3146,52 @@ RGWRESTConn *get_source_conn(CephContext *cct,
   return remote_ctl->create_conn(remote_id, endpoints, k);
 }
 
+static std::shared_ptr<SIProvider::TypeHandlerProvider> get_sip_type_handler(const string& sip_type)
+{
+  SIProvider::TypeHandlerProvider *p{nullptr};
+  if (boost::algorithm::starts_with(sip_type, "meta.")) {
+      p = new SITypeHandlerProvider_Default<siprovider_meta_info>();
+  } else if (boost::algorithm::starts_with(sip_type, "data.")) {
+      p = new SITypeHandlerProvider_Default<siprovider_data_info>();
+  } else if (boost::algorithm::starts_with(sip_type, "bucket.")) {
+      p = new SITypeHandlerProvider_Default<siprovider_bucket_entry_info>();
+  }
+  std::shared_ptr<SIProvider::TypeHandlerProvider> result(p);
+  return result;
+}
+
+int find_sip_provider(std::optional<string> opt_sip,
+                      std::optional<string> opt_sip_instance,
+                      std::optional<rgw_zone_id> opt_zone_id,
+                      std::optional<SIPRESTMgr>& sip_rest_mgr,
+                      SIProviderRef *provider)
+{
+  if (!opt_sip) {
+    cerr << "ERROR: --sip not specified" << std::endl;
+    return -EINVAL;
+  }
+
+  if (opt_zone_id) {
+    sip_rest_mgr.emplace(store->ctx(), store->ctl()->remote, store->getRados()->get_cr_registry());
+    auto sip_type_handler = get_sip_type_handler(*opt_sip);
+    if (!sip_type_handler) {
+      cerr << "ERROR: unknown sip type: " << *opt_sip << std::endl;
+      return -EINVAL;
+    }
+    provider->reset(sip_rest_mgr->create(*opt_zone_id, *opt_sip, opt_sip_instance, 
+                                         sip_type_handler));
+  } else {
+    *provider = store->ctl()->si.mgr->find_sip(*opt_sip, opt_sip_instance);
+  }
+
+  if (!*provider) {
+    cerr << "ERROR: sync info provider not found" << std::endl;
+    return -ENOENT;
+  }
+
+  return 0;
+}
+
 int main(int argc, const char **argv)
 {
   vector<const char*> args;
@@ -3322,6 +3370,8 @@ int main(int argc, const char **argv)
   string sub_name;
   string event_id;
 
+  std::optional<rgw_zone_id> opt_zone_id;
+  std::optional<string> opt_zone_name;
   std::optional<string> opt_group_id;
   std::optional<string> opt_status;
   std::optional<string> opt_flow_type;
@@ -3676,6 +3726,9 @@ int main(int argc, const char **argv)
       api_name = val;
     } else if (ceph_argparse_witharg(args, i, &val, "--zone-id", (char*)NULL)) {
       zone_id = val;
+      opt_zone_id = val;
+    } else if (ceph_argparse_witharg(args, i, &val, "--zone-name", (char*)NULL)) {
+      opt_zone_name = val;
     } else if (ceph_argparse_witharg(args, i, &val, "--zone-new-name", (char*)NULL)) {
       zone_new_name = val;
     } else if (ceph_argparse_witharg(args, i, &val, "--endpoints", (char*)NULL)) {
@@ -5665,20 +5718,7 @@ int main(int argc, const char **argv)
     return 0;
   }
 
-#warning clean me
-#if 0
-  SIPRESTMgr sip_rest_mgr(store->ctx(), store->svc()->zone, store->getRados()->get_cr_registry());
-
-  auto si_mgr = store->ctl()->si.mgr;
-  for (auto& iter : store->svc()->zone->get_zone_conn_map()) {
-    auto& zid = iter.first;
-
-    auto remote_sip = sip_rest_mgr.create(zid, "meta.full", opt_sip_instance, 
-                                          std::make_shared<SITypeHandlerProvider_Default<siprovider_meta_info> >());
-    si_mgr->register_sip("remote:meta.full", std::make_shared<RGWSIPGen_Single>(remote_sip));
-  }
-#endif
-
+  resolve_zone_id_opt(opt_zone_name, opt_zone_id);
   resolve_zone_id_opt(opt_effective_zone_name, opt_effective_zone_id);
   resolve_zone_id_opt(opt_source_zone_name, opt_source_zone_id);
   resolve_zone_id_opt(opt_dest_zone_name, opt_dest_zone_id);
@@ -9553,15 +9593,17 @@ next:
  }
 
  if (opt_cmd == OPT::SI_PROVIDER_INFO) {
-   if (!opt_sip) {
-     cerr << "ERROR: --sip not specified" << std::endl;
-     return EINVAL;
-   }
+   std::optional<SIPRESTMgr> sip_rest_mgr;
+   SIProviderRef provider;
 
-   auto provider = store->ctl()->si.mgr->find_sip(*opt_sip, opt_sip_instance);
-   if (!provider) {
-     cerr << "ERROR: sync info provider not found" << std::endl;
-     return ENOENT;
+   int r = find_sip_provider(opt_sip,
+                             opt_sip_instance,
+                             opt_zone_id,
+                             sip_rest_mgr,
+                             &provider);
+   if (r < 0) {
+     cerr << "ERROR: find_sip_provider() returned error: " << cpp_strerror(-r) << std::endl;
+     return -r;
    }
 
    {
@@ -9572,20 +9614,23 @@ next:
  }
 
  if (opt_cmd == OPT::SI_PROVIDER_FETCH) {
-   if (!opt_sip) {
-     cerr << "ERROR: --sip not specified" << std::endl;
-     return EINVAL;
-   }
-   auto provider = store->ctl()->si.mgr->find_sip(*opt_sip, opt_sip_instance);
-   if (!provider) {
-     cerr << "ERROR: sync info provider not found" << std::endl;
-     return ENOENT;
+   std::optional<SIPRESTMgr> sip_rest_mgr;
+   SIProviderRef provider;
+
+   int r = find_sip_provider(opt_sip,
+                             opt_sip_instance,
+                             opt_zone_id,
+                             sip_rest_mgr,
+                             &provider);
+   if (r < 0) {
+     cerr << "ERROR: find_sip_provider() returned error: " << cpp_strerror(-r) << std::endl;
+     return -r;
    }
 
    auto stage_id = opt_stage_id.value_or(provider->get_first_stage());
 
    SIProvider::StageInfo stage_info;
-   int r = provider->get_stage_info(stage_id, &stage_info);
+   r = provider->get_stage_info(stage_id, &stage_info);
    if (r < 0) {
      cerr << "ERROR: could not get stage info for sid=" << stage_id << ": " << cpp_strerror(-r) << std::endl;
      return -r;
@@ -9642,18 +9687,21 @@ next:
  }
 
  if (opt_cmd == OPT::SI_PROVIDER_TRIM) {
-   if (!opt_sip) {
-     cerr << "ERROR: --sip not specified" << std::endl;
-     return EINVAL;
-   }
-   auto provider = store->ctl()->si.mgr->find_sip(*opt_sip, opt_sip_instance);
-   if (!provider) {
-     cerr << "ERROR: sync info provider not found" << std::endl;
-     return ENOENT;
+   std::optional<SIPRESTMgr> sip_rest_mgr;
+   SIProviderRef provider;
+
+   int r = find_sip_provider(opt_sip,
+                             opt_sip_instance,
+                             opt_zone_id,
+                             sip_rest_mgr,
+                             &provider);
+   if (r < 0) {
+     cerr << "ERROR: find_sip_provider() returned error: " << cpp_strerror(-r) << std::endl;
+     return -r;
    }
 
    auto stage_id = opt_stage_id.value_or(provider->get_first_stage());
-   int r = provider->trim(stage_id, shard_id, marker);
+   r = provider->trim(stage_id, shard_id, marker);
    if (r < 0) {
      cerr << "ERROR: failed to trim sync info provider: " << cpp_strerror(-r) << std::endl;
      return -r;
@@ -9661,14 +9709,17 @@ next:
  }
 
  if (opt_cmd == OPT::SI_PROVIDER_STATE) {
-   if (!opt_sip) {
-     cerr << "ERROR: --sip not specified" << std::endl;
-     return EINVAL;
-   }
-   auto provider = store->ctl()->si.mgr->find_sip(*opt_sip, opt_sip_instance);
-   if (!provider) {
-     cerr << "ERROR: sync info provider not found" << std::endl;
-     return ENOENT;
+   std::optional<SIPRESTMgr> sip_rest_mgr;
+   SIProviderRef provider;
+
+   int r = find_sip_provider(opt_sip,
+                             opt_sip_instance,
+                             opt_zone_id,
+                             sip_rest_mgr,
+                             &provider);
+   if (r < 0) {
+     cerr << "ERROR: find_sip_provider() returned error: " << cpp_strerror(-r) << std::endl;
+     return -r;
    }
 
    string marker;
@@ -9676,7 +9727,7 @@ next:
    auto stage_id = opt_stage_id.value_or(provider->get_first_stage());
 
    SIProvider::StageInfo stage_info;
-   int r = provider->get_stage_info(stage_id, &stage_info);
+   r = provider->get_stage_info(stage_id, &stage_info);
    if (r < 0) {
      cerr << "ERROR: could not get stage info for sid=" << stage_id << ": " << cpp_strerror(-r) << std::endl;
      return -r;
@@ -9716,23 +9767,25 @@ next:
        cerr << "ERROR: --marker not specified" << std::endl;
        return EINVAL;
      }
-
-     if (!opt_sip) {
-       cerr << "ERROR: --sip not specified" << std::endl;
-       return EINVAL;
-     }
    }
 
-   auto provider = store->ctl()->si.mgr->find_sip(*opt_sip, opt_sip_instance);
-   if (!provider) {
-     cerr << "ERROR: sync info provider not found" << std::endl;
-     return ENOENT;
+   std::optional<SIPRESTMgr> sip_rest_mgr;
+   SIProviderRef provider;
+
+   int r = find_sip_provider(opt_sip,
+                             opt_sip_instance,
+                             opt_zone_id,
+                             sip_rest_mgr,
+                             &provider);
+   if (r < 0) {
+     cerr << "ERROR: find_sip_provider() returned error: " << cpp_strerror(-r) << std::endl;
+     return -r;
    }
 
    auto stage_id = opt_stage_id.value_or(provider->get_first_stage());
 
    SIProvider::StageInfo stage_info;
-   int r = provider->get_stage_info(stage_id, &stage_info);
+   r = provider->get_stage_info(stage_id, &stage_info);
    if (r < 0) {
      cerr << "ERROR: could not get stage info for sid=" << stage_id << ": " << cpp_strerror(-r) << std::endl;
      return -r;
@@ -9782,21 +9835,23 @@ next:
      return EINVAL;
    }
 
-   if (!opt_sip) {
-     cerr << "ERROR: --sip not specified" << std::endl;
-     return EINVAL;
-   }
+   std::optional<SIPRESTMgr> sip_rest_mgr;
+   SIProviderRef provider;
 
-   auto provider = store->ctl()->si.mgr->find_sip(*opt_sip, opt_sip_instance);
-   if (!provider) {
-     cerr << "ERROR: sync info provider not found" << std::endl;
-     return ENOENT;
+   int r = find_sip_provider(opt_sip,
+                             opt_sip_instance,
+                             opt_zone_id,
+                             sip_rest_mgr,
+                             &provider);
+   if (r < 0) {
+     cerr << "ERROR: find_sip_provider() returned error: " << cpp_strerror(-r) << std::endl;
+     return -r;
    }
 
    auto stage_id = opt_stage_id.value_or(provider->get_first_stage());
 
    SIProvider::StageInfo stage_info;
-   int r = provider->get_stage_info(stage_id, &stage_info);
+   r = provider->get_stage_info(stage_id, &stage_info);
    if (r < 0) {
      cerr << "ERROR: could not get stage info for sid=" << stage_id << ": " << cpp_strerror(-r) << std::endl;
      return -r;
@@ -9842,21 +9897,24 @@ next:
  if (opt_cmd == OPT::SI_PROVIDER_MARKER_INFO_GET ||
      opt_cmd == OPT::SI_PROVIDER_MARKER_INFO_RM) {
    bool opt_get = (opt_cmd != OPT::SI_PROVIDER_MARKER_INFO_RM);
-   if (!opt_sip) {
-     cerr << "ERROR: --sip not specified" << std::endl;
-     return EINVAL;
-   }
 
-   auto provider = store->ctl()->si.mgr->find_sip(*opt_sip, opt_sip_instance);
-   if (!provider) {
-     cerr << "ERROR: sync info provider not found" << std::endl;
-     return ENOENT;
+   std::optional<SIPRESTMgr> sip_rest_mgr;
+   SIProviderRef provider;
+
+   int r = find_sip_provider(opt_sip,
+                             opt_sip_instance,
+                             opt_zone_id,
+                             sip_rest_mgr,
+                             &provider);
+   if (r < 0) {
+     cerr << "ERROR: find_sip_provider() returned error: " << cpp_strerror(-r) << std::endl;
+     return -r;
    }
 
    auto stage_id = opt_stage_id.value_or(provider->get_first_stage());
 
    SIProvider::StageInfo stage_info;
-   int r = provider->get_stage_info(stage_id, &stage_info);
+   r = provider->get_stage_info(stage_id, &stage_info);
    if (r < 0) {
      cerr << "ERROR: could not get stage info for sid=" << stage_id << ": " << cpp_strerror(-r) << std::endl;
      return -r;
