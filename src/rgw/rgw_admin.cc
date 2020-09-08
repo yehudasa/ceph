@@ -3085,7 +3085,7 @@ public:
     }
 
     return new SIProvider_REST_SingleType(cct, this,
-                                          c->data, &http_manager,
+                                          c->sip, &http_manager,
                                           remote_provider_name,
                                           instance,
                                           type_provider);
