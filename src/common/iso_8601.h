@@ -39,6 +39,10 @@ enum class iso_8601_format {
 std::string to_iso_8601(const ceph::real_time t,
 			const iso_8601_format f = iso_8601_format::YMDhmsn)
   noexcept;
+
+std::string to_iso_8601_no_separators(const ceph::real_time t,
+                                      const iso_8601_format f = iso_8601_format::YMDhmsn)
+  noexcept;
 }
 
 #endif

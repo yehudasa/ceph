@@ -296,6 +296,32 @@ void RGWIOProvider::assign_io(RGWIOIDProvider& io_id_provider, int io_type)
   }
 }
 
+
+void RGWHTTPClient::init()
+{
+  auto pos = url.find("://");
+  if (pos == string::npos) {
+    host = url;
+    return;
+  }
+
+  protocol = url.substr(0, pos);
+
+  pos += 3;
+
+  auto host_end_pos = url.find("/", pos);
+  if (host_end_pos == string::npos) {
+    host = url.substr(pos);
+    return;
+  }
+
+  host = url.substr(pos, host_end_pos - pos);
+  resource_prefix = url.substr(host_end_pos + 1);
+  if (resource_prefix.size() > 0 && resource_prefix[resource_prefix.size() - 1] != '/') {
+    resource_prefix.append("/");
+  }
+}
+
 /*
  * the following set of callbacks will be called either on RGWHTTPManager::process(),
  * or via the RGWHTTPManager async processing.

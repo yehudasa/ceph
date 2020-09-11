@@ -198,4 +198,54 @@ string to_iso_8601(const real_time t,
   out << '.' << setw(9) << nsec << 'Z';
   return out.str();
 }
+
+string to_iso_8601_no_separators(const real_time t,
+                                 const iso_8601_format f) noexcept {
+  ceph_assert(f >= iso_8601_format::Y &&
+	      f <= iso_8601_format::YMDhmsn);
+  stringstream out(std::ios_base::out);
+
+  auto sec = real_clock::to_time_t(t);
+  auto nsec = duration_cast<nanoseconds>(t.time_since_epoch() %
+					 seconds(1)).count();
+
+  struct tm bt;
+  gmtime_r(&sec, &bt);
+  out.fill('0');
+
+  out << 1900 + bt.tm_year;
+  if (f == iso_8601_format::Y) {
+    return out.str();
+  }
+
+  out << setw(2) << bt.tm_mon + 1;
+  if (f == iso_8601_format::YM) {
+    return out.str();
+  }
+
+  out << setw(2) << bt.tm_mday;
+  if (f == iso_8601_format::YMD) {
+    return out.str();
+  }
+
+  out << 'T' << setw(2) << bt.tm_hour;
+  if (f == iso_8601_format::YMDh) {
+    out << 'Z';
+    return out.str();
+  }
+
+  out << setw(2) << bt.tm_min;
+  if (f == iso_8601_format::YMDhm) {
+    out << 'Z';
+    return out.str();
+  }
+
+  out << setw(2) << bt.tm_sec;
+  if (f == iso_8601_format::YMDhms) {
+    out << 'Z';
+    return out.str();
+  }
+  out << '.' << setw(9) << nsec << 'Z';
+  return out.str();
+}
 }
