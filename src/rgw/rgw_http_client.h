@@ -49,11 +49,17 @@ protected:
   string method;
   string url;
 
+  string protocol;
+  string host;
+  string resource_prefix;
+
   size_t send_len{0};
 
   param_vec_t headers;
 
   long  req_timeout{0L};
+
+  void init();
 
   RGWHTTPManager *get_manager();
 
@@ -111,6 +117,7 @@ public:
       cct(cct),
       method(_method),
       url(_url) {
+    init();
   }
 
   void append_header(const string& name, const string& val) {
