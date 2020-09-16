@@ -233,7 +233,7 @@ void RGWHTTPSimpleRequest::get_out_headers(map<string, string> *pheaders)
   out_headers.clear();
 }
 
-static int sign_request(CephContext *cct, RGWAccessKey& key, RGWEnv& env, req_info& info)
+static int sign_request(CephContext *cct, RGWAccessKey& key, const string& region, RGWEnv& env, req_info& info)
 {
   /* don't sign if no key is provided */
   if (key.key.empty()) {
@@ -248,7 +248,7 @@ static int sign_request(CephContext *cct, RGWAccessKey& key, RGWEnv& env, req_in
 
   rgw::auth::s3::AWSSignerV4 signer(cct);
 
-  auto sigv4_data = signer.prepare(key.id, info, true);
+  auto sigv4_data = signer.prepare(key.id, region, info, true);
   auto sigv4_headers = sigv4_data.signature_factory(cct, key.key, sigv4_data);
 
   for (auto& entry : sigv4_headers) {
@@ -283,7 +283,7 @@ int RGWRESTSimpleRequest::forward_request(RGWAccessKey& key, req_info& info, siz
   if (content_md5) {
     new_env.set("HTTP_CONTENT_MD5", content_md5);
   }
-  int ret = sign_request(cct, key, new_env, new_info);
+  int ret = sign_request(cct, key, region, new_env, new_info);
   if (ret < 0) {
     ldout(cct, 0) << "ERROR: failed to sign request" << dendl;
     return ret;
@@ -440,8 +440,10 @@ static void add_grants_headers(map<int, string>& grants, RGWEnv& env, meta_map_t
   }
 }
 
-void RGWRESTGenerateHTTPHeaders::init(const string& _method, const string& host, const string& resource_prefix,
-                                      const string& _url, const string& resource, const param_vec_t& params)
+void RGWRESTGenerateHTTPHeaders::init(const string& _region,
+                                      const string& _method, const string& host,
+                                      const string& resource_prefix, const string& _url,
+                                      const string& resource, const param_vec_t& params)
 {
   string params_str;
   map<string, string>& args = new_info->args.get_params();
@@ -460,8 +462,11 @@ void RGWRESTGenerateHTTPHeaders::init(const string& _method, const string& host,
   new_env->set("HTTP_DATE", date_str.c_str());
   new_env->set("HTTP_HOST", host);
 
+  region = _region;
+
   method = _method;
   new_info->method = method.c_str();
+  new_info->host = host;
 
   new_info->script_uri = "/";
   new_info->script_uri.append(resource_prefix);
@@ -552,7 +557,7 @@ void RGWRESTGenerateHTTPHeaders::set_policy(RGWAccessControlPolicy& policy)
 
 int RGWRESTGenerateHTTPHeaders::sign(RGWAccessKey& key)
 {
-  int ret = sign_request(cct, key, *new_env, *new_info);
+  int ret = sign_request(cct, key, region, *new_env, *new_info);
   if (ret < 0) {
     ldout(cct, 0) << "ERROR: failed to sign request" << dendl;
     return ret;
@@ -586,7 +591,7 @@ void RGWRESTStreamS3PutObj::send_init(rgw::sal::RGWObject* obj)
     new_url.append("/");
 
   method = "PUT";
-  headers_gen.init(method, new_host, resource_prefix, new_url, resource, params);
+  headers_gen.init(region, method, new_host, resource_prefix, new_url, resource, params);
 
   url = headers_gen.get_url();
 }
@@ -746,7 +751,7 @@ int RGWRESTStreamRWRequest::do_send_prepare(RGWAccessKey *key, map<string, strin
 
   RGWRESTGenerateHTTPHeaders headers_gen(cct, &new_env, &new_info);
 
-  headers_gen.init(method, host, resource_prefix, new_url, new_resource, params);
+  headers_gen.init(region, method, host, resource_prefix, new_url, new_resource, params);
 
   headers_gen.set_http_attrs(extra_headers);
 
