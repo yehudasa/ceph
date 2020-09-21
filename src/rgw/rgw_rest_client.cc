@@ -283,6 +283,59 @@ static int sign_request(CephContext *cct, RGWAccessKey& key, const string& regio
   return 0;
 }
 
+static string extract_region_name(string&& s)
+{
+  if (s == "s3") {
+      return "us-east-1";
+  }
+  if (boost::algorithm::starts_with(s, "s3-")) {
+    return s.substr(3);
+  }
+  return std::move(s);
+}
+
+
+static std::optional<string> identify_region(CephContext *cct, const string& host)
+{
+  if (!boost::algorithm::ends_with(host, "amazonaws.com")) {
+    ldout(cct, 20) << "NOTICE: cannot identify region for connection to: " << host << dendl;
+    return std::nullopt;
+  }
+
+  vector<string> vec;
+
+  get_str_vec(host, ".", vec);
+
+  for (auto iter = vec.begin(); iter != vec.end(); ++iter) {
+    auto& s = *iter;
+    if (s == "s3") {
+      ++iter;
+      if (iter == vec.end()) {
+        ldout(cct, 0) << "WARNING: cannot identify region name from host name: " << host << dendl;
+        return std::nullopt;
+      }
+      auto& next = *iter;
+      if (next == "amazonaws") {
+        return "us-east-1";
+      }
+      return next;
+    } else if (boost::algorithm::starts_with(s, "s3-")) {
+      return extract_region_name(std::move(s));
+    }
+  }
+
+  return std::nullopt;
+}
+
+static string region_from_api_name(CephContext *cct, const string& host, std::optional<string> api_name)
+{
+  if (!api_name) {
+    api_name = identify_region(cct, host);
+  }
+#warning need to be period->api_name instead of rgw_zonegroup
+  return api_name.value_or(cct->_conf->rgw_zonegroup);
+}
+
 int RGWRESTSimpleRequest::forward_request(RGWAccessKey& key, req_info& info, size_t max_response, bufferlist *inbl, bufferlist *outbl)
 {
 
@@ -294,6 +347,8 @@ int RGWRESTSimpleRequest::forward_request(RGWAccessKey& key, req_info& info, siz
   new_info.rebuild_from(info);
 
   new_env.set("HTTP_DATE", date_str.c_str());
+
+  string region = region_from_api_name(cct, host, api_name);
 
   int ret = sign_request(cct, key, region, new_env, new_info);
   if (ret < 0) {
@@ -452,11 +507,13 @@ static void add_grants_headers(map<int, string>& grants, RGWEnv& env, meta_map_t
   }
 }
 
-void RGWRESTGenerateHTTPHeaders::init(const string& _region,
-                                      const string& _method, const string& host,
+void RGWRESTGenerateHTTPHeaders::init(const string& _method, const string& host,
                                       const string& resource_prefix, const string& _url,
-                                      const string& resource, const param_vec_t& params)
+                                      const string& resource, const param_vec_t& params,
+                                      std::optional<string> api_name)
 {
+  region = region_from_api_name(cct, host, api_name);
+
   string params_str;
   map<string, string>& args = new_info->args.get_params();
   do_get_params_str(params, args, params_str);
@@ -473,8 +530,6 @@ void RGWRESTGenerateHTTPHeaders::init(const string& _region,
 
   new_env->set("HTTP_DATE", date_str.c_str());
   new_env->set("HTTP_HOST", host);
-
-  region = _region;
 
   method = _method;
   new_info->method = method.c_str();
@@ -600,7 +655,7 @@ void RGWRESTStreamS3PutObj::send_init(rgw_obj& obj)
     new_url.append("/");
 
   method = "PUT";
-  headers_gen.init(region, method, new_host, resource_prefix, new_url, resource, params);
+  headers_gen.init(method, new_host, resource_prefix, new_url, resource, params, api_name);
 
   url = headers_gen.get_url();
 }
@@ -760,7 +815,7 @@ int RGWRESTStreamRWRequest::do_send_prepare(RGWAccessKey *key, map<string, strin
 
   RGWRESTGenerateHTTPHeaders headers_gen(cct, &new_env, &new_info);
 
-  headers_gen.init(region, method, host, resource_prefix, new_url, new_resource, params);
+  headers_gen.init(method, host, resource_prefix, new_url, new_resource, params, api_name);
 
   headers_gen.set_http_attrs(extra_headers);
 

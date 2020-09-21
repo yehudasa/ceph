@@ -210,7 +210,7 @@ int RGWSI_Zone::do_start()
     auto& z = ziter.second;
     zone_id_by_name[z.name] = id;
 
-   auto shared_zone = std::make_shared<RGWZone>(z);
+    auto shared_zone = std::make_shared<RGWZone>(z);
     zone_by_id[id] = shared_zone;
     data_provider_by_id[id] = std::static_pointer_cast<RGWDataProvider>(shared_zone);
   }
@@ -702,10 +702,10 @@ int RGWSI_Zone::init_zg_from_period(bool *initialized)
       }
     }
     const auto& endpoints = master->second.endpoints;
-    add_new_connection_to_map(zonegroup_conn_map, zg, new RGWRESTConn(cct, this, zg.get_id(), endpoints));
+    add_new_connection_to_map(zonegroup_conn_map, zg, new RGWRESTConn(cct, this, zg.get_id(), endpoints, zg.api_name));
     if (!current_period->get_master_zonegroup().empty() &&
         zg.get_id() == current_period->get_master_zonegroup()) {
-      rest_master_conn = new RGWRESTConn(cct, this, zg.get_id(), endpoints);
+      rest_master_conn = new RGWRESTConn(cct, this, zg.get_id(), endpoints, zg.api_name);
     }
   }
 
@@ -759,7 +759,7 @@ int RGWSI_Zone::init_zg_from_local(bool *creating_defaults)
       }
     }
     const auto& endpoints = master->second.endpoints;
-    rest_master_conn = new RGWRESTConn(cct, this, zonegroup->get_id(), endpoints);
+    rest_master_conn = new RGWRESTConn(cct, this, zonegroup->get_id(), endpoints, zonegroup->api_name);
   }
 
   return 0;
@@ -913,6 +913,19 @@ bool RGWSI_Zone::find_zone_id_by_name(const string& name, rgw_zone_id *id) {
     return false;
   }
   *id = i->second; 
+  return true;
+}
+
+bool RGWSI_Zone::find_zonegroup_by_zone(const rgw_zone_id& zid, std::shared_ptr<RGWZoneGroup> *zonegroup)
+{
+  auto& period_map = current_period->get_map();
+
+  auto iter = period_map.zonegroups_by_zone.find(zid);
+  if (iter == period_map.zonegroups_by_zone.end()) {
+    return false;
+  }
+
+  *zonegroup = iter->second;
   return true;
 }
 
