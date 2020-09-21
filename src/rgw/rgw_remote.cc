@@ -89,16 +89,23 @@ void RGWRemoteCtl::init_conn(const RGWDataProvider& z, bool need_notify)
     return;
   }
 
+  std::optional<string> api_name;
+  std::shared_ptr<RGWZoneGroup> zonegroup;
+
+  if (svc.zone->find_zonegroup_by_zone(z.id, &zonegroup)) {
+    api_name = zonegroup->api_name;
+  }
+
   auto& conns = conns_map[id];
   ldout(cct, 20) << "generating connection object for zone " << z.name << " id " << z.id << dendl;
   if (z.data_access_conf) {
-    conns.data = add_conn(create_conn(z.name, z.id, *def_endpoints, *z.data_access_conf));
+    conns.data = add_conn(create_conn(z.name, z.id, *def_endpoints, *z.data_access_conf, api_name));
   } else {
-    conns.data = add_conn(new RGWRESTConn(cct, svc.zone, z.id, z.endpoints));
+    conns.data = add_conn(new RGWRESTConn(cct, svc.zone, z.id, z.endpoints, api_name));
   }
 
   if (z.sip_conf) {
-    conns.sip = add_conn(create_conn(z.name, z.id, *def_endpoints, z.sip_conf->rest_conf));
+    conns.sip = add_conn(create_conn(z.name, z.id, *def_endpoints, z.sip_conf->rest_conf, api_name));
   } else {
     conns.sip = conns.data;
   }
@@ -153,10 +160,13 @@ std::optional<RGWRemoteCtl::Conns> RGWRemoteCtl::zone_conns(const string& name)
 RGWRESTConn *RGWRemoteCtl::create_conn(const string& zone_name,
                                        const rgw_zone_id& zone_id,
                                        const std::list<string>& def_endpoints,
-                                       const RGWDataProvider::RESTConfig& conf)
+                                       const RGWDataProvider::RESTConfig& conf,
+                                       std::optional<string> api_name)
 {
   auto endpoints = conf.endpoints.value_or(def_endpoints);
   RGWAccessKey access_key;
+
+  std::shared_ptr<RGWZoneGroup> zonegroup;
 
   if (!get_access_key(zone_name,
                       conf.uid,
@@ -169,14 +179,15 @@ RGWRESTConn *RGWRemoteCtl::create_conn(const string& zone_name,
   }
 
   ldout(cct, 20) << __func__ << "(): remote sip connection for zone=" << zone_name << ": using access_key=" <<  access_key.id << dendl;
-  return new RGWRESTConn(cct, svc.zone, zone_id.id, endpoints, access_key);
+  return new RGWRESTConn(cct, svc.zone, zone_id.id, endpoints, access_key, api_name);
 }
 
 RGWRESTConn *RGWRemoteCtl::create_conn(const string& remote_id,
                                        const list<string>& endpoints,
-                                       const RGWAccessKey& key)
+                                       const RGWAccessKey& key,
+                                       std::optional<string> api_name)
 {
-  return new RGWRESTConn(cct, svc.zone, remote_id, endpoints, key);
+  return new RGWRESTConn(cct, svc.zone, remote_id, endpoints, key, api_name);
 }
 
 bool RGWRemoteCtl::get_redirect_zone_endpoint(string *endpoint)
