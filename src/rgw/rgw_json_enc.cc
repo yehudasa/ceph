@@ -1534,6 +1534,7 @@ void RGWZoneGroup::decode_json(JSONObj *obj)
   for (auto& fz : fz_vec) {
     foreign_zones.emplace(fz.id, std::move(fz));
   }
+  init_combined_zones();
 }
 
 
