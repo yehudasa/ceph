@@ -3863,6 +3863,7 @@ RGWRemoteBucketManager::RGWRemoteBucketManager(const DoutPrefixProvider *_dpp,
                                                RGWDataSyncEnv *_sync_env,
                                                const rgw_zone_id& _source_zone,
                                                const RGWRemoteCtl::Conns& _conns,
+                                               const RGWBucketSyncFlowManager::pipe_handler& handler,
                                                const RGWBucketInfo& source_bucket_info,
                                                const rgw_bucket& dest_bucket) : dpp(_dpp), sync_env(_sync_env), conns(_conns)
 {
@@ -3880,6 +3881,7 @@ RGWRemoteBucketManager::RGWRemoteBucketManager(const DoutPrefixProvider *_dpp,
 
     sync_pair.source_bs.bucket = source_bucket_info.bucket;
     sync_pair.dest_bs.bucket = dest_bucket;
+    sync_pair.handler = handler;
 
     sync_pair.source_bs.shard_id = (source_bucket_info.layout.current_index.layout.normal.num_shards > 0 ? cur_shard : -1);
 
@@ -5996,6 +5998,7 @@ int RGWBucketPipeSyncStatusManager::init()
 
     source_mgrs.push_back(new RGWRemoteBucketManager(this, &sync_env,
                                                      szone, conns,
+                                                     pipe.handler,
                                                      pipe.source.get_bucket_info(),
                                                      pipe.target.get_bucket()));
   }
@@ -6074,7 +6077,7 @@ unsigned RGWBucketPipeSyncStatusManager::get_subsys() const
 
 std::ostream& RGWBucketPipeSyncStatusManager::gen_prefix(std::ostream& out) const
 {
-  auto zone = std::string_view{source_zone.value_or(rgw_zone_id("*")).id};
+  auto zone = source_zone.value_or(rgw_zone_id("*")).id;
   return out << "bucket sync zone:" << zone.substr(0, 8)
     << " bucket:" << dest_bucket << ' ';
 }
