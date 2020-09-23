@@ -854,6 +854,8 @@ struct RGWZoneGroup : public RGWSystemMetaObj {
 
   map<rgw_zone_id, RGWForeignZone> foreign_zones;
 
+  map<rgw_zone_id, string> combined_zones; /* id -> name of rgw zones, foreign zones */
+
   map<std::string, RGWZoneGroupPlacementTarget> placement_targets;
   rgw_placement_rule default_placement;
 
@@ -942,8 +944,11 @@ struct RGWZoneGroup : public RGWSystemMetaObj {
     if (struct_v >= 6) {
       decode(foreign_zones, bl);
     }
+    init_combined_zones();
     DECODE_FINISH(bl);
   }
+
+  void init_combined_zones();
 
   int read_default_id(std::string& default_id, optional_yield y, bool old_format = false) override;
   int set_as_default(optional_yield y, bool exclusive = false) override;
