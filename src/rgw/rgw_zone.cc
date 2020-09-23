@@ -158,6 +158,16 @@ int RGWZoneGroup::create_default(bool old_format)
   return 0;
 }
 
+void RGWZoneGroup::init_combined_zones()
+{
+  for (auto& entry : zones) {
+    combined_zones.emplace(entry.first, entry.second.name);
+  }
+  for (auto& entry : foreign_zones) {
+    combined_zones.emplace(entry.first, entry.second.name);
+  }
+}
+
 const string RGWZoneGroup::get_default_oid(bool old_region_format) const
 {
   if (old_region_format) {
