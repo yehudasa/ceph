@@ -665,6 +665,7 @@ public:
                      RGWDataSyncEnv *_sync_env,
                      const rgw_zone_id& _source_zone,
                      const RGWRemoteCtl::Conns& _conns,
+                     const RGWBucketSyncFlowManager::pipe_handler& _handler,
                      const RGWBucketInfo& source_bucket_info,
                      const rgw_bucket& dest_bucket);
   ~RGWRemoteBucketManager();
