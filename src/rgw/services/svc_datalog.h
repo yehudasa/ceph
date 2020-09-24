@@ -39,6 +39,7 @@ public:
   virtual void set_observer(rgw::BucketChangeObserver *observer) = 0;
 
   virtual int get_log_shard_id(rgw_bucket& bucket, int shard_id) = 0;
+  virtual int calc_shard_id(rgw_bucket& bucket, int shard_id, int num_datalog_shards) = 0;
 
   virtual int get_info(int shard_id, RGWDataChangesLogInfo *info) = 0;
 

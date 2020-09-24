@@ -41,6 +41,11 @@ void RGWSI_DataLog_RADOS::set_observer(rgw::BucketChangeObserver *observer)
   log->set_observer(observer);
 }
 
+int RGWSI_DataLog_RADOS::calc_shard_id(rgw_bucket& bucket, int shard_id, int num_datalog_shards)
+{
+  return log->calc_shard(rgw_bucket_shard{bucket, shard_id}, num_datalog_shards);
+}
+
 int RGWSI_DataLog_RADOS::get_log_shard_id(rgw_bucket& bucket, int shard_id)
 {
   return log->get_log_shard_id(bucket, shard_id);
