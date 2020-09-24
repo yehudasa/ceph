@@ -255,6 +255,8 @@ public:
   // a marker that compares greater than any other
   std::string_view max_marker() const;
   std::string get_oid(int shard_id) const;
+
+  static int calc_shard(const rgw_bucket_shard& bs, int _num_shards);
 };
 
 #endif
