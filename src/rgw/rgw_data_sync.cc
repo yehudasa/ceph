@@ -5722,6 +5722,8 @@ public:
           return set_cr_error(retcode);
         }
       }
+
+      return set_cr_error(-EIO);
     }
 
     return 0;
