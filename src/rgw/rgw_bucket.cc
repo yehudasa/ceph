@@ -2154,12 +2154,16 @@ RGWDataChangesLog::RGWDataChangesLog(RGWSI_Zone *zone_svc, RGWSI_Cls *cls_svc)
   renew_thread->create("rgw_dt_lg_renew");
 }
 
-int RGWDataChangesLog::choose_oid(const rgw_bucket_shard& bs) {
+int RGWDataChangesLog::calc_shard(const rgw_bucket_shard& bs, int _num_shards) {
     const string& name = bs.bucket.name;
     int shard_shift = (bs.shard_id > 0 ? bs.shard_id : 0);
-    uint32_t r = (ceph_str_hash_linux(name.c_str(), name.size()) + shard_shift) % num_shards;
+    uint32_t r = (ceph_str_hash_linux(name.c_str(), name.size()) + shard_shift) % _num_shards;
 
     return (int)r;
+}
+
+int RGWDataChangesLog::choose_oid(const rgw_bucket_shard& bs) {
+    return calc_shard(bs, num_shards);
 }
 
 int RGWDataChangesLog::renew_entries()

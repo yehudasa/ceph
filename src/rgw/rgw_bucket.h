@@ -559,6 +559,7 @@ public:
   RGWDataChangesLog(RGWSI_Zone *zone_svc, RGWSI_Cls *cls_svc);
   ~RGWDataChangesLog();
 
+  int calc_shard(const rgw_bucket_shard& bs, int _num_shards);
   int choose_oid(const rgw_bucket_shard& bs);
   const std::string& get_oid(int shard_id) const { return oids[shard_id]; }
   int add_entry(const RGWBucketInfo& bucket_info, int shard_id);

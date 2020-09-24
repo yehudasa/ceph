@@ -54,6 +54,7 @@ public:
   void set_observer(rgw::BucketChangeObserver *observer) override;
 
   int get_log_shard_id(rgw_bucket& bucket, int shard_id) override;
+  int calc_shard_id(rgw_bucket& bucket, int shard_id, int num_datalog_shards) override;
   const std::string& get_oid(int shard_id) const;
 
   int get_info(int shard_id, RGWDataChangesLogInfo *info) override;
