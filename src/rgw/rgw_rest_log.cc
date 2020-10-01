@@ -888,7 +888,7 @@ void RGWOp_BILog_Status::execute()
 
     ldout(s->cct, 20) << "RGWOp_BILog_Status::execute(): getting sync status for pipe=" << pipe << dendl;
 
-    http_ret = rgw_bucket_sync_status(this, store, pipe, info, nullptr, &status);
+    http_ret = rgw_bucket_sync_status(this, store, pipe, info, &status, nullptr);
 
     if (http_ret < 0) {
       lderr(s->cct) << "ERROR: rgw_bucket_sync_status() on pipe=" << pipe << " returned ret=" << http_ret << dendl;
@@ -941,7 +941,7 @@ void RGWOp_BILog_Status::execute()
       pipe.dest.bucket = pinfo->bucket;
     }
 
-    int r = rgw_bucket_sync_status(this, store, pipe, *pinfo, &info, &current_status);
+    int r = rgw_bucket_sync_status(this, store, pipe, *pinfo, &current_status, nullptr);
     if (r < 0) {
       lderr(s->cct) << "ERROR: rgw_bucket_sync_status() on pipe=" << pipe << " returned ret=" << r << dendl;
       http_ret = r;

@@ -2284,41 +2284,17 @@ std::ostream& operator<<(std::ostream& out, const indented& h) {
   return out << std::setw(h.w) << h.header << std::setw(1) << ' ';
 }
 
-static int remote_bilog_markers(rgw::sal::RGWRadosStore *store, const RGWZone& source,
-                                RGWRESTConn *conn, const RGWBucketInfo& info,
-                                BucketIndexShardsManager *markers)
-{
-  const auto instance_key = info.bucket.get_key();
-  const rgw_http_param_pair params[] = {
-    { "type" , "bucket-index" },
-    { "bucket-instance", instance_key.c_str() },
-    { "info" , nullptr },
-    { nullptr, nullptr }
-  };
-  rgw_bilog_marker_info result;
-  int r = conn->get_json_resource("/admin/log/", params, result);
-  if (r < 0) {
-    lderr(store->ctx()) << "failed to fetch remote log markers: " << cpp_strerror(r) << dendl;
-    return r;
-  }
-  r = markers->from_string(result.max_marker, -1);
-  if (r < 0) {
-    lderr(store->ctx()) << "failed to decode remote log markers" << dendl;
-    return r;
-  }
-  return 0;
-}
-
 static int bucket_source_sync_status(rgw::sal::RGWRadosStore *store, const RGWZone& zone,
-                                     const RGWZone& source, RGWRESTConn *conn,
+                                     const rgw_zone_id& source_zone_id,
+                                     const string& source_zone_name,
                                      const RGWBucketInfo& bucket_info,
                                      rgw_sync_bucket_pipe pipe,
                                      int width, std::ostream& out)
 {
-  out << indented{width, "source zone"} << source.id << " (" << source.name << ")" << std::endl;
+  out << indented{width, "source zone"} << source_zone_id << " (" << source_zone_name << ")" << std::endl;
 
   // syncing from this zone?
-  if (!zone.syncs_from(source.name)) {
+  if (!zone.syncs_from(source_zone_name)) {
     out << indented{width} << "does not sync from zone\n";
     return 0;
   }
@@ -2333,20 +2309,25 @@ static int bucket_source_sync_status(rgw::sal::RGWRadosStore *store, const RGWZo
   int r = init_bucket(*pipe.source.bucket, source_bucket_info, source_bucket);
   if (r < 0) {
     lderr(store->ctx()) << "failed to read source bucket info: " << cpp_strerror(r) << dendl;
-    return r;
+
+    /* source bucket info might not exist because it's a foreign zone */
+    if (r != -ENOENT) {
+      return r;
+    }
   }
 
   pipe.source.bucket = source_bucket;
   pipe.dest.bucket = bucket_info.bucket;
 
   std::vector<rgw_bucket_shard_sync_info> status;
-  r = rgw_bucket_sync_status(dpp(), store, pipe, bucket_info, &source_bucket_info, &status);
+  std::vector<rgw_bucket_index_marker_info> remote_markers;
+  r = rgw_bucket_sync_status(dpp(), store, pipe, bucket_info, &status, &remote_markers);
   if (r < 0) {
     lderr(store->ctx()) << "failed to read bucket sync status: " << cpp_strerror(r) << dendl;
     return r;
   }
 
-  out << indented{width, "source bucket"} << source_bucket_info.bucket.get_key() << std::endl;
+  out << indented{width, "source bucket"} << source_bucket.get_key() << std::endl;
 
   int num_full = 0;
   int num_inc = 0;
@@ -2370,22 +2351,16 @@ static int bucket_source_sync_status(rgw::sal::RGWRadosStore *store, const RGWZo
   }
   out << indented{width} << "incremental sync: " << num_inc << "/" << total_shards << " shards\n";
 
-  BucketIndexShardsManager remote_markers;
-  r = remote_bilog_markers(store, source, conn, source_bucket_info, &remote_markers);
-  if (r < 0) {
-    lderr(store->ctx()) << "failed to read remote log: " << cpp_strerror(r) << dendl;
-    return r;
-  }
-
   std::set<int> shards_behind;
-  for (auto& r : remote_markers.get()) {
-    auto shard_id = r.first;
+  int i = 0;
+  for (auto& r : remote_markers) {
+    int shard_id = i++;
     auto& m = status[shard_id];
-    if (r.second.empty()) {
+    if (r.pos.empty()) {
       continue; // empty bucket index shard
     }
     auto pos = BucketIndexShardsManager::get_shard_marker(m.inc_marker->position);
-    if (m.state != BucketSyncState::StateIncrementalSync || pos != r.second) {
+    if (m.state != BucketSyncState::StateIncrementalSync || pos != r.pos) {
       shards_behind.insert(shard_id);
     }
   }
@@ -2643,31 +2618,27 @@ static int bucket_sync_status(rgw::sal::RGWRadosStore *store, const RGWBucketInf
   set<rgw_zone_id> zone_ids;
 
   if (!source_zone_id.empty()) {
-    auto z = zonegroup.zones.find(source_zone_id);
-    if (z == zonegroup.zones.end()) {
+    auto z = zonegroup.combined_zones.find(source_zone_id);
+    if (z == zonegroup.combined_zones.end()) {
       lderr(store->ctx()) << "Source zone not found in zonegroup "
           << zonegroup.get_name() << dendl;
       return -EINVAL;
     }
     auto c = store->ctl()->remote->zone_conns(source_zone_id);
     if (!c) {
-      lderr(store->ctx()) << "No connection to zone " << z->second.name << dendl;
+      lderr(store->ctx()) << "No connection to zone " << z->second << dendl;
       return -EINVAL;
     }
     zone_ids.insert(source_zone_id);
   } else {
-    for (const auto& entry : zonegroup.zones) {
-      zone_ids.insert(entry.second.id);
+    for (const auto& entry : zonegroup.combined_zones) {
+      zone_ids.insert(entry.first);
     }
   }
 
   for (auto& zone_id : zone_ids) {
-    auto z = zonegroup.zones.find(zone_id.id);
-    if (z == zonegroup.zones.end()) { /* should't happen */
-      continue;
-    }
-    auto c = store->ctl()->remote->zone_conns(zone_id.id);
-    if (!c) {
+    auto z = zonegroup.combined_zones.find(zone_id.id);
+    if (z == zonegroup.combined_zones.end()) { /* should't happen */
       continue;
     }
 
@@ -2677,9 +2648,9 @@ static int bucket_sync_status(rgw::sal::RGWRadosStore *store, const RGWBucketInf
 	  pipe.source.bucket != opt_source_bucket) {
 	continue;
       }
-      if (pipe.source.zone.value_or(rgw_zone_id()) == z->second.id) {
-	bucket_source_sync_status(store, zone, z->second,
-				  c->data,
+      if (pipe.source.zone.value_or(rgw_zone_id()) == z->first) {
+	bucket_source_sync_status(store, zone,
+                                  z->first, z->second,
 				  info, pipe,
 				  width, out);
       }
