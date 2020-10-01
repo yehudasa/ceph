@@ -858,7 +858,7 @@ void RGWOp_BILog_Status::execute(optional_yield y)
 
     ldout(s->cct, 20) << "RGWOp_BILog_Status::execute(optional_yield y): getting sync status for pipe=" << pipe << dendl;
 
-    op_ret = rgw_bucket_sync_status(this, static_cast<rgw::sal::RGWRadosStore*>(store), pipe, bucket->get_info(), nullptr, &status);
+    op_ret = rgw_bucket_sync_status(this, static_cast<rgw::sal::RGWRadosStore*>(store), pipe, bucket->get_info(), &status, nullptr);
 
     if (op_ret < 0) {
       lderr(s->cct) << "ERROR: rgw_bucket_sync_status() on pipe=" << pipe << " returned ret=" << op_ret << dendl;
@@ -907,7 +907,7 @@ void RGWOp_BILog_Status::execute(optional_yield y)
       pipe.dest.bucket = pinfo->bucket;
     }
 
-    int r = rgw_bucket_sync_status(this, static_cast<rgw::sal::RGWRadosStore*>(store), pipe, *pinfo, &bucket->get_info(), &current_status);
+    int r = rgw_bucket_sync_status(this, static_cast<rgw::sal::RGWRadosStore*>(store), pipe, *pinfo, &current_status, nullptr);
     if (r < 0) {
       lderr(s->cct) << "ERROR: rgw_bucket_sync_status() on pipe=" << pipe << " returned ret=" << r << dendl;
       op_ret = r;
