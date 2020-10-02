@@ -1823,6 +1823,8 @@ class RGWRunBucketSourcesSyncCR : public RGWCoroutine {
   std::shared_ptr<RGWBucketShardSIPCRWrapperCore> wrapper_core_full;
   std::shared_ptr<RGWBucketShardSIPCRWrapperCore> wrapper_core_inc;
 
+  RGWBucketInfo bucket_info;
+
 public:
   RGWRunBucketSourcesSyncCR(RGWDataSyncCtx *_sc,
                             boost::intrusive_ptr<const RGWContinuousLeaseCR> lease_cr,
@@ -5508,9 +5510,52 @@ RGWRunBucketSourcesSyncCR::RGWRunBucketSourcesSyncCR(RGWDataSyncCtx *_sc,
   }
 }
 
+class RGWSyncGetBucketInfoCR : public RGWCoroutine {
+  RGWDataSyncEnv *sync_env;
+  rgw_bucket bucket;
+  RGWBucketInfo *pbucket_info;
+  map<string, bufferlist> *pattrs;
+  RGWMetaSyncEnv meta_sync_env;
+
+  RGWSyncTraceNodeRef tn;
+
+public:
+  RGWSyncGetBucketInfoCR(RGWDataSyncEnv *_sync_env,
+                         const rgw_bucket& _bucket,
+                         RGWBucketInfo *_pbucket_info,
+                         map<string, bufferlist> *_pattrs,
+                         const RGWSyncTraceNodeRef& _tn_parent)
+    : RGWCoroutine(_sync_env->cct),
+      sync_env(_sync_env),
+      bucket(_bucket),
+      pbucket_info(_pbucket_info),
+      pattrs(_pattrs),
+      tn(sync_env->sync_tracer->add_node(_tn_parent, "get_bucket_info",
+                                         SSTR(bucket))) {
+  }
+
+  int operate() override;
+};
+
 int RGWRunBucketSourcesSyncCR::operate()
 {
   reenter(this) {
+    if (source_bucket &&
+        source_bucket->bucket_id.empty()) {
+      /* source bucket id is empty, use latest bucket id if exists */
+
+      yield call(new RGWSyncGetBucketInfoCR(sync_env,
+                                            *source_bucket,
+                                            &bucket_info,
+                                            nullptr,
+                                            tn));
+      if (retcode < 0 &&
+          retcode != -ENOENT) {
+        return set_cr_error(retcode);
+      } else {
+        *source_bucket = bucket_info.bucket;
+      }
+    }
     yield call(new RGWGetBucketPeersCR(sync_env, target_bucket, sc->source_zone, source_bucket, &pipes, tn));
     if (retcode < 0 && retcode != -ENOENT) {
       tn->log(0, "ERROR: failed to read sync status for bucket");
@@ -5537,6 +5582,7 @@ int RGWRunBucketSourcesSyncCR::operate()
 
         sync_pair.handler = siter->handler;
 
+        handlers_repo = std::make_shared<RGWBucketShardSIPCRHandlersRepo>(sc, sync_pair.source_bs.bucket);
         wrapper_core_full = std::make_shared<RGWBucketShardSIPCRWrapperCore>(sc, sync_pair.source_bs.bucket, handlers_repo);
         wrapper_core_inc = std::make_shared<RGWBucketShardSIPCRWrapperCore>(sc, sync_pair.source_bs.bucket, handlers_repo);
 
@@ -5567,8 +5613,6 @@ int RGWRunBucketSourcesSyncCR::operate()
       }
 
       ldpp_dout(sync_env->dpp, 20) << __func__ << "(): num shards=" << num_shards << " cur_shard=" << cur_shard << dendl;
-
-      handlers_repo = std::make_shared<RGWBucketShardSIPCRHandlersRepo>(sc, sync_pair.source_bs.bucket);
 
       for (; num_shards > 0; --num_shards, ++cur_shard) {
         /*
@@ -5618,33 +5662,6 @@ int RGWRunBucketSourcesSyncCR::operate()
 
   return 0;
 }
-
-class RGWSyncGetBucketInfoCR : public RGWCoroutine {
-  RGWDataSyncEnv *sync_env;
-  rgw_bucket bucket;
-  RGWBucketInfo *pbucket_info;
-  map<string, bufferlist> *pattrs;
-  RGWMetaSyncEnv meta_sync_env;
-
-  RGWSyncTraceNodeRef tn;
-
-public:
-  RGWSyncGetBucketInfoCR(RGWDataSyncEnv *_sync_env,
-                         const rgw_bucket& _bucket,
-                         RGWBucketInfo *_pbucket_info,
-                         map<string, bufferlist> *_pattrs,
-                         const RGWSyncTraceNodeRef& _tn_parent)
-    : RGWCoroutine(_sync_env->cct),
-      sync_env(_sync_env),
-      bucket(_bucket),
-      pbucket_info(_pbucket_info),
-      pattrs(_pattrs),
-      tn(sync_env->sync_tracer->add_node(_tn_parent, "get_bucket_info",
-                                         SSTR(bucket))) {
-  }
-
-  int operate() override;
-};
 
 int RGWSyncGetBucketInfoCR::operate()
 {
