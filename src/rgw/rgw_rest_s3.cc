@@ -4760,9 +4760,11 @@ int RGWHandler_REST_S3::init(rgw::sal::RGWRadosStore *store, struct req_state *s
     s->src_object = store->get_object(key);
   }
 
-  const char *sc = s->info.env->get("HTTP_X_AMZ_STORAGE_CLASS");
-  if (sc) {
-    s->info.storage_class = sc;
+  if (store->ctx()->_conf->rgw_interpret_storage_class_header) {
+    const char *sc = s->info.env->get("HTTP_X_AMZ_STORAGE_CLASS");
+    if (sc) {
+      s->info.storage_class = sc;
+    }
   }
 
   return RGWHandler_REST::init(store, s, cio);

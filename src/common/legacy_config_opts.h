@@ -1336,6 +1336,7 @@ OPTION(rgw_opa_url, OPT_STR)  // url for OPA server
 OPTION(rgw_opa_token, OPT_STR)  // Bearer token OPA uses to authenticate client requests
 OPTION(rgw_opa_verify_ssl, OPT_BOOL) // should we try to verify OPA's ssl
 OPTION(rgw_use_opa_authz, OPT_BOOL) // should we use OPA to authorize client requests?
+OPTION(rgw_interpret_storage_class_header, OPT_BOOL) // should we interpret the x-amz-storage-class header?
 
 /* OpenLDAP-style LDAP parameter strings */
 /* rgw_ldap_uri  space-separated list of LDAP servers in URI format */

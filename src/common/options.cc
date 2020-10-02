@@ -7574,6 +7574,10 @@ std::vector<Option> get_rgw_options() {
     Option("rgw_auto_remove_old_shards", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(false)
     .set_description("automatically remove old shard after a bucket reshard"),
+
+    Option("rgw_interpret_storage_class_header", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    .set_default(false)
+    .set_description("interpret the x-amz-storage-class header"),
   });
 }
 
