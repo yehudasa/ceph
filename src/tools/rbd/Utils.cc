@@ -165,7 +165,7 @@ int extract_spec(const std::string &spec, std::string *pool_name,
   }
 
   if (name != nullptr) {
-    *name = *name + match[3];
+    *name = *name + match.str(3);
   }
 
   if (match[4].matched) {
