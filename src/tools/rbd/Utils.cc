@@ -147,18 +147,25 @@ int extract_spec(const std::string &spec, std::string *pool_name,
     }
   }
 
+
   if (match[2].matched) {
-    if (namespace_name != nullptr) {
-      *namespace_name = match[2];
+    if (!g_ceph_context->_conf.get_val<bool>("rbd_validate_namespace")) {
+      if (name != nullptr) {
+        *name = match[2];
+      }
     } else {
-      std::cerr << "rbd: namespace name specified for a command that doesn't "
-                << "use it" << std::endl;
-      return -EINVAL;
+      if (namespace_name != nullptr) {
+        *namespace_name = match[2];
+      } else {
+        std::cerr << "rbd: namespace name specified for a command that doesn't "
+                  << "use it" << std::endl;
+        return -EINVAL;
+      }
     }
   }
 
   if (name != nullptr) {
-    *name = match[3];
+    *name = *name + match[3];
   }
 
   if (match[4].matched) {
