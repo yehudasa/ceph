@@ -165,6 +165,9 @@ int extract_spec(const std::string &spec, std::string *pool_name,
   }
 
   if (name != nullptr) {
+    if (spec_validation == SPEC_VALIDATION_NONE) {
+      *name = *name + "/";
+    }
     *name = *name + match.str(3);
   }
 
