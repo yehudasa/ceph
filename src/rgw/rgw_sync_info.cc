@@ -98,20 +98,20 @@ int SIProvider_SingleStage::fetch(const stage_id_t& sid, int shard_id, std::stri
   return do_fetch(shard_id, marker, max, result);
 }
 
-int SIProvider_SingleStage::get_start_marker(const stage_id_t& sid, int shard_id, std::string *marker)
+int SIProvider_SingleStage::get_start_marker(const stage_id_t& sid, int shard_id, std::string *marker, ceph::real_time *timestamp)
 {
   if (sid != stage_info.sid) {
     return -ERANGE;
   }
-  return do_get_start_marker(shard_id, marker);
+  return do_get_start_marker(shard_id, marker, timestamp);
 }
 
-int SIProvider_SingleStage::get_cur_state(const stage_id_t& sid, int shard_id, std::string *marker)
+int SIProvider_SingleStage::get_cur_state(const stage_id_t& sid, int shard_id, std::string *marker, ceph::real_time *timestamp)
 {
   if (sid != stage_info.sid) {
     return -ERANGE;
   }
-  return do_get_cur_state(shard_id, marker);
+  return do_get_cur_state(shard_id, marker, timestamp);
 }
 
 int SIProvider_SingleStage::trim(const stage_id_t& sid, int shard_id, const std::string& marker)
@@ -290,7 +290,7 @@ int SIProvider_Container::fetch(const stage_id_t& sid, int shard_id, std::string
   return provider->fetch(psid, shard_id, marker, max, result);
 }
 
-int SIProvider_Container::get_start_marker(const stage_id_t& sid, int shard_id, std::string *marker)
+int SIProvider_Container::get_start_marker(const stage_id_t& sid, int shard_id, std::string *marker, ceph::real_time *timestamp)
 {
   SIProviderRef provider;
   stage_id_t psid;
@@ -300,10 +300,10 @@ int SIProvider_Container::get_start_marker(const stage_id_t& sid, int shard_id, 
     return -ENOENT;
   }
 
-  return provider->get_start_marker(psid, shard_id, marker);
+  return provider->get_start_marker(psid, shard_id, marker, timestamp);
 }
 
-int SIProvider_Container::get_cur_state(const stage_id_t& sid, int shard_id, std::string *marker)
+int SIProvider_Container::get_cur_state(const stage_id_t& sid, int shard_id, std::string *marker, ceph::real_time *timestamp)
 {
   SIProviderRef provider;
   stage_id_t psid;
@@ -313,7 +313,7 @@ int SIProvider_Container::get_cur_state(const stage_id_t& sid, int shard_id, std
     return -ENOENT;
   }
 
-  return provider->get_cur_state(psid, shard_id, marker);
+  return provider->get_cur_state(psid, shard_id, marker, timestamp);
 }
 
 SIProvider::TypeHandler *SIProvider_Container::TypeProvider::get_type_handler()
@@ -360,8 +360,9 @@ int SIProviderClient::init_markers()
     stage_markers.reserve(sinfo.num_shards);
     for (int i = 0; i < sinfo.num_shards; ++i) {
       std::string marker;
-      int r = (!all_history ? provider->get_cur_state(sid, i, &marker) : 
-                              provider->get_start_marker(sid, i, &marker));
+      ceph::real_time timestamp;
+      int r = (!all_history ? provider->get_cur_state(sid, i, &marker, &timestamp) : 
+                              provider->get_start_marker(sid, i, &marker, &timestamp));
       if (r < 0) {
         return r;
       }

@@ -17,6 +17,7 @@
 #include "rgw_orphan.h"
 #include "rgw_bucket_sync.h"
 #include "rgw_tools.h"
+#include "rgw_sync_info.h"
 
 #include "common/ceph_json.h"
 #include "common/Formatter.h"
@@ -2154,3 +2155,14 @@ void rgw_user::dump(Formatter *f) const
   ::encode_json("user", *this, f);
 }
 
+void rgw_sip_pos::dump(Formatter *f) const
+{
+  encode_json("marker", marker, f);
+  encode_json("timestamp", timestamp, f);
+}
+
+void rgw_sip_pos::decode_json(JSONObj *obj)
+{
+  JSONDecoder::decode_json("marker", marker, obj);
+  JSONDecoder::decode_json("timestamp", timestamp, obj);
+}

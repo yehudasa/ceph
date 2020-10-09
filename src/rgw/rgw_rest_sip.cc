@@ -72,13 +72,13 @@ void RGWOp_SIP_GetStageStatus::execute() {
     return;
   }
 
-  http_ret = sip->get_start_marker(sid, shard_id, &start_marker);
+  http_ret = sip->get_start_marker(sid, shard_id, &start_pos.marker, &start_pos.timestamp);
   if (http_ret < 0) {
     ldout(s->cct, 5) << "ERROR: sip->get_start_marker() returned error: ret=" << http_ret << dendl;
     return;
   }
 
-  http_ret = sip->get_cur_state(sid, shard_id, &cur_marker);
+  http_ret = sip->get_cur_state(sid, shard_id, &cur_pos.marker, &cur_pos.timestamp);
   if (http_ret < 0) {
     ldout(s->cct, 5) << "ERROR: sip->get_cur_state() returned error: ret=" << http_ret << dendl;
     return;
@@ -96,8 +96,8 @@ void RGWOp_SIP_GetStageStatus::send_response() {
   {
     Formatter::ObjectSection top_section(*s->formatter, "result");
     Formatter::ObjectSection markers_section(*s->formatter, "markers");
-    encode_json("start", start_marker, s->formatter);
-    encode_json("current", cur_marker, s->formatter);
+    encode_json("start", start_pos, s->formatter);
+    encode_json("current", cur_pos, s->formatter);
   }
   flusher.flush();
 }
