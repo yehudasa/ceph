@@ -4481,8 +4481,8 @@ public:
 
         e.mtime = be.mtime;
 
-#warning FIXME link olh, olh_dm
-        e.op = be.get_modify_op();
+        e.op = be.get_modify_op(); /* CLS_RGW_OP_ADD or CLS_RGW_OP_LINK_OLH or CLS_RGW_OP_LINK_OLH_DM,
+                                      depending on be */
         e.is_versioned = be.is_versioned();
         e.owner = { be.owner.id, be.owner.display_name };
 
