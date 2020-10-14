@@ -495,7 +495,7 @@ public:
 
   virtual int num_shards() const = 0;
 
-  virtual RGWCoroutine *init_cr() = 0;
+  virtual RGWCoroutine *init_cr(RGWSyncTraceNodeRef& tn) = 0;
 
   virtual RGWCoroutine *get_pos_cr(int shard_id, M *pos) = 0;
   virtual RGWCoroutine *fetch_cr(int shard_id,
@@ -679,25 +679,25 @@ int RGWRemoteDataLog::init(const rgw_zone_id& _source_zone, const RGWRemoteCtl::
     return 0;
   }
 
+  tn = sync_env.sync_tracer->add_node(sync_env.sync_tracer->root_node, "data");
+
   int ret = http_manager.start();
   if (ret < 0) {
     ldpp_dout(dpp, 0) << "failed in http_manager.start() ret=" << ret << dendl;
     return ret;
   }
 
-  ret = run(sc.dsi.full->init_cr());
+  ret = run(sc.dsi.full->init_cr(tn));
   if (ret < 0) {
     ldpp_dout(dpp, 0) << "failed to initialize datalog full sync handler: " << ret << dendl;
     return ret;
   }
 
-  ret = run(sc.dsi.inc->init_cr());
+  ret = run(sc.dsi.inc->init_cr(tn));
   if (ret < 0) {
     ldpp_dout(dpp, 0) << "failed to initialize datalog incrementa sync handler: " << ret << dendl;
     return ret;
   }
-
-  tn = sync_env.sync_tracer->add_node(sync_env.sync_tracer->root_node, "data");
 
   initialized = true;
 
@@ -915,7 +915,7 @@ public:
     return 1;
   }
 
-  RGWCoroutine *init_cr() override {
+  RGWCoroutine *init_cr(RGWSyncTraceNodeRef& tn) override {
     /* nothing to init */
     return nullptr;
   }
@@ -1105,7 +1105,7 @@ public:
     return -ENOTSUP;
   }
 
-  RGWCoroutine *init_cr() override {
+  RGWCoroutine *init_cr(RGWSyncTraceNodeRef& tn) override {
     return new InitCR(this, sc);
   }
 
@@ -1246,7 +1246,7 @@ public:
     return sip_name;
   }
 
-  RGWCoroutine *init_cr() override {
+  RGWCoroutine *init_cr(RGWSyncTraceNodeRef& tn) override {
     return new InitCR(this);
   }
 
@@ -2518,13 +2518,13 @@ public:
         return set_cr_error(retcode);
       }
 
-      yield call(sc->dsi.full->init_cr());
+      yield call(sc->dsi.full->init_cr(tn));
       if (retcode < 0) {
         tn->log(0, SSTR("ERROR: failed to init full sync dsi, retcode=" << retcode));
         return set_cr_error(retcode);
       }
 
-      yield call(sc->dsi.inc->init_cr());
+      yield call(sc->dsi.inc->init_cr(tn));
       if (retcode < 0) {
         tn->log(0, SSTR("ERROR: failed to init inc sync dsi, retcode=" << retcode));
         return set_cr_error(retcode);
@@ -3406,23 +3406,89 @@ public:
 };
 
 
-class RGWBucketFullSyncInfoCRHandler_Legacy : public RGWBucketPipeSyncInfoCRHandler {
+class RGWSyncGetBucketInfoCR : public RGWCoroutine {
+  RGWDataSyncEnv *sync_env;
+  rgw_bucket bucket;
+  RGWBucketInfo *pbucket_info;
+  map<string, bufferlist> *pattrs;
+  RGWMetaSyncEnv meta_sync_env;
+
+  RGWSyncTraceNodeRef tn;
+
+public:
+  RGWSyncGetBucketInfoCR(RGWDataSyncEnv *_sync_env,
+                         const rgw_bucket& _bucket,
+                         RGWBucketInfo *_pbucket_info,
+                         map<string, bufferlist> *_pattrs,
+                         const RGWSyncTraceNodeRef& _tn_parent)
+    : RGWCoroutine(_sync_env->cct),
+      sync_env(_sync_env),
+      bucket(_bucket),
+      pbucket_info(_pbucket_info),
+      pattrs(_pattrs),
+      tn(sync_env->sync_tracer->add_node(_tn_parent, "get_bucket_info",
+                                         SSTR(bucket))) {
+  }
+
+  int operate() override;
+};
+
+class RGWBucketPipeSyncInfoCRHandler_Legacy_Base : public RGWBucketPipeSyncInfoCRHandler {
+  friend class InitCR;
+
+  rgw_bucket source_bucket;
+  RGWBucketInfo source_bucket_info; /* legacy only supports buckets with bucket info,
+                                       and that's where we get num_shards from */
+  class InitCR : public RGWCoroutine {
+    RGWBucketPipeSyncInfoCRHandler_Legacy_Base *caller;
+    RGWDataSyncCtx *sc;
+    RGWSyncTraceNodeRef tn;
+
+  public:
+    InitCR(RGWBucketPipeSyncInfoCRHandler_Legacy_Base *_caller,
+           RGWDataSyncCtx *_sc,
+           RGWSyncTraceNodeRef& _tn) : RGWCoroutine(_sc->cct),
+                                       caller(_caller),
+                                       sc(_sc),
+                                       tn(_tn) {}
+
+    int operate() {
+      reenter(this) {
+        yield call(new RGWSyncGetBucketInfoCR(sc->env,
+                                              caller->source_bucket,
+                                              &caller->source_bucket_info,
+                                              nullptr,
+                                              tn));
+        if (retcode < 0) {
+          ldout(cct, 0) << "ERROR: RGWSyncGetBucketInfoCR: failed to get bucket info for bucket=" << caller->source_bucket <<": ret=" << retcode << dendl;
+          return set_cr_error(retcode);
+        }
+        return set_cr_done();
+      }
+      return 0;
+    }
+  };
+
+public:
+  RGWBucketPipeSyncInfoCRHandler_Legacy_Base(RGWDataSyncCtx *_sc, const rgw_bucket& _source_bucket) : RGWBucketPipeSyncInfoCRHandler(_sc),
+                                                                                                      source_bucket(_source_bucket) {}
+  RGWCoroutine *init_cr(RGWSyncTraceNodeRef& tn) override {
+    return new InitCR(this, sc, tn);
+  }
+
+  int num_shards() const override {
+    return source_bucket_info.layout.current_index.layout.normal.num_shards;
+  }
+};
+
+class RGWBucketFullSyncInfoCRHandler_Legacy : public RGWBucketPipeSyncInfoCRHandler_Legacy_Base {
   rgw_bucket source_bucket;
 public:
-  RGWBucketFullSyncInfoCRHandler_Legacy(RGWDataSyncCtx *_sc, const rgw_bucket& _source_bucket) : RGWBucketPipeSyncInfoCRHandler(_sc),
+  RGWBucketFullSyncInfoCRHandler_Legacy(RGWDataSyncCtx *_sc, const rgw_bucket& _source_bucket) : RGWBucketPipeSyncInfoCRHandler_Legacy_Base(_sc, _source_bucket),
                                                                                                  source_bucket(_source_bucket) {}
 
   string get_sip_name() const override {
     return "legacy/bucket.full";
-  }
-
-  RGWCoroutine *init_cr() override {
-    /* nothing to init */
-    return nullptr;
-  }
-
-  int num_shards() const override {
-#warning implement num_shards()
   }
 
   RGWCoroutine *get_pos_cr(int shard_id, rgw_bucket_index_marker_info *info) override {
@@ -3434,24 +3500,15 @@ public:
                          sip_bucket_fetch_result *result) override;
 };
 
-class RGWBucketIncSyncInfoCRHandler_Legacy : public RGWBucketPipeSyncInfoCRHandler {
+class RGWBucketIncSyncInfoCRHandler_Legacy : public RGWBucketPipeSyncInfoCRHandler_Legacy_Base {
   rgw_bucket source_bucket;
 public:
   RGWBucketIncSyncInfoCRHandler_Legacy(RGWDataSyncCtx *_sc,
-                                       const rgw_bucket& _source_bucket) : RGWBucketPipeSyncInfoCRHandler(_sc),
+                                       const rgw_bucket& _source_bucket) : RGWBucketPipeSyncInfoCRHandler_Legacy_Base(_sc, _source_bucket),
                                                                            source_bucket(_source_bucket) {}
 
   string get_sip_name() const override {
     return "legacy/bucket.inc";
-  }
-
-  RGWCoroutine *init_cr() override {
-    /* nothing to init */
-    return nullptr;
-  }
-
-  int num_shards() const override {
-#warning implement num_shards()
   }
 
   RGWCoroutine *get_pos_cr(int shard_id, rgw_bucket_index_marker_info *info) override {
@@ -3758,6 +3815,7 @@ class RGWBucketShardSIPCRWrapperCore
     RGWBucketShardSIPCRWrapperCore *caller;
     string sip_name;
     std::optional<string> fallback_sip;
+    RGWSyncTraceNodeRef tn;
 
     RGWGroupCallCR::State *group{nullptr};
 
@@ -3768,10 +3826,12 @@ class RGWBucketShardSIPCRWrapperCore
   public:
     InitCR(RGWBucketShardSIPCRWrapperCore *_caller,
            const string& _sip_name,
-           std::optional<string> _fallback_sip) : RGWCoroutine(_caller->sc->cct),
-                                                  caller(_caller),
-                                                  sip_name(_sip_name),
-                                                  fallback_sip(_fallback_sip) {}
+           std::optional<string> _fallback_sip,
+           RGWSyncTraceNodeRef& _tn) : RGWCoroutine(_caller->sc->cct),
+                                       caller(_caller),
+                                       sip_name(_sip_name),
+                                       fallback_sip(_fallback_sip),
+                                       tn(_tn) {}
 
     int operate() {
       reenter(this) {
@@ -3786,7 +3846,7 @@ class RGWBucketShardSIPCRWrapperCore
 
           if (!group->is_complete(&retcode)) {
             group->maybe_init([&]{
-              return caller->handler->init_cr();
+              return caller->handler->init_cr(tn);
             });
             yield call(new RGWGroupCallCR(cct,
                                           *group));
@@ -3819,8 +3879,9 @@ public:
                                                                                                     source_bucket(_source_bucket),
                                                                                                     handlers_repo(_handlers_repo) {}
 
-  RGWCoroutine *init_cr(const string& sip_name, std::optional<string> fallback_sip) {
-    return new InitCR(this, sip_name, fallback_sip);
+  RGWCoroutine *init_cr(const string& sip_name, std::optional<string> fallback_sip,
+                        RGWSyncTraceNodeRef& tn) {
+    return new InitCR(this, sip_name, fallback_sip, tn);
   }
 
   int num_shards() const {
@@ -3946,13 +4007,15 @@ int RGWRemoteBucketManager::init(RGWCoroutinesManager *cr_mgr)
   auto wrapper_core_full = std::make_shared<RGWBucketShardSIPCRWrapperCore>(&sc, source_bucket, handlers_repo);
   auto wrapper_core_inc = std::make_shared<RGWBucketShardSIPCRWrapperCore>(&sc, source_bucket, handlers_repo);
 
-  int ret = cr_mgr->run(wrapper_core_full->init_cr("bucket.full", "legacy/bucket.full"));
+  auto tn = sync_env->sync_tracer->add_node(sync_env->sync_tracer->root_node, "bucket_manager.init", SSTR(source_bucket));
+
+  int ret = cr_mgr->run(wrapper_core_full->init_cr("bucket.full", "legacy/bucket.full", tn));
   if (ret < 0) {
     ldpp_dout(dpp, 0) << "ERROR: " << __func__ << "(): failed to initialize SIP core for full bucket sync: ret=" << ret << dendl;
     return ret;
   }
 
-  ret = cr_mgr->run(wrapper_core_inc->init_cr("bucket.inc", "legacy/bucket.inc"));
+  ret = cr_mgr->run(wrapper_core_inc->init_cr("bucket.inc", "legacy/bucket.inc", tn));
   if (ret < 0) {
     ldpp_dout(dpp, 0) << "ERROR: " << __func__ << "(): failed to initialize SIP core for incremental bucket sync: ret=" << ret << dendl;
     return ret;
@@ -5557,33 +5620,6 @@ RGWRunBucketSourcesSyncCR::RGWRunBucketSourcesSyncCR(RGWDataSyncCtx *_sc,
   }
 }
 
-class RGWSyncGetBucketInfoCR : public RGWCoroutine {
-  RGWDataSyncEnv *sync_env;
-  rgw_bucket bucket;
-  RGWBucketInfo *pbucket_info;
-  map<string, bufferlist> *pattrs;
-  RGWMetaSyncEnv meta_sync_env;
-
-  RGWSyncTraceNodeRef tn;
-
-public:
-  RGWSyncGetBucketInfoCR(RGWDataSyncEnv *_sync_env,
-                         const rgw_bucket& _bucket,
-                         RGWBucketInfo *_pbucket_info,
-                         map<string, bufferlist> *_pattrs,
-                         const RGWSyncTraceNodeRef& _tn_parent)
-    : RGWCoroutine(_sync_env->cct),
-      sync_env(_sync_env),
-      bucket(_bucket),
-      pbucket_info(_pbucket_info),
-      pattrs(_pattrs),
-      tn(sync_env->sync_tracer->add_node(_tn_parent, "get_bucket_info",
-                                         SSTR(bucket))) {
-  }
-
-  int operate() override;
-};
-
 int RGWRunBucketSourcesSyncCR::operate()
 {
   reenter(this) {
@@ -5633,14 +5669,14 @@ int RGWRunBucketSourcesSyncCR::operate()
         wrapper_core_full = std::make_shared<RGWBucketShardSIPCRWrapperCore>(sc, sync_pair.source_bs.bucket, handlers_repo);
         wrapper_core_inc = std::make_shared<RGWBucketShardSIPCRWrapperCore>(sc, sync_pair.source_bs.bucket, handlers_repo);
 
-        yield call(wrapper_core_full->init_cr("bucket.full", "legacy/bucket.full"));
+        yield call(wrapper_core_full->init_cr("bucket.full", "legacy/bucket.full", tn));
         if (retcode < 0) {
           tn->log(0, SSTR("ERROR: failed to initialize sip for full bucket sync: " << retcode));
           drain_all();
           return set_cr_error(retcode);
         }
 
-        yield call(wrapper_core_inc->init_cr("bucket.inc", "legacy/bucket.inc"));
+        yield call(wrapper_core_inc->init_cr("bucket.inc", "legacy/bucket.inc", tn));
         if (retcode < 0) {
           tn->log(0, SSTR("ERROR: failed to initialize sip for incremental bucket sync: " << retcode));
           drain_all();
@@ -6378,7 +6414,9 @@ int rgw_bucket_sync_status(const DoutPrefixProvider *dpp,
   auto handlers_repo = std::make_shared<RGWBucketShardSIPCRHandlersRepo>(&sc, source_bucket);
   auto wrapper_core_inc = std::make_shared<RGWBucketShardSIPCRWrapperCore>(&sc, source_bucket, handlers_repo);
 
-  ret = crs.run(wrapper_core_inc->init_cr("bucket.inc", "legacy/bucket.inc"));
+  auto tn = env.sync_tracer->add_node(env.sync_tracer->root_node, "rgw_bucket_sync_status", SSTR(source_bucket));
+
+  ret = crs.run(wrapper_core_inc->init_cr("bucket.inc", "legacy/bucket.inc", tn));
   if (ret < 0) {
     ldpp_dout(dpp, 0) << "ERROR: " << __func__ << "(): failed to initialize SIP core for incremental bucket sync: ret=" << ret << dendl;
     return ret;
