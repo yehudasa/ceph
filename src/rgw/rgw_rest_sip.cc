@@ -157,6 +157,73 @@ void RGWOp_SIP_GetMarkerInfo::send_response() {
   flusher.flush();
 }
 
+void RGWOp_SIP_SetMarkerInfo::execute() {
+  auto opt_instance = s->info.args.get_std_optional("instance");
+
+  auto sip = store->ctl()->si.mgr->find_sip(provider, opt_instance);
+  if (!sip) {
+    ldout(s->cct, 5) << "ERROR: sync info provider not found" << dendl;
+    http_ret = -ENOENT;
+    return;
+  }
+
+  auto opt_stage_id = s->info.args.get_std_optional("stage-id");
+  if (!opt_stage_id) {
+    ldout(s->cct,  5) << "ERROR: missing 'stage-id' param" << dendl;
+    http_ret = -EINVAL;
+    return;
+  }
+  auto& sid = *opt_stage_id;
+
+  int shard_id;
+  http_ret = s->info.args.get_int("shard-id", &shard_id, 0);
+  if (http_ret < 0) {
+    ldout(s->cct, 5) << "ERROR: invalid 'shard-id' param: " << http_ret << dendl;
+    return;
+  }
+
+  auto opt_marker = s->info.args.get_std_optional("marker");
+  if (!opt_marker) {
+    ldout(s->cct,  5) << "ERROR: missing 'marker' param" << dendl;
+    http_ret = -EINVAL;
+    return;
+  }
+
+  auto opt_target_id = s->info.args.get_std_optional("target-id");
+  if (!opt_target_id) {
+    ldout(s->cct,  5) << "ERROR: missing 'target-id' param" << dendl;
+    http_ret = -EINVAL;
+    return;
+  }
+
+  auto marker_handler = store->svc()->sip_marker->get_handler(sip);
+  if (!marker_handler) {
+    ldout(s->cct, 0) << "ERROR: can't get sip marker handler" << dendl;
+    http_ret = -EIO;
+    return;
+  }
+
+  RGWSI_SIP_Marker::Handler::modify_result result;
+
+  bool init_flag;
+  s->info.args.get_bool("init", &init_flag, false);
+
+  http_ret = marker_handler->set_marker(*opt_target_id, sid, shard_id, *opt_marker, real_clock::now(), init_flag, &result);
+  if (http_ret < 0) {
+    ldout(s->cct, 0) << "ERROR: failed to set target marker info: " << cpp_strerror(-http_ret) << dendl;
+    return;
+  }
+}
+
+void RGWOp_SIP_SetMarkerInfo::send_response() {
+  set_req_state_err(s, http_ret);
+  dump_errno(s);
+  end_header(s);
+
+  if (http_ret < 0)
+    return;
+}
+
 void RGWOp_SIP_List::execute() {
   providers = store->ctl()->si.mgr->list_sip();
 }
@@ -293,6 +360,19 @@ RGWOp *RGWHandler_SIP::op_get() {
   }
 
   return new RGWOp_SIP_Fetch(std::move(*provider));
+}
+
+RGWOp *RGWHandler_SIP::op_put() {
+  auto provider = s->info.args.get_std_optional("provider");
+  if (!provider) {
+    return new RGWOp_SIP_List;
+  }
+
+  if (s->info.args.exists("marker-info")) {
+    return new RGWOp_SIP_SetMarkerInfo(std::move(*provider));
+  }
+
+  return nullptr;
 }
 
 RGWOp *RGWHandler_SIP::op_delete() {
