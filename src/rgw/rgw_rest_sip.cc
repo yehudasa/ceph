@@ -182,16 +182,24 @@ void RGWOp_SIP_SetMarkerInfo::execute() {
     return;
   }
 
-  auto opt_marker = s->info.args.get_std_optional("marker");
-  if (!opt_marker) {
-    ldout(s->cct,  5) << "ERROR: missing 'marker' param" << dendl;
+#define SET_PARAMS_INPUT_MAX_LEN (128 * 1024)
+
+  RGWSI_SIP_Marker::SetParams params;
+  bool empty;
+  http_ret = rgw_rest_get_json_input(store->ctx(), s, params, SET_PARAMS_INPUT_MAX_LEN, &empty);
+  if (http_ret < 0) {
+    ldout(s->cct,  5) << "ERROR: " << __func__ << "(): failed parsing input" << dendl;
+    return;
+  }
+
+  if (params.marker.empty()) {
+    ldout(s->cct,  5) << "ERROR: missing or empty marker field" << dendl;
     http_ret = -EINVAL;
     return;
   }
 
-  auto opt_target_id = s->info.args.get_std_optional("target-id");
-  if (!opt_target_id) {
-    ldout(s->cct,  5) << "ERROR: missing 'target-id' param" << dendl;
+  if (params.target_id.empty()) {
+    ldout(s->cct,  5) << "ERROR: missing or empty target_id field" << dendl;
     http_ret = -EINVAL;
     return;
   }
@@ -205,10 +213,7 @@ void RGWOp_SIP_SetMarkerInfo::execute() {
 
   RGWSI_SIP_Marker::Handler::modify_result result;
 
-  bool init_flag;
-  s->info.args.get_bool("init", &init_flag, false);
-
-  http_ret = marker_handler->set_marker(*opt_target_id, sid, shard_id, *opt_marker, real_clock::now(), init_flag, &result);
+  http_ret = marker_handler->set_marker(sid, shard_id, params, &result);
   if (http_ret < 0) {
     ldout(s->cct, 0) << "ERROR: failed to set target marker info: " << cpp_strerror(-http_ret) << dendl;
     return;
