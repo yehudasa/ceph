@@ -3611,6 +3611,11 @@ public:
     pos->syncstopped = stage.disabled;
     return sip->get_cur_state_cr(stage.sid, shard_id, &pos->pos);
   }
+
+  RGWCoroutine *update_marker_cr(int shard_id,
+                                 const RGWSI_SIP_Marker::SetParams& params) override {
+    return sip->update_marker_cr(sid, shard_id, params);
+  }
 };
 
 class RGWBucketSyncStatusCRHandler_Legacy : public RGWBucketPipeSyncStatusCRHandler {
@@ -3923,6 +3928,10 @@ public:
                          sip_bucket_fetch_result *result) {
     return handler->fetch_cr(shard_id, list_marker, result);
   }
+
+  RGWCoroutine *update_marker_cr(int shard_id, const RGWSI_SIP_Marker::SetParams& params) {
+    return handler->update_marker_cr(shard_id, params);
+  }
 };
 
 class RGWBucketShardSIPCRWrapper
@@ -3942,6 +3951,10 @@ public:
   RGWCoroutine *fetch_cr(const string& list_marker,
                          sip_bucket_fetch_result *result) {
     return wrapper_core->fetch_cr(shard_id, list_marker, result);
+  }
+
+  RGWCoroutine *update_marker_cr(const RGWSI_SIP_Marker::SetParams& params) {
+    return wrapper_core->update_marker_cr(shard_id, params);
   }
 };
 
@@ -4724,6 +4737,7 @@ class RGWBucketIncSyncShardMarkerTrack : public RGWSyncShardMarkerTrack<string, 
   }
 
 public:
+
   RGWBucketIncSyncShardMarkerTrack(RGWBucketSyncCtx *_bsc,
                          const rgw_bucket_shard_inc_sync_marker& _marker,
                          RGWSyncTraceNodeRef tn,
@@ -4931,6 +4945,11 @@ done:
       }
       if (sync_status < 0) {
         return set_cr_error(sync_status);
+      }
+      if (retcode < 0) {
+        tn->log(0, SSTR("ERROR: failed to update source with minimu marker: retcode=" << retcode));
+        /* not much to do about it now, assuming this is transient issue and will be fixed
+         * next time */
       }
       return set_cr_done();
     }
@@ -5206,6 +5225,7 @@ int RGWBucketShardFullSyncCR::operate()
     if (sync_status < 0) {
       return set_cr_error(sync_status);
     }
+
     return set_cr_done();
   }
   return 0;
@@ -5238,6 +5258,7 @@ class RGWBucketShardIncrementalSyncCR : public RGWCoroutine {
 
   RGWSyncTraceNodeRef tn;
   RGWBucketIncSyncShardMarkerTrack marker_tracker;
+  RGWBucketIncSyncShardMarkerTrack::marker_entry_type lowerbound_marker;
 
 public:
   RGWBucketShardIncrementalSyncCR(RGWBucketSyncCtx *_bsc,
@@ -5275,6 +5296,10 @@ public:
   }
 
   int operate() override;
+
+  string get_target_id() const {
+    return zone_id.id + ":" + target_location_key;
+  }
 };
 
 int RGWBucketShardIncrementalSyncCR::operate()
@@ -5462,6 +5487,19 @@ int RGWBucketShardIncrementalSyncCR::operate()
       }
       return 0;
     });
+
+    if (marker_tracker.get_lowerbound(&lowerbound_marker)) {
+      yield call(bsc->hsi.inc->update_marker_cr({ get_target_id(),
+                                                  lowerbound_marker.marker,
+                                                  lowerbound_marker.timestamp,
+                                                  false }));
+      if (retcode < 0) {
+        tn->log(0, SSTR("ERROR: failed to update source with minimu marker: retcode=" << retcode));
+        /* not much to do about it now, assuming this is transient issue and will be fixed
+         * next time */
+      }
+    }
+
     tn->unset_flag(RGW_SNS_FLAG_ACTIVE);
 
     if (syncstopped) {
