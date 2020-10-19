@@ -365,6 +365,9 @@ class RGWSyncShardMarkerTrack {
   map<uint64_t, marker_entry> finish_markers;
   uint64_t max_keys{0};
 
+  bool high_entry_exists{false};
+  marker_entry high_entry; /* highest pos flushed */
+
   int window_size;
   int updates_since_flush;
 
@@ -378,6 +381,8 @@ protected:
   virtual void handle_finish(const T& marker) { }
 
 public:
+  using marker_entry_type = marker_entry;
+
   RGWSyncShardMarkerTrack(int _window_size) : window_size(_window_size), updates_since_flush(0) {}
   virtual ~RGWSyncShardMarkerTrack() {
     if (order_cr) {
@@ -458,7 +463,8 @@ public:
 
     auto last = i;
     --i;
-    marker_entry& high_entry = i->second;
+    high_entry = i->second;
+    high_entry_exists = true;
     RGWCoroutine *cr = order(store_marker(high_entry.marker, high_entry.key, high_entry.pos, high_entry.timestamp));
     finish_markers.erase(finish_markers.begin(), last);
     return cr;
@@ -499,6 +505,13 @@ public:
     }
     order_cr->call_cr(cr);
     return nullptr; /* don't call it a second time */
+  }
+
+  bool get_lowerbound(marker_entry_type *he) {
+    if (high_entry_exists) {
+      *he = high_entry;
+    }
+    return high_entry_exists;
   }
 };
 
