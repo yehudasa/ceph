@@ -346,6 +346,10 @@ int RGWRESTSimpleRequest::forward_request(RGWAccessKey& key, req_info& info, siz
   req_info new_info(cct, &new_env);
   new_info.rebuild_from(info);
 
+  for (auto& param : params) {
+    new_info.args.append(param.first, param.second);
+  }
+
   new_env.set("HTTP_DATE", date_str.c_str());
 
   string region = region_from_api_name(cct, host, api_name);

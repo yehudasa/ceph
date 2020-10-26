@@ -573,6 +573,9 @@ static void add_v4_canonical_params_from_map(const map<string, string>& m,
 {
   for (auto& entry : m) {
     const auto& key = entry.first;
+    if (key.empty()) {
+      continue;
+    }
     const string *pval = &(entry.second);
     string _val;
 
@@ -592,6 +595,10 @@ std::string gen_v4_canonical_qs(const req_info& info)
 
   add_v4_canonical_params_from_map(info.args.get_params(), &canonical_qs_map);
   add_v4_canonical_params_from_map(info.args.get_sys_params(), &canonical_qs_map);
+
+  if (canonical_qs_map.empty()) {
+    return string();
+  }
 
   /* Thanks to the early exist we have the guarantee that canonical_qs_map has
    * at least one element. */
