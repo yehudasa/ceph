@@ -331,6 +331,11 @@ int RGWRESTSimpleRequest::forward_request(RGWAccessKey& key, req_info& info, siz
   else
     request_uri_encode = string("/") + bucket_encode;
   new_info.request_uri = request_uri_encode;
+
+  for (auto& param : params) {
+    new_info.args.append(param.first, param.second);
+  }
+
   new_env.set("HTTP_DATE", date_str.c_str());
   const char* const content_md5 = info.env->get("HTTP_CONTENT_MD5");
   if (content_md5) {
