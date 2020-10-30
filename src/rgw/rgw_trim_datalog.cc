@@ -5,14 +5,17 @@
 #include <string>
 
 #include "rgw_trim_datalog.h"
+#include "rgw_trim_tools.h"
 #include "rgw_cr_rados.h"
 #include "rgw_cr_rest.h"
 #include "rgw_data_sync.h"
 #include "rgw_zone.h"
 #include "rgw_bucket.h"
+#include "rgw_remote.h"
 
 #include "services/svc_zone.h"
 #include "services/svc_datalog_rados.h"
+#include "services/svc_sip_marker.h"
 
 #include <boost/asio/yield.hpp>
 
@@ -51,6 +54,8 @@ void take_min_markers(IterIn first, IterIn last, IterOut dest)
 
 } // anonymous namespace
 
+
+
 class DataLogTrimCR : public RGWCoroutine {
   using TrimCR = RGWSyncLogTrimCR;
   rgw::sal::RGWRadosStore *store;
@@ -62,16 +67,20 @@ class DataLogTrimCR : public RGWCoroutine {
   std::vector<std::string>& last_trim; //< last trimmed marker per shard
   int ret{0};
 
+  int i;
+
+  std::set<string> sip_targets;
+
  public:
   DataLogTrimCR(rgw::sal::RGWRadosStore *store, RGWHTTPManager *http,
                    int num_shards, std::vector<std::string>& last_trim)
     : RGWCoroutine(store->ctx()), store(store), http(http),
       num_shards(num_shards),
       zone_id(store->svc()->zone->get_zone().id),
-      peer_status(store->ctl()->remote->get_zone_data_notify_to_map().size()),
       min_shard_markers(num_shards, TrimCR::max_marker),
       last_trim(last_trim)
-  {}
+  {
+  }
 
   int operate() override;
 };
@@ -81,6 +90,17 @@ int DataLogTrimCR::operate()
   reenter(this) {
     ldout(cct, 10) << "fetching sync status for zone " << zone_id << dendl;
     set_status("fetching sync status");
+
+    yield call(RGWTrimTools::get_sip_targets_info_cr(store,
+                                            "data.inc",
+                                            nullopt,
+                                            &min_shard_markers,
+                                            &sip_targets));
+    if (retcode < 0) {
+      ldout(cct, 0) << "ERROR: failed to get sip targets info: ret=" << retcode << dendl;
+      return set_cr_error(retcode);
+    }
+
     yield {
       // query data sync status from each sync peer
       rgw_http_param_pair params[] = {
@@ -90,13 +110,23 @@ int DataLogTrimCR::operate()
         { nullptr, nullptr }
       };
 
-      auto p = peer_status.begin();
+      peer_status.reserve(store->ctl()->remote->get_zone_data_notify_to_map().size());
+
+      i = 0;
+
       for (auto& c : store->ctl()->remote->get_zone_data_notify_to_map()) {
+        if (sip_targets.find(c.first.id) != sip_targets.end()) {
+          ldout(cct, 10) << "skipping fetching remote target (" << c.first << "): have sip marker info for it" << dendl;
+          continue;
+        }
+
+        peer_status.resize(peer_status.size() + 1);
+        auto& p = peer_status[i++];
+
         ldout(cct, 20) << "query sync status from " << c.first << dendl;
         using StatusCR = RGWReadRESTResourceCR<rgw_data_sync_status>;
-        spawn(new StatusCR(cct, c.second, http, "/admin/log/", params, &*p),
+        spawn(new StatusCR(cct, c.second, http, "/admin/log/", params, &p),
               false);
-        ++p;
       }
     }
 
