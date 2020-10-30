@@ -1142,9 +1142,6 @@ public:
     }
 
     if (marker.sip_name == "data.inc") {
-      if (!marker.marker.empty()) {
-        marker.marker = rgw::from_base64(marker.marker);
-      }
       marker.sip_name =  get_sip_name();
       return 0;
     }
@@ -1374,9 +1371,6 @@ public:
 
     if (marker.sip_name.empty() ||
         marker.sip_name == "legacy/data.inc") {
-      if (!marker.marker.empty()) {
-        marker.marker = rgw::to_base64(marker.marker);
-      }
       marker.sip_name =  sip_name;
       return 0;
     }
