@@ -386,11 +386,14 @@ class BucketTrimShardCollectCR : public RGWShardCollectCR {
   const RGWBucketInfo& bucket_info;
   const std::vector<std::string>& markers; //< shard markers to trim
   size_t i{0}; //< index of current shard marker
+  std::shared_ptr<RGWTrimSIPMgr> sip_mgr;
  public:
   BucketTrimShardCollectCR(rgw::sal::RGWRadosStore *store, const RGWBucketInfo& bucket_info,
-                           const std::vector<std::string>& markers)
+                           const std::vector<std::string>& markers,
+                           std::shared_ptr<RGWTrimSIPMgr> _sip_mgr)
     : RGWShardCollectCR(store->ctx(), MAX_CONCURRENT_SHARDS),
-      store(store), bucket_info(bucket_info), markers(markers)
+      store(store), bucket_info(bucket_info), markers(markers),
+      sip_mgr(_sip_mgr)
   {}
   bool spawn_next() override;
 };
@@ -405,8 +408,10 @@ bool BucketTrimShardCollectCR::spawn_next()
     if (!marker.empty()) {
       ldout(cct, 10) << "trimming bilog shard " << shard_id
           << " of " << bucket_info.bucket << " at marker " << marker << dendl;
-      spawn(new RGWRadosBILogTrimCR(store, bucket_info, shard_id,
-                                    std::string{}, marker),
+      spawn(new RGWSerialCR(store->ctx(),
+                            { new RGWRadosBILogTrimCR(store, bucket_info, shard_id,
+                                        std::string{}, marker),
+                              sip_mgr->set_min_source_pos_cr(shard_id, marker) }),
             false);
       return true;
     }
@@ -432,7 +437,7 @@ class BucketTrimInstanceCR : public RGWCoroutine {
   std::vector<StatusShards> peer_status; //< sync status for each peer
   std::vector<std::string> min_markers; //< min marker per shard
 
-  std::unique_ptr<RGWTrimSIPMgr> sip_mgr;
+  std::shared_ptr<RGWTrimSIPMgr> sip_mgr;
   std::set<rgw_zone_id> sip_target_zones;
 
  public:
@@ -569,7 +574,7 @@ int BucketTrimInstanceCR::operate()
     ldout(cct, 10) << "trimming bilogs for bucket=" << pbucket_info->bucket
        << " markers=" << min_markers << ", shards=" << min_markers.size() << dendl;
     set_status("trimming bilog shards");
-    yield call(new BucketTrimShardCollectCR(store, *pbucket_info, min_markers));
+    yield call(new BucketTrimShardCollectCR(store, *pbucket_info, min_markers, sip_mgr));
     // ENODATA just means there were no keys to trim
     if (retcode == -ENODATA) {
       retcode = 0;
