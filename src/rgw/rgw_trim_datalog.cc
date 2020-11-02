@@ -8,6 +8,7 @@
 #include "rgw_trim_tools.h"
 #include "rgw_cr_rados.h"
 #include "rgw_cr_rest.h"
+#include "rgw_cr_tools.h"
 #include "rgw_data_sync.h"
 #include "rgw_zone.h"
 #include "rgw_bucket.h"
@@ -167,8 +168,11 @@ int DataLogTrimCR::operate()
         ldout(cct, 10) << "trimming log shard " << i
             << " at marker=" << m
             << " last_trim=" << last_trim[i] << dendl;
-        spawn(new TrimCR(store, store->svc()->datalog_rados->get_oid(i),
-                         m, &last_trim[i]),
+        spawn(new RGWSerialCR(cct,
+                              { new TrimCR(store, store->svc()->datalog_rados->get_oid(i),
+                                       m, &last_trim[i]),
+                                sip_mgr->set_min_source_pos_cr(i, m)
+                              }),
               true);
       }
     }
