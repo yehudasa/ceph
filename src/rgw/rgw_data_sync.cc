@@ -632,7 +632,7 @@ public:
 
         {
           auto& info = shards_info[i];
-          cr = dsi.inc->update_marker_cr(i, { sync_env->svc->zone->get_zone().id,
+          cr = dsi.inc->update_marker_cr(i, { RGWSI_SIP_Marker::create_target_id(sync_env->svc->zone->get_zone().id, nullopt),
                                                info.marker,
                                                info.timestamp,
                                                false });
@@ -2103,7 +2103,7 @@ public:
         return set_cr_error(sync_status);
       }
       if (sip && has_lowerbound_marker) {
-        yield call(sip->update_marker_cr(shard_id, { sc->env->svc->zone->get_zone().id,
+        yield call(sip->update_marker_cr(shard_id, { RGWSI_SIP_Marker::create_target_id(sc->env->svc->zone->get_zone().id, nullopt),
                                                      lowerbound_marker.marker,
                                                      lowerbound_marker.timestamp,
                                                      false }));
@@ -4060,9 +4060,8 @@ public:
                                         rgw_bucket_shard_sync_info& _status)
     : RGWCoroutine(_bsc->cct), bsc(_bsc), status(_status)
   {
-    auto target_location_key = bsc->sync_pair.dest_bs.bucket.get_key();
-    auto& zone_id = bsc->env->svc->zone->get_zone();
-    target_id = zone_id.id + ":" + target_location_key;
+    target_id = RGWSI_SIP_Marker::create_target_id(bsc->env->svc->zone->get_zone().id,
+                                                   bsc->sync_pair.dest_bs.bucket.get_key());
   }
 
   int operate(const DoutPrefixProvider *dpp) override {
@@ -5357,6 +5356,7 @@ class RGWBucketShardIncrementalSyncCR : public RGWCoroutine {
   bool updated_status{false};
   rgw_zone_id zone_id;
   string target_location_key;
+  string target_id;
 
   string cur_id;
 
@@ -5389,6 +5389,7 @@ public:
     set_status("init");
     rules = sync_pipe.get_rules();
     target_location_key = sync_pipe.info.dest_bs.bucket.get_key();
+    target_id = RGWSI_SIP_Marker::create_target_id(zone_id, target_location_key);
   }
 
   bool check_key_handled(const rgw_obj_key& key) {
@@ -5403,10 +5404,6 @@ public:
   }
 
   int operate(const DoutPrefixProvider *dpp) override;
-
-  string get_target_id() const {
-    return zone_id.id + ":" + target_location_key;
-  }
 };
 
 int RGWBucketShardIncrementalSyncCR::operate(const DoutPrefixProvider *dpp)
@@ -5596,7 +5593,7 @@ int RGWBucketShardIncrementalSyncCR::operate(const DoutPrefixProvider *dpp)
     });
 
     if (marker_tracker.get_lowerbound(&lowerbound_marker)) {
-      yield call(bsc->hsi.inc->update_marker_cr({ get_target_id(),
+      yield call(bsc->hsi.inc->update_marker_cr({ target_id,
                                                   lowerbound_marker.marker,
                                                   lowerbound_marker.timestamp,
                                                   false }));
