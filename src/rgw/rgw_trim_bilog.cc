@@ -436,6 +436,7 @@ class BucketTrimInstanceCR : public RGWCoroutine {
   using StatusShards = std::vector<rgw_bucket_shard_sync_info>;
   std::vector<StatusShards> peer_status; //< sync status for each peer
   std::vector<std::string> min_markers; //< min marker per shard
+  std::vector<std::string> min_source_pos; //< last trim pos
 
   std::shared_ptr<RGWTrimSIPMgr> sip_mgr;
   std::set<rgw_zone_id> sip_target_zones;
@@ -486,6 +487,7 @@ int BucketTrimInstanceCR::operate()
     // there are no peers syncing from us
     min_markers.assign(std::max(1u, pbucket_info->layout.current_index.layout.normal.num_shards),
                        RGWSyncLogTrimCR::max_marker);
+    min_source_pos.resize(std::max(1u, pbucket_info->layout.current_index.layout.normal.num_shards));
 
     sip_mgr.reset(RGWTrimTools::get_trim_sip_mgr(store,
                                                  "bucket.inc",
@@ -498,6 +500,7 @@ int BucketTrimInstanceCR::operate()
     }
 
     yield call(sip_mgr->get_targets_info_cr(&min_markers,
+                                            &min_source_pos,
                                             nullptr,
                                             &sip_target_zones));
     if (retcode < 0) {
@@ -570,8 +573,23 @@ int BucketTrimInstanceCR::operate()
       return set_cr_error(retcode);
     }
 
+    if (min_markers.size() == min_source_pos.size()) {
+      /* should really always happen */
+      for (int i = 0; i < (int)min_markers.size(); ++i) {
+        auto& marker = min_markers[i];
+        if (marker <= min_source_pos[i]) {
+          marker.clear();
+        }
+      }
+    } else {
+      ldout(cct, 0) << "WARNING: min_markers.size() != min_source_pos.size(), likely a bug (affects optimization)" << dendl;
+
+      /* operation will still be correct, just we'll try to trim logs that were already trimmed */
+    }
+
     // trim shards with a ShardCollectCR
     ldout(cct, 10) << "trimming bilogs for bucket=" << pbucket_info->bucket
+       << " min_source_pos=" << min_source_pos
        << " markers=" << min_markers << ", shards=" << min_markers.size() << dendl;
     set_status("trimming bilog shards");
     yield call(new BucketTrimShardCollectCR(store, *pbucket_info, min_markers, sip_mgr));
