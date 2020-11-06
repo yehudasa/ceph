@@ -104,6 +104,7 @@ int DataLogTrimCR::operate()
     }
 
     yield call(sip_mgr->get_targets_info_cr(&min_shard_markers,
+                                            nullptr,
                                             &sip_targets,
                                             nullptr));
     if (retcode < 0) {
