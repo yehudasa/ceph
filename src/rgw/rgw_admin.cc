@@ -9053,8 +9053,7 @@ next:
     }
 
     auto num_shards = g_conf()->rgw_data_log_num_shards;
-    std::vector<std::string> markers(num_shards);
-    ret = crs.run(create_admin_data_log_trim_cr(store, &http, num_shards, markers));
+    ret = crs.run(create_admin_data_log_trim_cr(store, &http, num_shards));
     if (ret < 0) {
       cerr << "automated datalog trim failed with " << cpp_strerror(ret) << std::endl;
       return -ret;

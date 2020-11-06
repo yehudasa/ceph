@@ -19,5 +19,4 @@ extern RGWCoroutine* create_data_log_trim_cr(rgw::sal::RGWRadosStore *store,
 // factory function for datalog trim via radosgw-admin
 RGWCoroutine* create_admin_data_log_trim_cr(rgw::sal::RGWRadosStore *store,
                                             RGWHTTPManager *http,
-                                            int num_shards,
-                                            std::vector<std::string>& markers);
+                                            int num_shards);
