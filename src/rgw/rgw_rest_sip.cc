@@ -146,9 +146,9 @@ void RGWOp_SIP_Fetch::execute() {
 
   stage_id = opt_stage_id.value_or(sip->get_first_stage());
 
-  http_ret = sip->fetch(stage_id, shard_id, marker, max_entries, &result);
-  if (http_ret < 0) {
-    ldout(s->cct, 0) << "ERROR: failed to fetch entries: " << http_ret << dendl;
+  op_ret = sip->fetch(stage_id, shard_id, marker, max_entries, &result);
+  if (op_ret < 0) {
+    ldout(s->cct, 0) << "ERROR: failed to fetch entries: " << op_ret << dendl;
     return;
   }
 }
