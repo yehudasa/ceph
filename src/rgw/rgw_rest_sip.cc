@@ -87,11 +87,11 @@ void RGWOp_SIP_GetStageStatus::execute() {
 }
 
 void RGWOp_SIP_GetStageStatus::send_response() {
-  set_req_state_err(s, http_ret);
+  set_req_state_err(s, op_ret);
   dump_errno(s);
   end_header(s);
 
-  if (http_ret < 0)
+  if (op_ret < 0)
     return;
 
   {
