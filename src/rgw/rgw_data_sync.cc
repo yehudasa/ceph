@@ -3426,8 +3426,6 @@ int RGWDataSyncStatusManager::init()
     }
   }
 
-  const RGWZoneParams& zone_params = store->svc()->zone->get_zone_params();
-
   if (sync_module == nullptr) { 
     sync_module = store->getRados()->get_sync_module();
   }
@@ -6441,7 +6439,7 @@ int rgw_read_remote_bilog_info(RGWRESTConn* conn,
     { "info" , nullptr },
     { nullptr, nullptr }
   };
-  rgw_bucket_index_marker_info result;
+  rgw_bilog_marker_info result;
   int r = conn->get_json_resource("/admin/log/", params, y, result);
   if (r < 0) {
     lderr(conn->get_ctx()) << "failed to fetch remote log markers: " << cpp_strerror(r) << dendl;
