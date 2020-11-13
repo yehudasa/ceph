@@ -272,7 +272,9 @@ class RGWHTTPManager {
   CephContext *cct;
   RGWCompletionManager *completion_mgr;
   void *multi_handle;
-  bool is_started = false;
+  struct {
+    bool is_started = false;
+  } state;
   std::atomic<unsigned> going_down { 0 };
   std::atomic<unsigned> is_stopped { 0 };
 
@@ -322,6 +324,10 @@ public:
   int add_request(RGWHTTPClient *client);
   int remove_request(RGWHTTPClient *client);
   int set_request_state(RGWHTTPClient *client, RGWHTTPRequestSetState state);
+
+  bool is_started() const {
+    return state.is_started;
+  }
 };
 
 class RGWHTTP
