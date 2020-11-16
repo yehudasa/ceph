@@ -18,6 +18,7 @@ void siprovider_bucket_entry_info::Info::dump(Formatter *f) const
   encode_json("instance", instance, f);
   utime_t ut(timestamp);
   ut.gmtime_nsec(f->dump_stream("timestamp"));
+  encode_json("versioned", versioned, f);
   encode_json("versioned_epoch", versioned_epoch, f);
   encode_json("op", op, f);
   encode_json("owner", owner, f);
@@ -32,6 +33,7 @@ void siprovider_bucket_entry_info::Info::decode_json(JSONObj *obj)
   JSONDecoder::decode_json("object", object, obj);
   JSONDecoder::decode_json("instance", instance, obj);
   JSONDecoder::decode_json("timestamp", timestamp, obj);
+  JSONDecoder::decode_json("versioned", versioned, obj);
   JSONDecoder::decode_json("versioned_epoch", versioned_epoch, obj);
   JSONDecoder::decode_json("op", op, obj);
   JSONDecoder::decode_json("owner", owner, obj);
@@ -139,8 +141,9 @@ SIProvider::Entry SIProvider_BucketFull::create_entry(rgw_bucket_dir_entry& be) 
   log_entry.object = be.key.name;
   log_entry.instance = be.key.instance;
   log_entry.timestamp = be.meta.mtime;
-  if (be.ver.pool < 0) {
-    log_entry.versioned_epoch = be.ver.epoch;
+  log_entry.versioned = (be.versioned_epoch > 0);
+  if (log_entry.versioned) {
+    log_entry.versioned_epoch = be.versioned_epoch;
   }
 
   if (!be.is_delete_marker()) {
@@ -253,8 +256,18 @@ SIProvider::Entry SIProvider_BucketInc::create_entry(rgw_bi_log_entry& be) const
 
   log_entry.object = be.object;
   log_entry.instance = be.instance;
+  log_entry.versioned = be.is_versioned();
   log_entry.timestamp = be.timestamp;
-  log_entry.versioned_epoch = be.ver.epoch;
+ldout(cct, 0) << __FILE__ << ":" << __LINE__ << ": be.ver.pool=" << be.ver.pool << " epoch=" << be.ver.epoch << dendl;
+  if (be.ver.pool < 0) {
+    log_entry.versioned_epoch = be.ver.epoch;
+  }
+
+  if (log_entry.versioned &&
+      log_entry.instance.empty()) {
+    log_entry.instance = "null";
+  }
+
   log_entry.op = siprovider_bucket_entry_info::Info::to_sip_op(be.op);
   log_entry.owner = be.owner;
   log_entry.owner_display_name = be.owner_display_name;

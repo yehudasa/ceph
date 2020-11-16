@@ -3675,7 +3675,7 @@ protected:
       }
       e.mtime = le.timestamp;
       e.versioned_epoch = le.versioned_epoch;
-      e.is_versioned = !(le.instance.empty() || le.instance == "null");
+      e.is_versioned = le.versioned;
       e.op = siprovider_bucket_entry_info::Info::from_sip_op(le.op, e.versioned_epoch);
       e.state = (le.complete ? CLS_RGW_STATE_COMPLETE : CLS_RGW_STATE_PENDING_MODIFY);
       e.tag = le.instance_tag;
@@ -4984,6 +4984,7 @@ public:
                                                       sync_status(0){
     stringstream ss;
     ss << bucket_shard_str{bs} << "/" << key << "[" << versioned_epoch.value_or(0) << "]";
+ldout(cct, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): key=" << key << " versioned_epoch=" << versioned_epoch << dendl;
     set_description() << "bucket sync single entry (source_zone=" << sc->source_zone << ") b=" << ss.str() << " log_entry=" << entry_marker << " op=" << (int)op << " op_state=" << (int)op_state;
     set_status("init");
 

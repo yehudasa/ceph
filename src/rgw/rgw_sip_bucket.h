@@ -37,6 +37,7 @@ struct siprovider_bucket_entry_info : public SIProvider::EntryInfoBase {
     std::string object;
     std::string instance;
     ceph::real_time timestamp;
+    bool versioned{false};
     std::optional<uint64_t> versioned_epoch;
     std::string op;
     std::string owner;
@@ -52,6 +53,7 @@ struct siprovider_bucket_entry_info : public SIProvider::EntryInfoBase {
       encode(object, bl);
       encode(instance, bl);
       encode(timestamp, bl);
+      encode(versioned, bl);
       encode(versioned_epoch, bl);
       encode(op, bl);
       encode(owner, bl);
@@ -67,6 +69,7 @@ struct siprovider_bucket_entry_info : public SIProvider::EntryInfoBase {
       decode(object, bl);
       decode(instance, bl);
       decode(timestamp, bl);
+      decode(versioned, bl);
       decode(versioned_epoch, bl);
       decode(op, bl);
       decode(owner, bl);
