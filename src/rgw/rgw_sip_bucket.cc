@@ -146,6 +146,10 @@ SIProvider::Entry SIProvider_BucketFull::create_entry(rgw_bucket_dir_entry& be) 
     log_entry.versioned_epoch = be.versioned_epoch;
   }
 
+  if (log_entry.versioned && be.key.instance.empty()) {
+    log_entry.instance = "null";
+  }
+
   if (!be.is_delete_marker()) {
     log_entry.op = SIP_BUCKET_OP_CREATE_OBJ;
   } else {
