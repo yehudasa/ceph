@@ -5590,6 +5590,9 @@ int RGWBucketShardIncrementalSyncCR::operate()
           } else {
             tn->log(20, SSTR("entry->timestamp=" << entry->mtime));
             using SyncCR = RGWBucketSyncSingleEntryCR<string, rgw_obj_key>;
+            if (key.instance == "null") {
+              key.instance.clear();
+            }
             spawn(new SyncCR(bsc->sc, sync_pipe, key,
                              entry->is_versioned, entry->versioned_epoch,
                              entry->mtime, entry->owner, entry->op, entry->state,
