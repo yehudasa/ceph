@@ -260,7 +260,7 @@ SIProvider::Entry SIProvider_BucketInc::create_entry(rgw_bi_log_entry& be) const
 
   log_entry.object = be.object;
   log_entry.instance = be.instance;
-  log_entry.versioned = be.is_versioned();
+  log_entry.versioned = be.is_versioned() || (!log_entry.instance.empty() && log_entry.instance != "null");
   log_entry.timestamp = be.timestamp;
 ldout(cct, 0) << __FILE__ << ":" << __LINE__ << ": be.ver.pool=" << be.ver.pool << " epoch=" << be.ver.epoch << dendl;
   if (be.ver.pool < 0) {
