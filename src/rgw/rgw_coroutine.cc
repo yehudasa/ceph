@@ -140,6 +140,12 @@ RGWCoroutine::~RGWCoroutine() {
   }
 }
 
+void RGWCoroutine::set_stack(RGWCoroutinesStack *s)
+{
+  std::lock_guard l{stack_lock};
+  stack = s;
+}
+
 void RGWCoroutine::init_new_io(RGWIOProvider *io_provider)
 {
   stack->init_new_io(io_provider);
@@ -232,7 +238,7 @@ int RGWCoroutinesStack::operate(RGWCoroutinesEnv *_env)
 {
   env = _env;
   RGWCoroutine *op = *pos;
-  op->stack = this;
+  op->set_stack(this);
   ldout(cct, 20) << *op << ": operate()" << dendl;
   int r = op->operate_wrapper();
   if (r < 0) {
@@ -1022,6 +1028,10 @@ bool RGWCoroutine::drain_children(int num_cr_left,
 
 void RGWCoroutine::wakeup()
 {
+  std::shared_lock l{stack_lock};
+  if (!stack) {
+    return;
+  }
   stack->wakeup();
 }
 
