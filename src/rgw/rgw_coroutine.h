@@ -236,6 +236,7 @@ protected:
 
   CephContext *cct;
 
+  ceph::shared_mutex stack_lock = ceph::make_shared_mutex("RGWCoroutine::stack_lock");
   RGWCoroutinesStack *stack;
   int retcode;
   int state;
@@ -243,6 +244,8 @@ protected:
   rgw_spawned_stacks spawned;
 
   stringstream error_stream;
+
+  void set_stack(RGWCoroutinesStack *s);
 
   int set_state(int s, int ret = 0) {
     retcode = ret;
