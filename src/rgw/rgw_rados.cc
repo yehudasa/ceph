@@ -3839,7 +3839,7 @@ int RGWRados::fetch_remote_obj(RGWObjectCtx& obj_ctx,
                                RGWRESTConn *conn,
                                bool foreign_source,
                                const rgw_user& user_id,
-                               rgw::sal::RGWObject* dest_obj,
+                               rgw::sal::RGWObject* _dest_obj,
                                rgw::sal::RGWObject* src_obj,
                                rgw::sal::RGWBucket* dest_bucket,
                                rgw::sal::RGWBucket* src_bucket,
@@ -3855,10 +3855,15 @@ int RGWRados::fetch_remote_obj(RGWObjectCtx& obj_ctx,
   set_mtime_weight.high_precision = params.high_precision_time;
   int ret;
 
+  auto dest_obj = _dest_obj->get_obj();
+  if (dest_obj.key.instance == "null") {
+    dest_obj.key.instance.clear();
+  }
+
   rgw::BlockingAioThrottle aio(cct->_conf->rgw_put_obj_min_window_size);
   using namespace rgw::putobj;
   AtomicObjectProcessor processor(&aio, this->store, dest_bucket, nullptr, user_id,
-                                  obj_ctx, dest_obj->get_obj(), params.olh_epoch, tag, params.dpp, null_yield);
+                                  obj_ctx, dest_obj, params.olh_epoch, tag, params.dpp, null_yield);
 
   boost::optional<RGWPutObj_Compress> compressor;
   CompressorRef plugin;
@@ -3924,7 +3929,7 @@ int RGWRados::fetch_remote_obj(RGWObjectCtx& obj_ctx,
 
   if (params.copy_if_newer) {
     /* need to get mtime for destination */
-    ret = get_obj_state(dpp, &obj_ctx, dest_bucket->get_info(), dest_obj->get_obj(), &dest_state, false, null_yield);
+    ret = get_obj_state(dpp, &obj_ctx, dest_bucket->get_info(), dest_obj, &dest_state, false, null_yield);
     if (ret < 0)
       goto set_err_state;
 
@@ -4090,8 +4095,8 @@ int RGWRados::fetch_remote_obj(RGWObjectCtx& obj_ctx,
 
     if (params.copy_if_newer && canceled) {
       ldout(cct, 20) << "raced with another write of obj: " << dest_obj << dendl;
-      obj_ctx.invalidate(dest_obj->get_obj()); /* object was overwritten */
-      ret = get_obj_state(dpp, &obj_ctx, dest_bucket->get_info(), dest_obj->get_obj(), &dest_state, false, null_yield);
+      obj_ctx.invalidate(dest_obj); /* object was overwritten */
+      ret = get_obj_state(dpp, &obj_ctx, dest_bucket->get_info(), dest_obj, &dest_state, false, null_yield);
       if (ret < 0) {
         ldout(cct, 0) << "ERROR: " << __func__ << ": get_err_state() returned ret=" << ret << dendl;
         goto set_err_state;
@@ -4125,7 +4130,7 @@ set_err_state:
     // for OP_LINK_OLH to call set_olh() with a real olh_epoch
     if (params.olh_epoch && *params.olh_epoch > 0) {
       constexpr bool log_data_change = true;
-      ret = set_olh(dpp, obj_ctx, dest_bucket->get_info(), dest_obj->get_obj(), false, nullptr,
+      ret = set_olh(dpp, obj_ctx, dest_bucket->get_info(), dest_obj, false, nullptr,
                     *params.olh_epoch, real_time(), false, null_yield, params.zones_trace, log_data_change);
     } else {
       // we already have the latest copy
