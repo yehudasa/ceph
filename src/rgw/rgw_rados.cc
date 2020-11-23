@@ -5529,7 +5529,7 @@ int RGWRados::get_obj_state_impl(RGWObjectCtx *rctx, const RGWBucketInfo& bucket
     } else if (obj.key.have_null_instance() && !s->manifest) {
       // read null version, and the head object only have olh info
       s->exists = false;
-      return -ENOENT;
+      return 0;
     }
   }
 
