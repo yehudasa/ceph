@@ -1893,9 +1893,10 @@ def test_sync_pipe_multiple_buckets_to_single():
     # configure pipe from zoneA bucketA,bucketB to zoneB bucketB
     create_sync_policy_group(c1, "sync-group")
     create_sync_group_flow_directional(c1, "sync-group", "sync-flow", zoneA.name, zoneB.name)
-    source_buckets = bucketA.name + "," + bucketB.name
-    args = '--source-bucket=' + source_buckets + ' --dest-bucket=' + bucketB.name
-    create_sync_group_pipe(c1, "sync-group", "sync-pipe", zoneA.name, zoneB.name, None, args)
+    source_buckets = [ bucketA.name, bucketB.name ]
+    for source_bucket in source_buckets:
+        args = '--source-bucket=' + source_bucket + ' --dest-bucket=' + bucketB.name
+        create_sync_group_pipe(c1, "sync-group", "sync-pipe-%s" % source_bucket, zoneA.name, zoneB.name, None, args)
     set_sync_policy_group_status(c1, "sync-group", "enabled")
     zonegroup.period.update(zoneA, commit=True)
     get_sync_policy(c1)
