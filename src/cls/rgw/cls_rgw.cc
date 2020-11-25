@@ -1005,14 +1005,32 @@ int rgw_bucket_complete_op(cls_method_context_t hctx, bufferlist *in, bufferlist
     cancel = true;
   }
 
+  auto effective_op = op.op;
+
   bufferlist op_bl;
   if (cancel) {
     if (op.tag.size()) {
-      bufferlist new_key_bl;
-      encode(entry, new_key_bl);
-      return cls_cxx_map_set_val(hctx, idx, &new_key_bl);
+
+      /* this op might have blocked an object removal
+       * can happen when there concurrent removal operations
+       */
+      bool remove = entry.pending_map.size() == 0 &&
+                    !entry.exists &&
+                    !entry.is_delete_marker();
+
+      if (!remove) {
+        bufferlist new_key_bl;
+        encode(entry, new_key_bl);
+        return cls_cxx_map_set_val(hctx, idx, &new_key_bl);
+      }
+
+      effective_op = CLS_RGW_OP_DEL;
+
+      /* continue with removal */
+
+    } else {
+      return 0;
     }
-    return 0;
   }
 
   if (entry.exists) {
@@ -1020,7 +1038,7 @@ int rgw_bucket_complete_op(cls_method_context_t hctx, bufferlist *in, bufferlist
   }
 
   entry.ver = op.ver;
-  switch ((int)op.op) {
+  switch ((int)effective_op) {
   case CLS_RGW_OP_DEL:
     entry.meta = op.meta;
     if (ondisk) {
@@ -1062,7 +1080,7 @@ int rgw_bucket_complete_op(cls_method_context_t hctx, bufferlist *in, bufferlist
   }
 
   if (op.log_op && !header.syncstopped) {
-    rc = log_index_operation(hctx, op.key, op.op, op.tag, entry.meta.mtime, entry.ver,
+    rc = log_index_operation(hctx, op.key, effective_op, op.tag, entry.meta.mtime, entry.ver,
                              CLS_RGW_STATE_COMPLETE, header.ver, header.max_marker, op.bilog_flags, NULL, NULL, &op.zones_trace);
     if (rc < 0)
       return rc;
