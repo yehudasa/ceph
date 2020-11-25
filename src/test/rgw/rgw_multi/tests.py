@@ -1411,7 +1411,7 @@ def remove_sync_group_flow_directional(cluster, group, flow_id, src_zones, dest_
     return json.loads(result_json)
 
 def create_sync_group_pipe(cluster, group, pipe_id, src_zones, dest_zones, bucket = None, args = None):
-    cmd = ['sync', 'group', 'pipe', 'create', '--group-id', group, '--pipe-id' , pipe_id, '--source-zones', src_zones, '--dest-zones', dest_zones]
+    cmd = ['sync', 'group', 'pipe', 'create', '--group-id', group, '--pipe-id' , pipe_id, '--source-zones=%s' % src_zones, '--dest-zones=%s' % dest_zones]
     if bucket:
         cmd += ['--bucket', bucket]
     if args:
@@ -1890,22 +1890,29 @@ def test_sync_pipe_multiple_buckets_to_single():
 
     zonegroup_meta_checkpoint(zonegroup)
 
-    # configure pipe from zoneA bucketA,bucketB to zoneB bucketB
+    # configure flow
     create_sync_policy_group(c1, "sync-group")
     create_sync_group_flow_directional(c1, "sync-group", "sync-flow", zoneA.name, zoneB.name)
-    source_buckets = [ bucketA.name, bucketB.name ]
-    for source_bucket in source_buckets:
-        args = '--source-bucket=' + source_bucket + ' --dest-bucket=' + bucketB.name
-        create_sync_group_pipe(c1, "sync-group", "sync-pipe-%s" % source_bucket, zoneA.name, zoneB.name, None, args)
-    set_sync_policy_group_status(c1, "sync-group", "enabled")
+    args = '--source-bucket=* --dest-bucket=*'
+    create_sync_group_pipe(c1, "sync-group", "sync-pipe-default", zoneA.name, zoneB.name, None, args)
+    set_sync_policy_group_status(c1, "sync-group", "allowed")
     zonegroup.period.update(zoneA, commit=True)
     get_sync_policy(c1)
+
+    # configure pipe from zoneA bucketA,bucketB to zoneB bucketB
+    create_sync_policy_group(c1, "bucket-sync-group", bucket = bucketB.name)
+    source_buckets = [ bucketA.name, bucketB.name ]
+    for source_bucket in source_buckets:
+        args = '--source-bucket=' + source_bucket + ' --dest-bucket=*'
+        create_sync_group_pipe(c1, "bucket-sync-group", "sync-pipe-%s" % source_bucket, '*', '*', bucketB.name, args)
+    set_sync_policy_group_status(c1, "bucket-sync-group", "enabled", bucketB.name)
+
+    zonegroup_meta_checkpoint(zonegroup)
 
     # create objects in bucketA & bucketB
     create_objects(zcA, bucketA, objnamesA, content)
     create_objects(zcA, bucketB, objnamesB, content)
 
-    zonegroup_meta_checkpoint(zonegroup)
     zone_data_checkpoint(zoneB, zoneA)
 
     # verify that both zoneA bucketA & bucketB objects are synced to
