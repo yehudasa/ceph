@@ -5019,12 +5019,6 @@ public:
             tn->log(0, "entry with empty obj name, skipping");
             goto done;
           }
-          if (!key.instance.empty() &&
-              !versioned_epoch) {
-            set_status("skipping versioned entry without versioned_epoch");
-            tn->log(0, SSTR(": skipping versioned entry without versioned_epoch: " << key));
-            goto done;
-          }
           if (error_injection &&
               rand() % 10000 < cct->_conf->rgw_sync_data_inject_err_probability * 10000.0) {
             tn->log(0, SSTR(": injecting data sync error on key=" << key.name));
@@ -5591,7 +5585,6 @@ int RGWBucketShardIncrementalSyncCR::operate()
           continue;
         }
         // yield {
-
           set_status() << "start object sync";
           if (!marker_tracker.start(cur_id, key, 0, entry->mtime)) {
             tn->log(0, SSTR("ERROR: cannot start syncing " << cur_id << ". Duplicate entry?"));
