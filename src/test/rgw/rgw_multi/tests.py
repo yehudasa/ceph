@@ -2114,13 +2114,12 @@ def test_sync_bucket_to_different_bucket():
     create_sync_group_pipe(c1, "sync-bucket", "sync-pipe", zones, zones, bucketA.name, args)
     set_sync_policy_group_status(c1, "sync-bucket", "enabled", bucketA.name)
 
-    zonegroup.period.update(zoneA, commit=True)
+    zonegroup_meta_checkpoint(zonegroup)
     get_sync_policy(c1, bucketA.name)
 
     # create objects in bucketA
     create_objects(zcA, bucketA, objnames, content)
 
-    zonegroup_meta_checkpoint(zonegroup)
     zone_data_checkpoint(zoneB, zoneA)
     """
     # verify that objects are synced to bucketB in zoneB
