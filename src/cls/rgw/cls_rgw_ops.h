@@ -1485,4 +1485,187 @@ struct cls_rgw_get_bucket_resharding_ret  {
 };
 WRITE_CLASS_ENCODER(cls_rgw_get_bucket_resharding_ret)
 
+
+struct cls_rgw_sync_group_init_op {
+  std::string id;
+  uint64_t num_shards;
+  bool exclusive{false};
+
+
+  void encode(ceph::buffer::list& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(id, bl);
+    encode(num_shards, bl);
+    encode(exclusive, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(ceph::buffer::list::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(id, bl);
+    decode(num_shards, bl);
+    decode(exclusive, bl);
+    DECODE_FINISH(bl);
+  }
+
+  static void generate_test_instances(std::list<cls_rgw_sync_group_init_op*>& o);
+  void dump(ceph::Formatter *f) const;
+};
+WRITE_CLASS_ENCODER(cls_rgw_sync_group_init_op)
+
+struct cls_rgw_sync_group_update_op {
+  struct entry {
+    uint64_t shard_id;
+    cls_rgw_sync_group_shard_state state;
+
+    void encode(ceph::buffer::list& bl) const {
+      ENCODE_START(1, 1, bl);
+      encode(shard_id, bl);
+      encode(state, bl);
+      ENCODE_FINISH(bl);
+    }
+
+    void decode(ceph::buffer::list::const_iterator& bl) {
+      DECODE_START(1, bl);
+      decode(shard_id, bl);
+      decode(state, bl);
+      DECODE_FINISH(bl);
+    }
+
+    void dump(ceph::Formatter *f) const;
+  };
+
+  std::string id;
+  std::vector<entry> states;
+
+
+  void encode(ceph::buffer::list& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(id, bl);
+    encode(states, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(ceph::buffer::list::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(id, bl);
+    decode(states, bl);
+    DECODE_FINISH(bl);
+  }
+
+  static void generate_test_instances(std::list<cls_rgw_sync_group_update_op*>& o);
+  void dump(ceph::Formatter *f) const;
+};
+WRITE_CLASS_ENCODER(cls_rgw_sync_group_update_op::entry)
+WRITE_CLASS_ENCODER(cls_rgw_sync_group_update_op)
+
+struct cls_rgw_sync_group_get_info_op {
+  std::optional<std::string> id;
+
+  void encode(ceph::buffer::list& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(id, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(ceph::buffer::list::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(id, bl);
+    DECODE_FINISH(bl);
+  }
+
+  static void generate_test_instances(std::list<cls_rgw_sync_group_get_info_op*>& o);
+  void dump(ceph::Formatter *f) const;
+};
+WRITE_CLASS_ENCODER(cls_rgw_sync_group_get_info_op)
+
+struct cls_rgw_sync_group_get_info_ret {
+  std::vector<cls_rgw_sync_group_info> result;
+
+  void encode(ceph::buffer::list& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(result, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(ceph::buffer::list::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(result, bl);
+    DECODE_FINISH(bl);
+  }
+
+  static void generate_test_instances(std::list<cls_rgw_sync_group_get_info_ret*>& o);
+  void dump(ceph::Formatter *f) const;
+};
+WRITE_CLASS_ENCODER(cls_rgw_sync_group_get_info_ret)
+
+struct cls_rgw_sync_group_list_op {
+  std::string id;
+  std::optional<uint64_t> marker;
+  uint32_t max_entries;
+
+  void encode(ceph::buffer::list& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(id, bl);
+    encode(marker, bl);
+    encode(max_entries, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(ceph::buffer::list::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(id, bl);
+    decode(marker, bl);
+    decode(max_entries, bl);
+    DECODE_FINISH(bl);
+  }
+
+  static void generate_test_instances(std::list<cls_rgw_sync_group_list_op*>& o);
+  void dump(ceph::Formatter *f) const;
+};
+WRITE_CLASS_ENCODER(cls_rgw_sync_group_list_op)
+
+struct cls_rgw_sync_group_list_ret {
+  std::vector<cls_rgw_sync_group_shard_info> result;
+  bool more{false};
+
+  void encode(ceph::buffer::list& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(result, bl);
+    encode(more, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(ceph::buffer::list::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(result, bl);
+    decode(more, bl);
+    DECODE_FINISH(bl);
+  }
+
+  static void generate_test_instances(std::list<cls_rgw_sync_group_list_ret*>& o);
+  void dump(ceph::Formatter *f) const;
+};
+WRITE_CLASS_ENCODER(cls_rgw_sync_group_list_ret)
+
+struct cls_rgw_sync_group_purge_op {
+  std::string id;
+
+  void encode(ceph::buffer::list& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(id, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(ceph::buffer::list::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(id, bl);
+    DECODE_FINISH(bl);
+  }
+
+  static void generate_test_instances(std::list<cls_rgw_sync_group_purge_op*>& o);
+  void dump(ceph::Formatter *f) const;
+};
+WRITE_CLASS_ENCODER(cls_rgw_sync_group_purge_op)
+
 #endif /* CEPH_CLS_RGW_OPS_H */

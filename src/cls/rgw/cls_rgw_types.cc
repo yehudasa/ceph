@@ -765,3 +765,55 @@ void cls_rgw_lc_obj_head::dump(Formatter *f) const
 void cls_rgw_lc_obj_head::generate_test_instances(list<cls_rgw_lc_obj_head*>& ls)
 {
 }
+
+void cls_rgw_sync_group_info::generate_test_instances(std::list<cls_rgw_sync_group_info*>& ls) {
+  ls.push_back(new cls_rgw_sync_group_info);
+  ls.push_back(new cls_rgw_sync_group_info);
+  ls.back()->id = "mygroup";
+  ls.back()->num_shards = 1000;
+  ls.back()->num_shards_complete = 999;
+}
+
+void cls_rgw_sync_group_info::dump(ceph::Formatter *f) const {
+  encode_json("id", id, f);
+  encode_json("num_shards", num_shards, f);
+  encode_json("num_shards_complete", num_shards_complete, f);
+}
+
+void cls_rgw_sync_group_shard_state::dump(Formatter *f) const
+{
+  encode_json("status", status, f);
+}
+
+void cls_rgw_sync_group_shard_state::generate_test_instances(list<cls_rgw_sync_group_shard_state*>& ls)
+{
+  ls.push_back(new cls_rgw_sync_group_shard_state);
+  ls.push_back(new cls_rgw_sync_group_shard_state);
+  ls.back()->status = STATUS_COMPLETE;
+}
+
+void cls_rgw_sync_group_header::dump(Formatter *f) const
+{
+  encode_json("info", info, f);
+}
+
+void cls_rgw_sync_group_header::generate_test_instances(list<cls_rgw_sync_group_header*>& ls)
+{
+  ls.push_back(new cls_rgw_sync_group_header);
+  ls.push_back(new cls_rgw_sync_group_header);
+  ls.back()->info["asd"] = { "asd", 115, 99 };
+}
+
+void cls_rgw_sync_group_shard_info::dump(Formatter *f) const
+{
+  encode_json("shard_id", shard_id, f);
+  encode_json("state", state, f);
+}
+
+void cls_rgw_sync_group_shard_info::generate_test_instances(list<cls_rgw_sync_group_shard_info*>& ls)
+{
+  ls.push_back(new cls_rgw_sync_group_shard_info);
+  ls.push_back(new cls_rgw_sync_group_shard_info);
+  ls.back()->shard_id = 100;
+  ls.back()->state = { cls_rgw_sync_group_shard_state::STATUS_COMPLETE };
+}

@@ -1284,4 +1284,95 @@ struct cls_rgw_reshard_entry
 };
 WRITE_CLASS_ENCODER(cls_rgw_reshard_entry)
 
+struct cls_rgw_sync_group_info
+{
+  string id;
+  uint64_t num_shards{0};
+  uint64_t num_shards_complete{0};
+
+  void encode(ceph::buffer::list& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(id, bl);
+    encode(num_shards, bl);
+    encode(num_shards_complete, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(ceph::buffer::list::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(id, bl);
+    decode(num_shards, bl);
+    decode(num_shards_complete, bl);
+    DECODE_FINISH(bl);
+  }
+
+  void dump(ceph::Formatter *f) const;
+  static void generate_test_instances(std::list<cls_rgw_sync_group_info*>& o);
+
+  bool is_complete() const {
+    return (num_shards == num_shards_complete);
+  }
+
+  void init(const string& _id, int _num_shards) {
+    id = _id;
+    num_shards = _num_shards;
+    num_shards_complete = 0;
+  }
+};
+WRITE_CLASS_ENCODER(cls_rgw_sync_group_info)
+
+struct cls_rgw_sync_group_shard_state
+{
+  static constexpr uint16_t STATUS_COMPLETE = 0x1;
+
+  uint64_t shard_id{0};
+  uint32_t status{0};
+
+  void encode(ceph::buffer::list& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(shard_id, bl);
+    encode(status, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(ceph::buffer::list::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(shard_id, bl);
+    decode(status, bl);
+    DECODE_FINISH(bl);
+  }
+
+  void dump(ceph::Formatter *f) const;
+  static void generate_test_instances(std::list<cls_rgw_sync_group_shard_state*>& o);
+
+  bool is_complete() const {
+    return ((status & STATUS_COMPLETE) != 0);
+  }
+};
+WRITE_CLASS_ENCODER(cls_rgw_sync_group_shard_state)
+
+struct cls_rgw_sync_group_shard_info
+{
+  uint64_t shard_id{0};
+  cls_rgw_sync_group_shard_state state;
+
+  void encode(ceph::buffer::list& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(shard_id, bl);
+    encode(state, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(ceph::buffer::list::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(shard_id, bl);
+    decode(state, bl);
+    DECODE_FINISH(bl);
+  }
+
+  void dump(ceph::Formatter *f) const;
+  static void generate_test_instances(std::list<cls_rgw_sync_group_shard_info*>& o);
+};
+WRITE_CLASS_ENCODER(cls_rgw_sync_group_shard_info)
+
 #endif

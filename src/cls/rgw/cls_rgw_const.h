@@ -72,4 +72,11 @@
 #define RGW_GUARD_BUCKET_RESHARDING "guard_bucket_resharding"
 #define RGW_GET_BUCKET_RESHARDING "get_bucket_resharding"
 
+/* sync group */
+#define RGW_SYNC_GROUP_INIT "sync_group_init"
+#define RGW_SYNC_GROUP_UPDATE "sync_group_update"
+#define RGW_SYNC_GROUP_GET_INFO "sync_group_get_info"
+#define RGW_SYNC_GROUP_LIST "sync_group_list"
+#define RGW_SYNC_GROUP_PURGE "sync_group_purge"
+
 #endif
