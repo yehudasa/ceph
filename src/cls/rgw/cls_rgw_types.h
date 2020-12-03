@@ -1325,19 +1325,16 @@ struct cls_rgw_sync_group_shard_state
 {
   static constexpr uint16_t STATUS_COMPLETE = 0x1;
 
-  uint64_t shard_id{0};
   uint32_t status{0};
 
   void encode(ceph::buffer::list& bl) const {
     ENCODE_START(1, 1, bl);
-    encode(shard_id, bl);
     encode(status, bl);
     ENCODE_FINISH(bl);
   }
 
   void decode(ceph::buffer::list::const_iterator& bl) {
     DECODE_START(1, bl);
-    decode(shard_id, bl);
     decode(status, bl);
     DECODE_FINISH(bl);
   }
@@ -1350,6 +1347,26 @@ struct cls_rgw_sync_group_shard_state
   }
 };
 WRITE_CLASS_ENCODER(cls_rgw_sync_group_shard_state)
+
+struct cls_rgw_sync_group_header {
+  std::map<string, cls_rgw_sync_group_info> info;
+
+  void encode(ceph::buffer::list& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(info, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(ceph::buffer::list::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(info, bl);
+    DECODE_FINISH(bl);
+  }
+
+  void dump(ceph::Formatter *f) const;
+  static void generate_test_instances(std::list<cls_rgw_sync_group_header*>& o);
+};
+WRITE_CLASS_ENCODER(cls_rgw_sync_group_header)
 
 struct cls_rgw_sync_group_shard_info
 {

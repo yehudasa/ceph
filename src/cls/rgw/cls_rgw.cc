@@ -4065,6 +4065,357 @@ static int rgw_get_bucket_resharding(cls_method_context_t hctx,
   return 0;
 }
 
+/* sync group */
+
+#define SYNC_GROUP_SHARD_STATE_OMAP_PREFIX "0/"
+
+static string get_sync_group_key_prefix(const string& group_id)
+{
+  char buf[sizeof(SYNC_GROUP_SHARD_STATE_OMAP_PREFIX) + group_id.size() + 32];
+  snprintf(buf, sizeof(buf), "%s%s", SYNC_GROUP_SHARD_STATE_OMAP_PREFIX, group_id.c_str());
+  return string(buf);
+}
+
+static string get_sync_group_entry_key(const string& group_id,
+                                       uint64_t shard_id)
+{
+  char buf[sizeof(SYNC_GROUP_SHARD_STATE_OMAP_PREFIX) + group_id.size() + 32];
+  snprintf(buf, sizeof(buf), "%s%s/%lld", SYNC_GROUP_SHARD_STATE_OMAP_PREFIX, group_id.c_str(), (long long)shard_id);
+  return string(buf);
+}
+
+static int read_sync_group_header(cls_method_context_t hctx,
+                                  cls_rgw_sync_group_header *header)
+{
+  bufferlist bl;
+  int rc = cls_cxx_map_read_header(hctx, &bl);
+  if (rc < 0) {
+    return rc;
+  }
+
+  auto iter = bl.cbegin();
+  try {
+    decode(*header, iter);
+  } catch (ceph::buffer::error& err) {
+    CLS_LOG(1, "ERROR: %s(): failed to decode header\n", __func__);
+    return -EIO;
+  }
+
+  return 0;
+}
+
+static int write_sync_group_header(cls_method_context_t hctx, const cls_rgw_sync_group_header& header)
+{
+  bufferlist header_bl;
+  encode(header, header_bl);
+  return cls_cxx_map_write_header(hctx, &header_bl);
+}
+
+static int read_sync_group_entry(cls_method_context_t hctx,
+                                 const string& group_id,
+                                 uint64_t shard_id,
+                                 cls_rgw_sync_group_shard_info *entry)
+{
+  auto key = get_sync_group_entry_key(group_id, shard_id);
+  return read_omap_entry(hctx, key, entry);
+}
+
+static int write_sync_group_entry(cls_method_context_t hctx,
+                                  const string& group_id,
+                                  uint64_t shard_id,
+                                  const cls_rgw_sync_group_shard_info& entry)
+{
+  auto key = get_sync_group_entry_key(group_id, shard_id);
+  return write_entry(hctx, entry, key);
+}
+
+static int rgw_sync_group_init(cls_method_context_t hctx,
+                               bufferlist *in, bufferlist *out)
+{
+  cls_rgw_sync_group_init_op op;
+
+  auto in_iter = in->cbegin();
+  try {
+    decode(op, in_iter);
+  } catch (ceph::buffer::error& err) {
+    CLS_LOG(0, "ERROR: %s(): failed to decode op\n", __func__);
+    return -EINVAL;
+  }
+
+  cls_rgw_sync_group_header header;
+  int r = read_sync_group_header(hctx, &header);
+  if (r < 0 &&
+      r != -ENOENT) {
+    CLS_LOG(0, "ERROR: %s(): failed to read header\n", __func__);
+    return r;
+  }
+
+  if (op.exclusive) {
+    auto iter = header.info.find(op.id);
+    if (iter != header.info.end()) {
+      CLS_LOG(5, "NOTICE: %s(): group info for id=%s already exists\n", __func__, op.id.c_str());
+      return -EEXIST;
+    }
+  }
+
+  header.info[op.id].init(op.id, op.num_shards);
+
+  r = write_sync_group_header(hctx, header);
+  if (r < 0) {
+    CLS_LOG(0, "ERROR: %s(): failed to write header (r=%d)\n", __func__, r);
+    return r;
+  }
+
+  return 0;
+}
+
+static int rgw_sync_group_update(cls_method_context_t hctx,
+                                 bufferlist *in, bufferlist *out)
+{
+  cls_rgw_sync_group_update_op op;
+
+  auto in_iter = in->cbegin();
+  try {
+    decode(op, in_iter);
+  } catch (ceph::buffer::error& err) {
+    CLS_LOG(0, "ERROR: %s(): failed to decode op\n", __func__);
+    return -EINVAL;
+  }
+
+  int complete_delta = 0;
+
+  cls_rgw_sync_group_header header;
+  int r = read_sync_group_header(hctx, &header);
+  if (r < 0) {
+    CLS_LOG(0, "ERROR: %s(): failed to read header\n", __func__);
+    return r;
+  }
+
+  auto iter = header.info.find(op.id);
+  if (iter == header.info.end()) {
+    return -ENOENT;
+  }
+
+  auto& info = iter->second;
+
+  for (auto& entry : op.states) {
+    cls_rgw_sync_group_shard_info orig;
+
+    if (entry.shard_id >= info.num_shards) {
+      CLS_LOG(5, "%s(): bad shard id: op.id=%s shard_id=%lld", __func__, op.id.c_str(), (long long)entry.shard_id);
+      return -EINVAL;
+    }
+
+    int r = read_sync_group_entry(hctx, op.id, entry.shard_id, &orig);
+    if (r < 0 && r != -ENOENT) {
+      CLS_LOG(0, "ERROR: %s(): failed to read shard entry id=%s shard_id=%lld: r=%d\n", __func__, op.id.c_str(), (long long)entry.shard_id, r);
+      return r;
+    }
+
+    int orig_val = (orig.state.is_complete() ? 1 : 0);
+    int new_val = (entry.state.is_complete() ? 1 : 0);
+
+    CLS_LOG(20, "%s(): updating shard state: id=%s shard_id=%lld orig_val=%d new_val=%d\n", __func__, op.id.c_str(), (long long)entry.shard_id,
+            orig_val, new_val);
+
+    complete_delta += (new_val - orig_val);
+
+    cls_rgw_sync_group_shard_info entry_info = { entry.shard_id, entry.state };
+
+    r = write_sync_group_entry(hctx, op.id, entry.shard_id, entry_info);
+    if (r < 0) {
+      CLS_LOG(0, "ERROR: %s(): failed to write shard entry id=%s shard_id=%lld: r=%d\n", __func__, op.id.c_str(), (long long)entry.shard_id, r);
+      return r;
+    }
+  }
+
+  if (complete_delta != 0) {
+    info.num_shards_complete += complete_delta;
+
+    CLS_LOG(20, "%s(): updating num_shards_complete id=%s num_shards=%lld num_shards_complete=%lld\n", __func__, op.id.c_str(),
+            (long long)info.num_shards, (long long)info.num_shards_complete);
+
+    r = write_sync_group_header(hctx, header);
+    if (r < 0) {
+      CLS_LOG(0, "ERROR: %s(): failed to write header (r=%d)\n", __func__, r);
+      return r;
+    }
+  }
+
+  bool complete = (info.num_shards_complete == info.num_shards);
+
+  return (complete ? 1 : 0);
+}
+
+static int rgw_sync_group_get_info(cls_method_context_t hctx,
+                                   bufferlist *in, bufferlist *out)
+{
+  cls_rgw_sync_group_get_info_op op;
+
+  auto in_iter = in->cbegin();
+  try {
+    decode(op, in_iter);
+  } catch (ceph::buffer::error& err) {
+    CLS_LOG(0, "ERROR: %s(): failed to decode op\n", __func__);
+    return -EINVAL;
+  }
+
+  cls_rgw_sync_group_header header;
+  int r = read_sync_group_header(hctx, &header);
+  if (r < 0) {
+    CLS_LOG(0, "ERROR: %s(): failed to read header\n", __func__);
+    return r;
+  }
+
+  cls_rgw_sync_group_get_info_ret op_ret;
+
+  if (op.id) {
+    auto iter = header.info.find(*op.id);
+    if (iter == header.info.end()) {
+      CLS_LOG(5, "NOTICE: %s(): group info for id=%s wasn't found\n", __func__, op.id->c_str());
+      return -ENOENT;
+    }
+
+    op_ret.result.push_back(iter->second);
+  } else {
+    for (auto& entry : header.info) {
+      op_ret.result.push_back(entry.second);
+    }
+  }
+
+  encode(op_ret, *out);
+
+  return 0;
+}
+
+static int rgw_sync_group_list(cls_method_context_t hctx,
+                               bufferlist *in, bufferlist *out)
+{
+  cls_rgw_sync_group_list_op op;
+
+  auto in_iter = in->cbegin();
+  try {
+    decode(op, in_iter);
+  } catch (ceph::buffer::error& err) {
+    CLS_LOG(0, "ERROR: %s(): failed to decode op\n", __func__);
+    return -EINVAL;
+  }
+
+  cls_rgw_sync_group_header header;
+  int r = read_sync_group_header(hctx, &header);
+  if (r < 0) {
+    CLS_LOG(0, "ERROR: %s(): failed to read header\n", __func__);
+    return r;
+  }
+
+  auto iter = header.info.find(op.id);
+  if (iter == header.info.end()) {
+    return -ENOENT;
+  }
+
+  auto& info = iter->second;
+
+  int64_t marker_shard = -1;
+  if (op.marker) {
+    marker_shard = (int64_t)(*op.marker);
+
+    if (marker_shard >= (int64_t)info.num_shards) {
+      CLS_LOG(20, "%s(): requested marker=%lld but num_shards=%lld", __func__, (long long)marker_shard, (long long)info.num_shards);
+      return -EINVAL;
+    }
+  }
+
+#define SYNC_GROUP_LIST_MAX_ENTRIES 1000
+  uint32_t max_entries = (op.max_entries <= SYNC_GROUP_LIST_MAX_ENTRIES ? op.max_entries : SYNC_GROUP_LIST_MAX_ENTRIES);
+
+  if (marker_shard + max_entries + 1 > (int64_t)info.num_shards) {
+    max_entries = info.num_shards - marker_shard - 1;
+  }
+
+  auto group_prefix = get_sync_group_key_prefix(op.id);
+  string key_marker = (op.marker ? get_sync_group_entry_key(op.id, *op.marker) : group_prefix);
+
+  bool truncated{false};
+  map<string, bufferlist> shards;
+
+  cls_rgw_sync_group_list_ret op_ret;
+
+  int ret = cls_cxx_map_get_vals(hctx, key_marker, group_prefix, max_entries, &shards, &truncated);
+  if (ret < 0 && ret != -ENOENT) {
+    return ret;
+  }
+
+  for (auto& shard_entry : shards) {
+    auto iter = shard_entry.second.cbegin();
+    cls_rgw_sync_group_shard_info shard_info;
+    try {
+      decode(shard_info, iter);
+    } catch (ceph::buffer::error& err) {
+      CLS_LOG(0, "ERROR: %s(): failed to decode shard info for id=%s key=%s\n", __func__, op.id.c_str(), shard_entry.first.c_str());
+      return -EIO;
+    }
+
+    op_ret.result.push_back(shard_info);
+  }
+
+  op_ret.more = truncated;
+
+  encode(op_ret, *out);
+
+  return 0;
+}
+
+static int rgw_sync_group_purge(cls_method_context_t hctx,
+                               bufferlist *in, bufferlist *out)
+{
+  cls_rgw_sync_group_purge_op op;
+
+  auto in_iter = in->cbegin();
+  try {
+    decode(op, in_iter);
+  } catch (ceph::buffer::error& err) {
+    CLS_LOG(0, "ERROR: %s(): failed to decode op\n", __func__);
+    return -EINVAL;
+  }
+
+  cls_rgw_sync_group_header header;
+  int r = read_sync_group_header(hctx, &header);
+  if (r == -ENOENT) {
+    return 0;
+  }
+  if (r < 0) {
+    CLS_LOG(0, "ERROR: %s(): failed to read header\n", __func__);
+    return r;
+  }
+
+  auto iter = header.info.find(op.id);
+  if (iter == header.info.end()) {
+    return -ENOENT;
+  }
+
+  auto& info = iter->second;
+
+  auto start_key = get_sync_group_key_prefix(op.id);
+  auto end_key = get_sync_group_entry_key(op.id, info.num_shards); /* one past the end */
+
+  int ret = cls_cxx_map_remove_range(hctx, start_key, end_key);
+  if (ret < 0) {
+    CLS_LOG(0, "ERROR: %s(): class_cxx_map_remove_range failed for id=%s start_key=%s end_key=%s: r=%d\n", __func__,
+            op.id.c_str(), start_key.c_str(), end_key.c_str(), r);
+    return ret;
+  }
+
+  header.info.erase(op.id);
+
+  r = write_sync_group_header(hctx, header);
+  if (r < 0) {
+    CLS_LOG(0, "ERROR: %s(): failed to read header\n", __func__);
+    return r;
+  }
+
+  return 0;
+}
+
 CLS_INIT(rgw)
 {
   CLS_LOG(1, "Loaded rgw class!");
@@ -4116,6 +4467,11 @@ CLS_INIT(rgw)
   cls_method_handle_t h_rgw_clear_bucket_resharding;
   cls_method_handle_t h_rgw_guard_bucket_resharding;
   cls_method_handle_t h_rgw_get_bucket_resharding;
+  cls_method_handle_t h_rgw_sync_group_init;
+  cls_method_handle_t h_rgw_sync_group_update;
+  cls_method_handle_t h_rgw_sync_group_get_info;
+  cls_method_handle_t h_rgw_sync_group_list;
+  cls_method_handle_t h_rgw_sync_group_purge;
 
   cls_register(RGW_CLASS, &h_class);
 
@@ -4187,5 +4543,16 @@ CLS_INIT(rgw)
   cls_register_cxx_method(h_class, RGW_GET_BUCKET_RESHARDING, CLS_METHOD_RD ,
 			  rgw_get_bucket_resharding, &h_rgw_get_bucket_resharding);
 
+  /* sync group */
+  cls_register_cxx_method(h_class, RGW_SYNC_GROUP_INIT, CLS_METHOD_RD | CLS_METHOD_WR,
+			  rgw_sync_group_init, &h_rgw_sync_group_init);
+  cls_register_cxx_method(h_class, RGW_SYNC_GROUP_UPDATE, CLS_METHOD_RD | CLS_METHOD_WR,
+			  rgw_sync_group_update, &h_rgw_sync_group_update);
+  cls_register_cxx_method(h_class, RGW_SYNC_GROUP_GET_INFO, CLS_METHOD_RD ,
+			  rgw_sync_group_get_info, &h_rgw_sync_group_get_info);
+  cls_register_cxx_method(h_class, RGW_SYNC_GROUP_LIST, CLS_METHOD_RD ,
+			  rgw_sync_group_list, &h_rgw_sync_group_list);
+  cls_register_cxx_method(h_class, RGW_SYNC_GROUP_PURGE, CLS_METHOD_RD | CLS_METHOD_WR,
+			  rgw_sync_group_purge, &h_rgw_sync_group_purge);
   return;
 }
