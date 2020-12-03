@@ -1085,3 +1085,115 @@ int CLSRGWIssueSetBucketResharding::issue_op(int shard_id, const string& oid)
 {
   return issue_set_bucket_resharding(io_ctx, oid, entry, &manager);
 }
+
+template <typename T>
+class ClsRGWSyncGroupOpCtx : public ObjectOperationCompletion {
+private:
+  T *data;
+  int *ret_code;
+public:
+  ClsRGWSyncGroupOpCtx(T* _data, int *_ret_code) : data(_data), ret_code(_ret_code) { ceph_assert(data); }
+  ~ClsRGWSyncGroupOpCtx() override {}
+  void handle_completion(int r, bufferlist& outbl) override {
+    if (r >= 0) {
+      try {
+        auto iter = outbl.cbegin();
+        decode((*data), iter);
+      } catch (ceph::buffer::error& err) {
+        r = -EIO;
+      }
+    }
+    if (ret_code) {
+      *ret_code = r;
+    }
+  }
+};
+
+class ClsRGWSyncGroupUpdateOpCtx : public ObjectOperationCompletion {
+private:
+  bool *complete;
+  int *ret_code;
+public:
+  ClsRGWSyncGroupUpdateOpCtx(bool *_complete, int *_ret_code) : complete(_complete), ret_code(_ret_code) {}
+  ~ClsRGWSyncGroupUpdateOpCtx() override {}
+  void handle_completion(int r, bufferlist& outbl) override {
+    if (r >= 0 && complete) {
+      *complete = (r > 0);
+    }
+    if (ret_code) {
+      *ret_code = r;
+    }
+  }
+};
+
+void cls_rgw_sync_group_init(librados::ObjectWriteOperation& op,
+			     const string& group_id,
+			     uint64_t num_shards,
+			     bool exclusive)
+{
+  bufferlist in, out;
+  cls_rgw_sync_group_init_op call;
+  call.id = group_id;
+  call.num_shards = num_shards;
+  call.exclusive = exclusive;
+  encode(call, in);
+  op.exec(RGW_CLASS, RGW_SYNC_GROUP_INIT, in);
+}
+
+void cls_rgw_sync_group_update(librados::ObjectWriteOperation& op,
+			       const string& group_id,
+			       const std::vector<std::pair<uint64_t, cls_rgw_sync_group_shard_state> >& entries,
+			       bool *complete)
+{
+  bufferlist in, out;
+  cls_rgw_sync_group_update_op call;
+  call.id = group_id;
+  for (auto& entry : entries) {
+    call.states.push_back( { entry.first, entry.second } );
+  }
+  encode(call, in);
+  op.exec(RGW_CLASS, RGW_SYNC_GROUP_UPDATE, in,
+	  new ClsRGWSyncGroupUpdateOpCtx(complete, nullptr));
+}
+
+void cls_rgw_sync_group_get_info(librados::ObjectReadOperation& op,
+				 std::optional<string> group_id,
+				 cls_rgw_sync_group_get_info_ret *result)
+{
+  bufferlist in, out;
+  cls_rgw_sync_group_get_info_op call;
+  call.id = group_id;
+  encode(call, in);
+  if (result) {
+    op.exec(RGW_CLASS, RGW_SYNC_GROUP_GET_INFO, in,
+	    new ClsRGWSyncGroupOpCtx<cls_rgw_sync_group_get_info_ret>(result, NULL));
+  } else {
+    op.exec(RGW_CLASS, RGW_SYNC_GROUP_GET_INFO, in);
+  }
+}
+
+void cls_rgw_sync_group_list(librados::ObjectReadOperation& op,
+			     const std::string& group_id,
+			     std::optional<uint64_t> marker,
+			     uint32_t max_entries,
+			     cls_rgw_sync_group_list_ret *result)
+{
+  bufferlist in, out;
+  cls_rgw_sync_group_list_op call;
+  call.id = group_id;
+  call.marker = marker;
+  call.max_entries = max_entries;
+  encode(call, in);
+  op.exec(RGW_CLASS, RGW_SYNC_GROUP_LIST, in,
+	  new ClsRGWSyncGroupOpCtx<cls_rgw_sync_group_list_ret>(result, NULL));
+}
+
+void cls_rgw_sync_group_purge(librados::ObjectWriteOperation& op,
+			      const std::string& group_id)
+{
+  bufferlist in;
+  cls_rgw_sync_group_list_op call;
+  call.id = group_id;
+  encode(call, in);
+  op.exec(RGW_CLASS, RGW_SYNC_GROUP_PURGE, in);
+}

@@ -641,4 +641,23 @@ int cls_rgw_get_bucket_resharding(librados::IoCtx& io_ctx, const std::string& oi
                                   cls_rgw_bucket_instance_entry *entry);
 #endif
 
+void cls_rgw_sync_group_init(librados::ObjectWriteOperation& op,
+			     const string& group_id,
+			     uint64_t num_shards,
+			     bool exclusive);
+void cls_rgw_sync_group_update(librados::ObjectWriteOperation& op,
+			       const string& group_id,
+			       const std::vector<std::pair<uint64_t, cls_rgw_sync_group_shard_state> >& entries,
+			       bool *complete);
+void cls_rgw_sync_group_get_info(librados::ObjectReadOperation& op,
+				 std::optional<string> group_id,
+				 cls_rgw_sync_group_get_info_ret *result);
+void cls_rgw_sync_group_list(librados::ObjectReadOperation& op,
+			     const std::string& group_id,
+			     std::optional<uint64_t> marker,
+			     uint32_t max_entries,
+			     cls_rgw_sync_group_list_ret *result);
+void cls_rgw_sync_group_purge(librados::ObjectWriteOperation& op,
+			      const std::string& group_id);
+
 #endif
