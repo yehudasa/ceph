@@ -6,7 +6,7 @@
 
 #define dout_subsys ceph_subsys_rgw
 
-static inline string stage_type_to_str(SIProvider::StageType st)
+string SIProvider::stage_type_to_str(SIProvider::StageType st)
 {
   switch  (st) {
     case SIProvider::StageType::FULL:
@@ -18,7 +18,7 @@ static inline string stage_type_to_str(SIProvider::StageType st)
   }
 }
 
-static inline SIProvider::StageType stage_type_from_str(const string& s)
+SIProvider::StageType SIProvider::stage_type_from_str(const string& s)
 {
   if (s == "full") {
     return SIProvider::StageType::FULL;
@@ -35,7 +35,7 @@ void SIProvider::StageInfo::dump(Formatter *f) const
 {
   encode_json("sid", sid, f);
   encode_json("next_sid", next_sid, f);
-  encode_json("type", stage_type_to_str(type), f);
+  encode_json("type", SIProvider::stage_type_to_str(type), f);
   encode_json("num_shards", num_shards, f);
   encode_json("disabled", disabled, f);
 }
@@ -46,7 +46,7 @@ void SIProvider::StageInfo::decode_json(JSONObj *obj)
   JSONDecoder::decode_json("next_sid", next_sid, obj);
   string type_str;
   JSONDecoder::decode_json("type", type_str, obj);
-  type = stage_type_from_str(type_str);
+  type = SIProvider::stage_type_from_str(type_str);
   JSONDecoder::decode_json("num_shards", num_shards, obj);
   JSONDecoder::decode_json("disabled", disabled, obj);
 }
