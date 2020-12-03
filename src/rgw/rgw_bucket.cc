@@ -164,7 +164,7 @@ int rgw_read_user_buckets(rgw::sal::RGWRadosStore * store,
   return user.list_buckets(marker, end_marker, max, need_stats, buckets, y);
 }
 
-int rgw_bucket_parse_bucket_instance(const string& bucket_instance, string *bucket_name, string *bucket_id, int *shard_id)
+int rgw_bucket_parse_bucket_instance(const string& bucket_instance, string *bucket_name, string *bucket_id, uint64_t *gen_id, int *shard_id)
 {
   auto pos = bucket_instance.rfind(':');
   if (pos == string::npos) {
@@ -187,7 +187,11 @@ int rgw_bucket_parse_bucket_instance(const string& bucket_instance, string *buck
   *bucket_id = first.substr(pos + 1);
 
   string err;
-  *shard_id = strict_strtol(second.c_str(), 10, &err);
+  *gen_id = static_cast<uint64_t>(strict_strtoll(second.substr(0,pos).c_str(), 10, &err));
+  if (!err.empty()) {
+    *gen_id = 0;
+  }
+  *shard_id = strict_strtol(second.substr(pos+1).c_str(), 10, &err);
   if (!err.empty()) {
     return -EINVAL;
   }
