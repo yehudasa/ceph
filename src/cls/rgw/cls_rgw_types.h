@@ -1345,6 +1345,14 @@ struct cls_rgw_sync_group_shard_state
   bool is_complete() const {
     return ((status & STATUS_COMPLETE) != 0);
   }
+
+  void set_complete(bool complete) {
+    if (complete) {
+      status |= STATUS_COMPLETE;
+    } else {
+      status &= ~STATUS_COMPLETE;
+    }
+  }
 };
 WRITE_CLASS_ENCODER(cls_rgw_sync_group_shard_state)
 

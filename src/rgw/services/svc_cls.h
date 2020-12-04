@@ -18,6 +18,7 @@
 
 #include "cls/otp/cls_otp_types.h"
 #include "cls/log/cls_log_types.h"
+#include "cls/rgw/cls_rgw_types.h"
 
 #include "rgw/rgw_service.h"
 
@@ -141,7 +142,37 @@ public:
                std::optional<string> lock_name = std::nullopt);
   } lock;
 
-  RGWSI_Cls(CephContext *cct): RGWServiceInstance(cct), mfa(cct), timelog(cct), lock(cct) {}
+  class SyncShardGroup : public ClsSubService {
+    int init_obj(const rgw_raw_obj& key, RGWSI_RADOS::Obj *obj);
+  public:
+    SyncShardGroup(CephContext *cct): ClsSubService(cct) {}
+    int init_group(const rgw_raw_obj& key,
+		   const string& group_id,
+		   int num_shards,
+		   bool exclusive,
+		   optional_yield y);
+    int update_completion(const rgw_raw_obj& key,
+			  const string& group_id,
+			  const std::vector<std::pair<uint64_t, bool> >& entries,
+			  bool *all_complete,
+			  optional_yield y);
+    int get_info(const rgw_raw_obj& key,
+		 std::optional<string> group_id,
+		 std::vector<cls_rgw_sync_group_info> *result,
+		 optional_yield y);
+    int list_group(const rgw_raw_obj& key,
+		   const std::string& group_id,
+		   std::optional<uint64_t> marker,
+		   uint32_t max_entries,
+		   std::vector<std::pair<uint64_t, bool> > *result,
+		   bool *more,
+		   optional_yield y);
+    int purge_group(const rgw_raw_obj& key,
+		    const std::string& group_id,
+		    optional_yield y);
+  } sync_shard_group;
+
+  RGWSI_Cls(CephContext *cct): RGWServiceInstance(cct), mfa(cct), timelog(cct), lock(cct), sync_shard_group(cct) {}
 
   void init(RGWSI_Zone *_zone_svc, RGWSI_RADOS *_rados_svc) {
     rados_svc = _rados_svc;
@@ -150,6 +181,7 @@ public:
     mfa.init(this, zone_svc, rados_svc);
     timelog.init(this, zone_svc, rados_svc);
     lock.init(this, zone_svc, rados_svc);
+    sync_shard_group.init(this, zone_svc, rados_svc);
   }
 
   int do_start() override;

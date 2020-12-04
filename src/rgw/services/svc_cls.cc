@@ -11,6 +11,7 @@
 #include "cls/otp/cls_otp_client.h"
 #include "cls/log/cls_log_client.h"
 #include "cls/lock/cls_lock_client.h"
+#include "cls/rgw/cls_rgw_client.h"
 
 
 #define dout_subsys ceph_subsys_rgw
@@ -463,5 +464,159 @@ int RGWSI_Cls::Lock::unlock(const rgw_pool& pool,
   l.set_cookie(owner_id);
   
   return l.unlock(&p.ioctx(), oid);
+}
+
+int RGWSI_Cls::SyncShardGroup::init_obj(const rgw_raw_obj& key, RGWSI_RADOS::Obj *obj)
+{
+  rgw_raw_obj o(key.pool, key.oid);
+  *obj = rados_svc->obj(o);
+  return obj->open();
+}
+
+int RGWSI_Cls::SyncShardGroup::init_group(const rgw_raw_obj& key,
+					  const string& group_id,
+					  int num_shards,
+					  bool exclusive,
+					  optional_yield y)
+{
+  RGWSI_RADOS::Obj obj;
+
+  int r = init_obj(key, &obj);
+  if (r < 0) {
+    return r;
+  }
+
+  librados::ObjectWriteOperation op;
+  op.create(false);
+  cls_rgw_sync_group_init(op, group_id, num_shards, exclusive);
+
+  r = obj.operate(&op, y);
+  if (r < 0) {
+    ldout(cct, 20) << __func__ << "(): cls_rgw_sync_group_init op returned r=" << r << dendl;
+    return r;
+  }
+  
+  return 0;
+}
+
+int RGWSI_Cls::SyncShardGroup::update_completion(const rgw_raw_obj& key,
+						 const string& group_id,
+						 const std::vector<std::pair<uint64_t, bool> >& entries,
+						 bool *all_complete,
+						 optional_yield y)
+{
+  RGWSI_RADOS::Obj obj;
+
+  int r = init_obj(key, &obj);
+  if (r < 0) {
+    return r;
+  }
+
+  std::vector<std::pair<uint64_t, cls_rgw_sync_group_shard_state> > op_entries;
+
+  for (auto& e : entries) {
+    cls_rgw_sync_group_shard_state s;
+    s.set_complete(e.second);
+    op_entries.push_back( {e.first, s} );
+  }
+
+  librados::ObjectWriteOperation op;
+  cls_rgw_sync_group_update(op, group_id, op_entries, all_complete);
+
+  r = obj.operate(&op, y);
+  if (r < 0) {
+    ldout(cct, 20) << __func__ << "(): cls_rgw_sync_group_update op returned r=" << r << dendl;
+    return r;
+  }
+
+  return 0;
+}
+
+int RGWSI_Cls::SyncShardGroup::get_info(const rgw_raw_obj& key,
+					std::optional<string> group_id,
+					std::vector<cls_rgw_sync_group_info> *result,
+					optional_yield y)
+{
+  RGWSI_RADOS::Obj obj;
+
+  int r = init_obj(key, &obj);
+  if (r < 0) {
+    return r;
+  }
+
+  cls_rgw_sync_group_get_info_ret op_result;
+
+  librados::ObjectReadOperation op;
+  cls_rgw_sync_group_get_info(op, group_id, &op_result);
+
+  bufferlist obl;
+
+  r = obj.operate(&op, &obl, y);
+  if (r < 0) {
+    ldout(cct, 20) << __func__ << "(): cls_rgw_sync_group_get_info op returned r=" << r << dendl;
+    return r;
+  }
+
+  *result = std::move(op_result.result);
+  
+  return 0;
+}
+
+int RGWSI_Cls::SyncShardGroup::list_group(const rgw_raw_obj& key,
+					  const std::string& group_id,
+					  std::optional<uint64_t> marker,
+					  uint32_t max_entries,
+					  std::vector<std::pair<uint64_t, bool> > *result,
+					  bool *more,
+					  optional_yield y)
+{
+  RGWSI_RADOS::Obj obj;
+
+  int r = init_obj(key, &obj);
+  if (r < 0) {
+    return r;
+  }
+
+  cls_rgw_sync_group_list_ret op_result;
+
+  librados::ObjectReadOperation op;
+  cls_rgw_sync_group_list(op, group_id, marker, max_entries, &op_result);
+
+  bufferlist obl;
+
+  r = obj.operate(&op, &obl, y);
+  if (r < 0) {
+    ldout(cct, 20) << __func__ << "(): cls_rgw_sync_group_list op returned r=" << r << dendl;
+    return r;
+  }
+
+  for (auto& e : op_result.result) {
+    result->push_back( { e.shard_id, e.state.is_complete() } );
+  }
+  
+  return 0;
+}
+
+int RGWSI_Cls::SyncShardGroup::purge_group(const rgw_raw_obj& key,
+					  const string& group_id,
+					  optional_yield y)
+{
+  RGWSI_RADOS::Obj obj;
+
+  int r = init_obj(key, &obj);
+  if (r < 0) {
+    return r;
+  }
+
+  librados::ObjectWriteOperation op;
+  cls_rgw_sync_group_purge(op, group_id);
+
+  r = obj.operate(&op, y);
+  if (r < 0) {
+    ldout(cct, 20) << __func__ << "(): cls_rgw_sync_group_purge op returned r=" << r << dendl;
+    return r;
+  }
+  
+  return 0;
 }
 
