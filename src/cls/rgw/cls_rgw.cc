@@ -4129,6 +4129,22 @@ static int write_sync_group_entry(cls_method_context_t hctx,
   return write_entry(hctx, entry, key);
 }
 
+static int do_sync_group_clear_shards(cls_method_context_t hctx,
+                                      const cls_rgw_sync_group_info& info)
+{
+  auto start_key = get_sync_group_key_prefix(info.id);
+  auto end_key = get_sync_group_entry_key(info.id, info.num_shards); /* one past the end */
+
+  int r = cls_cxx_map_remove_range(hctx, start_key, end_key);
+  if (r < 0) {
+    CLS_LOG(0, "ERROR: %s(): class_cxx_map_remove_range failed for id=%s start_key=%s end_key=%s: r=%d\n", __func__,
+            info.id.c_str(), start_key.c_str(), end_key.c_str(), r);
+    return r;
+  }
+
+  return 0;
+}
+
 static int rgw_sync_group_init(cls_method_context_t hctx,
                                bufferlist *in, bufferlist *out)
 {
@@ -4150,11 +4166,16 @@ static int rgw_sync_group_init(cls_method_context_t hctx,
     return r;
   }
 
-  if (op.exclusive) {
-    auto iter = header.info.find(op.id);
-    if (iter != header.info.end()) {
+  auto iter = header.info.find(op.id);
+  if (iter != header.info.end()) {
+    if (op.exclusive) {
       CLS_LOG(5, "NOTICE: %s(): group info for id=%s already exists\n", __func__, op.id.c_str());
       return -EEXIST;
+    }
+
+    r = do_sync_group_clear_shards(hctx, iter->second);
+    if (r < 0) {
+      return r;
     }
   }
 
@@ -4395,13 +4416,8 @@ static int rgw_sync_group_purge(cls_method_context_t hctx,
 
   auto& info = iter->second;
 
-  auto start_key = get_sync_group_key_prefix(op.id);
-  auto end_key = get_sync_group_entry_key(op.id, info.num_shards); /* one past the end */
-
-  int ret = cls_cxx_map_remove_range(hctx, start_key, end_key);
+  int ret = do_sync_group_clear_shards(hctx, info);
   if (ret < 0) {
-    CLS_LOG(0, "ERROR: %s(): class_cxx_map_remove_range failed for id=%s start_key=%s end_key=%s: r=%d\n", __func__,
-            op.id.c_str(), start_key.c_str(), end_key.c_str(), r);
     return ret;
   }
 
