@@ -733,6 +733,9 @@ public:
   static string obj_status_oid(const rgw_bucket_sync_pipe& sync_pipe,
                                const rgw_zone_id& source_zone, const rgw::sal::RGWObject* obj); /* specific source obj sync status,
                                                                                        can be used by sync modules */
+  static string shard_group_status_oid(const rgw_zone_id& source_zone,
+				       const rgw_bucket& source_bucket,
+				       const rgw_bucket& dest_bucket);
 
   // implements DoutPrefixProvider
   CephContext *get_cct() const override;

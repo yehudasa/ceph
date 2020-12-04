@@ -51,6 +51,7 @@ static const string datalog_sync_full_sync_index_prefix = "data.full-sync.index"
 static const string bucket_full_status_oid_prefix = "bucket.full-sync-status";
 static const string bucket_status_oid_prefix = "bucket.sync-status";
 static const string object_status_oid_prefix = "bucket.sync-status";
+static const string bucket_shard_group_status_oid_prefix = "bucket.shard-group-sync-status";
 
 
 void rgw_datalog_info::decode_json(JSONObj *obj) {
@@ -5295,6 +5296,20 @@ string RGWBucketPipeSyncStatusManager::obj_status_oid(const rgw_bucket_sync_pipe
   }
   return prefix + ":" + obj->get_name() + ":" + obj->get_instance();
 }
+
+string RGWBucketPipeSyncStatusManager::shard_group_status_oid(const rgw_zone_id& source_zone,
+                                                              const rgw_bucket& source_bucket,
+                                                              const rgw_bucket& dest_bucket)
+{
+  if (source_bucket == dest_bucket) {
+    return bucket_shard_group_status_oid_prefix + "." + source_zone.id + ":"
+        + dest_bucket.get_key();
+  } else {
+    return bucket_shard_group_status_oid_prefix + "." + source_zone.id + ":"
+        + dest_bucket.get_key() + ":" + source_bucket.get_key();
+  }
+}
+
 
 int rgw_read_remote_bilog_info(RGWRESTConn* conn,
                                const rgw_bucket& bucket,

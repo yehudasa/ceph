@@ -604,6 +604,11 @@ enum class OPT {
   BUCKET_SYNC_RUN,
   BUCKET_SYNC_DISABLE,
   BUCKET_SYNC_ENABLE,
+  BUCKET_SYNC_SHARD_GROUP_INIT,
+  BUCKET_SYNC_SHARD_GROUP_UPDATE,
+  BUCKET_SYNC_SHARD_GROUP_GET_INFO,
+  BUCKET_SYNC_SHARD_GROUP_LIST,
+  BUCKET_SYNC_SHARD_GROUP_PURGE,
   BUCKET_RM,
   BUCKET_REWRITE,
   BUCKET_RESHARD,
@@ -805,6 +810,11 @@ static SimpleCmd::Commands all_cmds = {
   { "bucket sync run", OPT::BUCKET_SYNC_RUN },
   { "bucket sync disable", OPT::BUCKET_SYNC_DISABLE },
   { "bucket sync enable", OPT::BUCKET_SYNC_ENABLE },
+  { "bucket sync shard group init", OPT::BUCKET_SYNC_SHARD_GROUP_INIT },
+  { "bucket sync shard group update", OPT::BUCKET_SYNC_SHARD_GROUP_UPDATE },
+  { "bucket sync shard group info", OPT::BUCKET_SYNC_SHARD_GROUP_GET_INFO },
+  { "bucket sync shard group list", OPT::BUCKET_SYNC_SHARD_GROUP_LIST },
+  { "bucket sync shard group purge", OPT::BUCKET_SYNC_SHARD_GROUP_PURGE },
   { "bucket rm", OPT::BUCKET_RM },
   { "bucket rewrite", OPT::BUCKET_REWRITE },
   { "bucket reshard", OPT::BUCKET_RESHARD },
@@ -2994,6 +3004,45 @@ public:
   }
 };
 
+int init_shard_group_cmd(rgw_zone_id& source_zone,
+			 string& bucket_name,
+			 string& tenant,
+			 string& bucket_id,
+			 std::optional<rgw_bucket> opt_source_bucket,
+			 rgw_raw_obj *obj)
+{
+  if (source_zone.empty()) {
+    cerr << "ERROR: --source-zone not specified" << std::endl;
+    return -EINVAL;
+  }
+  if (bucket_name.empty()) {
+    cerr << "ERROR: --bucket not specified" << std::endl;
+    return -EINVAL;
+  }
+
+  rgw_bucket bucket;
+  int ret = init_bucket_for_sync(tenant, bucket_name, bucket_id, bucket);
+  if (ret < 0) {
+    return ret;
+  }
+  auto opt_sb = opt_source_bucket;
+  if (opt_sb && opt_sb->bucket_id.empty()) {
+    string sbid;
+    rgw_bucket sbuck;
+    int ret = init_bucket_for_sync(opt_sb->tenant, opt_sb->name, sbid, sbuck);
+    if (ret < 0) {
+      return ret;
+    }
+    opt_sb = sbuck;
+  }
+
+  *obj = rgw_raw_obj(store->svc()->zone->get_zone_params().log_pool,
+		     RGWBucketPipeSyncStatusManager::shard_group_status_oid(source_zone,
+									    opt_sb.value_or(bucket),
+									    bucket));
+
+  return 0;
+}
 int main(int argc, const char **argv)
 {
   vector<const char*> args;
@@ -3203,6 +3252,8 @@ int main(int argc, const char **argv)
   std::optional<string> opt_dest_bucket_id;
   std::optional<string> opt_effective_zone_name;
   std::optional<rgw_zone_id> opt_effective_zone_id;
+  std::optional<string> opt_shard_group_id;
+  std::optional<bool> opt_shard_complete;
 
   std::optional<string> opt_prefix;
   std::optional<string> opt_prefix_rm;
@@ -3634,6 +3685,10 @@ int main(int argc, const char **argv)
       // do nothing
     } else if (ceph_argparse_witharg(args, i, &val, "--context", (char*)NULL)) {
       str_script_ctx = val;
+    } else if (ceph_argparse_witharg(args, i, &val, "--shard-group-id", (char*)NULL)) {
+      opt_shard_group_id = val;
+    } else if (ceph_argparse_binary_flag(args, i, &tmp_int, NULL, "--shard-complete", (char*)NULL)) {
+      opt_shard_complete = (bool)tmp_int;
     } else if (strncmp(*i, "-", 1) == 0) {
       cerr << "ERROR: invalid flag " << *i << std::endl;
       return EINVAL;
@@ -8111,9 +8166,200 @@ next:
     }
   }
 
-  if (opt_cmd == OPT::BILOG_LIST) {
-    if (bucket_name.empty()) {
-      cerr << "ERROR: bucket not specified" << std::endl;
+  if (opt_cmd == OPT::BUCKET_SYNC_SHARD_GROUP_INIT) {
+    if (!num_shards_specified) {
+      cerr << "ERROR: --num-shards not specified" << std::endl;
+      return EINVAL;
+    }
+    CHECK_TRUE(require_opt(opt_shard_group_id), "ERROR: --shard-group-id not specified", EINVAL);
+
+    rgw_raw_obj obj;
+
+    int ret = init_shard_group_cmd(source_zone,
+				   bucket_name,
+				   tenant,
+				   bucket_id,
+				   opt_source_bucket,
+				   &obj);
+    if (ret < 0) {
+      return -ret;
+    }
+
+    auto exclusive = !yes_i_really_mean_it;
+
+    ret = store->svc()->cls->sync_shard_group.init_group(obj,
+							 *opt_shard_group_id,
+							 num_shards,
+							 exclusive,
+							 null_yield);
+    if (ret == -EEXIST) {
+      cerr << "ERROR: init_group() failed, group already exists. Use --yes-i-really-mean-it to override" << std::endl;
+      return ret;
+    }
+
+    if (ret < 0) {
+      cerr << "ERROR: init_group() returned " << cpp_strerror(-ret) << std::endl;
+      return -ret;
+    }
+  }
+
+  if (opt_cmd == OPT::BUCKET_SYNC_SHARD_GROUP_UPDATE) {
+    if (!specified_shard_id) {
+      cerr << "ERROR: --shard-id not specified" << std::endl;
+      return EINVAL;
+    }
+    CHECK_TRUE(require_opt(opt_shard_group_id), "ERROR: --shard-group-id not specified", EINVAL);
+
+    rgw_raw_obj obj;
+
+    int ret = init_shard_group_cmd(source_zone,
+				   bucket_name,
+				   tenant,
+				   bucket_id,
+				   opt_source_bucket,
+				   &obj);
+    if (ret < 0) {
+      return -ret;
+    }
+
+
+    bool all_complete;
+
+    ret = store->svc()->cls->sync_shard_group.update_completion(obj,
+								*opt_shard_group_id,
+								{ { shard_id, opt_shard_complete.value_or(true) } },
+								&all_complete,
+								null_yield);
+    if (ret == -EEXIST) {
+      cerr << "ERROR: init_group() failed, group already exists. Use --yes-i-really-mean-it to override" << std::endl;
+      return ret;
+    }
+
+    if (ret < 0) {
+      cerr << "ERROR: init_group() returned " << cpp_strerror(-ret) << std::endl;
+      return -ret;
+    }
+
+    {
+      Formatter::ObjectSection os(*formatter, "result");
+      encode_json("all_complete", all_complete, formatter.get());
+    }
+
+    formatter->flush(cout);
+  }
+
+  if (opt_cmd == OPT::BUCKET_SYNC_SHARD_GROUP_GET_INFO) {
+    rgw_raw_obj obj;
+
+    int ret = init_shard_group_cmd(source_zone,
+				   bucket_name,
+				   tenant,
+				   bucket_id,
+				   opt_source_bucket,
+				   &obj);
+    if (ret < 0) {
+      return -ret;
+    }
+
+
+    std::vector<cls_rgw_sync_group_info> result;
+
+    ret = store->svc()->cls->sync_shard_group.get_info(obj,
+						       opt_shard_group_id,
+						       &result,
+						       null_yield);
+    if (ret < 0) {
+      cerr << "ERROR: init_group() returned " << cpp_strerror(-ret) << std::endl;
+      return -ret;
+    }
+
+    encode_json("result", result, formatter.get());
+    formatter->flush(cout);
+  }
+
+  if (opt_cmd == OPT::BUCKET_SYNC_SHARD_GROUP_LIST) {
+    CHECK_TRUE(require_opt(opt_shard_group_id), "ERROR: --shard-group-id not specified", EINVAL);
+
+    rgw_raw_obj obj;
+
+    int ret = init_shard_group_cmd(source_zone,
+				   bucket_name,
+				   tenant,
+				   bucket_id,
+				   opt_source_bucket,
+				   &obj);
+    if (ret < 0) {
+      return -ret;
+    }
+
+
+    int max_entries = 1000;
+
+    bool more;
+    {
+      Formatter::ObjectSection os(*formatter.get(), "result");
+
+      do {
+	std::vector<std::pair<uint64_t, bool> > result;
+
+	ret = store->svc()->cls->sync_shard_group.list_group(obj,
+							     *opt_shard_group_id,
+							     nullopt,
+							     max_entries,
+							     &result,
+							     &more,
+							     null_yield);
+	if (ret < 0) {
+	  cerr << "ERROR: init_group() returned " << cpp_strerror(-ret) << std::endl;
+	  return -ret;
+	}
+	for (auto& entry : result) {
+	  char buf[32];
+	  snprintf(buf, sizeof(buf), "%lld", (long long)entry.first);
+
+	  encode_json(buf, entry.second, formatter.get());
+	}
+
+	formatter->flush(cout);
+      } while (more);
+    }
+
+    formatter->flush(cout);
+  }
+
+  if (opt_cmd == OPT::BUCKET_SYNC_SHARD_GROUP_PURGE) {
+    CHECK_TRUE(require_opt(opt_shard_group_id), "ERROR: --shard-group-id not specified", EINVAL);
+
+    if (!yes_i_really_mean_it) {
+      cerr << "do you really mean it? (requires --yes-i-really-mean-it)" << std::endl;
+      return EINVAL;
+    }
+
+    rgw_raw_obj obj;
+
+    int ret = init_shard_group_cmd(source_zone,
+				   bucket_name,
+				   tenant,
+				   bucket_id,
+				   opt_source_bucket,
+				   &obj);
+    if (ret < 0) {
+      return -ret;
+    }
+
+
+    ret = store->svc()->cls->sync_shard_group.purge_group(obj,
+							  *opt_shard_group_id,
+							  null_yield);
+    if (ret < 0) {
+      cerr << "ERROR: init_group() returned " << cpp_strerror(-ret) << std::endl;
+      return -ret;
+    }
+  }
+
+ if (opt_cmd == OPT::BILOG_LIST) {
+   if (bucket_name.empty()) {
+     cerr << "ERROR: bucket not specified" << std::endl;
       return EINVAL;
     }
     RGWBucketInfo bucket_info;
