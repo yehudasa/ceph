@@ -1213,8 +1213,18 @@ class RGWRunBucketSourcesSyncCR : public RGWCoroutine {
   ceph::real_time *cur_progress{nullptr};
   std::optional<ceph::real_time> min_progress;
 
-  std::vector<bool> shard_complete; /*  generation/stage is complete for this shard */
-  std::vector<bool>::iterator cur_shard_complete;
+  struct shard_complete_info {
+    uint64_t shard_id;
+    rgw_bucket source_bucket;
+    rgw_bucket dest_bucket;
+    bool complete{false};
+    rgw_sync_shard_group_update_params update_params;
+    rgw_sync_shard_group_init_params init_params;
+    std::shared_ptr<rgw_sync_shard_group_update_result> update_result;
+  };
+
+  std::vector<shard_complete_info> shard_complete; /*  generation/stage is complete for this shard */
+  std::vector<shard_complete_info>::iterator cur_shard_complete;
 
   RGWRESTConn *conn{nullptr};
   rgw_zone_id last_zone;
@@ -1227,6 +1237,11 @@ class RGWRunBucketSourcesSyncCR : public RGWCoroutine {
   int num_shards{0};
   int cur_shard{0};
   bool again = false;
+
+  bool all_complete = false;
+
+  int i;
+
 
 public:
   RGWRunBucketSourcesSyncCR(RGWDataSyncCtx *_sc,
@@ -4412,6 +4427,7 @@ int RGWBucketShardIncrementalSyncCR::operate()
       tn->log(10, SSTR("backing out with sync_status=" << sync_status));
       return set_cr_error(sync_status);
     }
+
 #warning update shard_complete here
     return set_cr_done();
   }
@@ -4640,12 +4656,16 @@ int RGWRunBucketSourcesSyncCR::operate()
           sync_pair.dest_bs.shard_id = -1;
         }
 
+        cur_shard_complete->shard_id = sync_pair.source_bs.shard_id;
+        cur_shard_complete->source_bucket = sync_pair.source_bs.bucket;
+        cur_shard_complete->dest_bucket = sync_pair.dest_bs.bucket;
+
         ldpp_dout(sync_env->dpp, 20) << __func__ << "(): sync_pair=" << sync_pair << dendl;
 
         cur_progress = (progress ? &shard_progress[prealloc_stack_id()] : nullptr);
 
         yield_spawn_window(sync_bucket_shard_cr(sc, lease_cr, sync_pair, tn,
-                                                &*cur_shard_progress, &*cur_shard_complete),
+                                                &*cur_shard_progress, &cur_shard_complete->complete),
                            BUCKET_SYNC_SPAWN_WINDOW,
                            [&](uint64_t stack_id, int ret) {
                              handle_complete_stack(stack_id);
@@ -4666,7 +4686,63 @@ int RGWRunBucketSourcesSyncCR::operate()
     if (progress && min_progress) {
       *progress = *min_progress;
     }
-#warning iterate over shard_complete and update shard group
+
+    cur_shard_complete = shard_complete.begin();
+    for (; cur_shard_complete != shard_complete.end(); ++cur_shard_complete) {
+      if (cur_shard_complete->complete) { /* shard processing ended, need to update shard group */
+        {
+          auto& params = cur_shard_complete->update_params;
+          params.key = rgw_raw_obj(sync_env->svc->zone->get_zone_params().log_pool,
+                                   RGWBucketPipeSyncStatusManager::shard_group_status_oid(sc->source_zone,
+									    cur_shard_complete->source_bucket,
+									    cur_shard_complete->dest_bucket));
+#warning need to have current source bilog genereation number
+          params.group_id = "gen#x";
+          params.entries = { { cur_shard_complete->shard_id, true } };
+
+         cur_shard_complete->update_result = make_shared<rgw_sync_shard_group_update_result>();
+        }
+
+#warning use spawn to call concurrently
+        for (i = 0; i < 2; ++i) {
+          yield call(new RGWSyncShardGroupUpdateCR(sync_env->async_rados,
+                                                   sync_env->store,
+                                                   cur_shard_complete->update_params,
+                                                   cur_shard_complete->update_result));
+          if (retcode == -ENOENT && i == 0) {
+            {
+              auto& params = cur_shard_complete->init_params;
+              params.key = cur_shard_complete->update_params.key;
+#warning update gen
+              params.group_id = "gen#x";
+              params.num_shards = num_shards;
+              params.exclusive = true;
+            }
+            yield call(new RGWSyncShardGroupInitCR(sync_env->async_rados,
+                                                   sync_env->store,
+                                                   cur_shard_complete->init_params,
+                                                   sync_env->dpp));
+            if (retcode == 0 ||
+                retcode == -EEXIST) {
+              continue;
+            }
+          } else if (retcode < 0) {
+            ldpp_dout(sync_env->dpp, 20) << __func__ << "(): ERROR: failed to update shard group completion for shard_id=" << cur_shard_complete->shard_id << " : ret=" << retcode << dendl;
+            return set_cr_error(retcode);
+          }
+
+          if (cur_shard_complete->update_result->all_complete) {
+            all_complete = true;
+          }
+          break;
+        }
+      }
+    }
+
+    if (all_complete) {
+#warning need to update sync status to next gen, and purge shard group
+    }
+
     return set_cr_done();
   }
 
@@ -5058,7 +5134,8 @@ static RGWCoroutine* sync_bucket_shard_cr(RGWDataSyncCtx* sc,
                                           boost::intrusive_ptr<const RGWContinuousLeaseCR> lease,
                                           const rgw_bucket_sync_pair_info& sync_pair,
                                           const RGWSyncTraceNodeRef& tn,
-                                          ceph::real_time* progress)
+                                          ceph::real_time* progress,
+                                          bool *shard_complete)
 {
   return new RGWSyncBucketCR(sc, std::move(lease), sync_pair, tn, progress, shard_complete);
 }
@@ -5207,7 +5284,7 @@ RGWCoroutine *RGWRemoteBucketManager::run_sync_cr(int num)
     return nullptr;
   }
 
-  return sync_bucket_shard_cr(&sc, nullptr, sync_pairs[num], sync_env->sync_tracer->root_node, nullptr);
+  return sync_bucket_shard_cr(&sc, nullptr, sync_pairs[num], sync_env->sync_tracer->root_node, nullptr, nullptr);
 }
 
 int RGWBucketPipeSyncStatusManager::init()
