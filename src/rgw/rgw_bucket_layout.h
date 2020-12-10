@@ -84,6 +84,9 @@ struct BucketLayout {
   // current bucket index layout
   bucket_index_layout_generation current_index;
 
+  // previously and maybe current layouts by gen
+  std::map<uint64_t, bucket_index_layout_generation> gen_index;
+
   // target index layout of a resharding operation
   std::optional<bucket_index_layout_generation> target_index;
 };

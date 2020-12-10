@@ -324,6 +324,10 @@ static int set_target_layout(rgw::sal::RGWRadosStore *store,
   bucket_info.layout.target_index.emplace();
 
   bucket_info.layout.target_index->layout.normal.num_shards = new_num_shards;
+
+  auto& current_index = bucket_info.layout.current_index;
+
+  bucket_info.layout.gen_index[current_index.gen] = current_index;
   
   //increment generation number
   bucket_info.layout.target_index->gen = bucket_info.layout.current_index.gen;
