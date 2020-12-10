@@ -17,6 +17,7 @@
 #include "rgw_orphan.h"
 #include "rgw_bucket_sync.h"
 #include "rgw_tools.h"
+#include "rgw_bucket_layout.h"
 
 #include "common/ceph_json.h"
 #include "common/Formatter.h"
@@ -782,6 +783,7 @@ void RGWBucketInfo::dump(Formatter *f) const
   encode_json("quota", quota, f);
   encode_json("num_shards", layout.current_index.layout.normal.num_shards, f);
   encode_json("bi_shard_hash_type", (uint32_t)layout.current_index.layout.normal.hash_type, f);
+  encode_json("layout", layout, f);
   encode_json("requester_pays", requester_pays, f);
   encode_json("has_website", has_website, f);
   if (has_website) {
@@ -2154,4 +2156,37 @@ void objexp_hint_entry::dump(Formatter *f) const
 void rgw_user::dump(Formatter *f) const
 {
   ::encode_json("user", *this, f);
+}
+
+void rgw::bucket_index_normal_layout::dump(Formatter *f) const
+{
+  encode_json("num_shards", num_shards, f);
+  encode_json("hash_type", rgw::bucket_hash_type_to_str(hash_type), f);
+}
+
+void rgw::bucket_index_layout::dump(Formatter *f) const
+{
+  encode_json("type", rgw::bucket_index_type_to_str(type), f);
+
+  switch (type) {
+    case BucketIndexType::Normal:
+      encode_json("params", normal, f);
+      break;
+    default:
+      break;
+  }
+}
+
+void rgw::bucket_index_layout_generation::dump(Formatter *f) const
+{
+  encode_json("gen", gen, f);
+  encode_json("layout", layout, f);
+}
+
+void rgw::BucketLayout::dump(Formatter *f) const
+{
+  encode_json("reshard-state", rgw::bucket_reshard_state_to_str(resharding), f);
+  encode_json("current_index", current_index, f);
+  encode_json("gen_index", gen_index, f);
+  encode_json("target_index", target_index, f);
 }

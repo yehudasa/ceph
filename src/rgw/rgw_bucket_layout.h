@@ -19,6 +19,10 @@
 #include <string>
 #include "include/encoding.h"
 
+namespace ceph {
+  class Formatter;
+} // namespace ceph
+
 namespace rgw {
 
 enum class BucketIndexType : uint8_t {
@@ -30,15 +34,28 @@ enum class BucketHashType : uint8_t {
   Mod, // rjenkins hash of object name, modulo num_shards
 };
 
-inline std::ostream& operator<<(std::ostream& out, const BucketIndexType &index_type)
-{
+inline std::string bucket_index_type_to_str(const BucketIndexType& index_type) {
   switch (index_type) {
     case BucketIndexType::Normal:
-      return out << "Normal";
+      return "Normal";
     case BucketIndexType::Indexless:
-      return out << "Indexless";
+      return "Indexless";
     default:
-      return out << "Unknown";
+      return "Unknown";
+  }
+}
+
+inline std::ostream& operator<<(std::ostream& out, const BucketIndexType &index_type)
+{
+  return out << bucket_index_type_to_str(index_type);
+}
+
+inline std::string bucket_hash_type_to_str(const BucketHashType& hash_type) {
+  switch (hash_type) {
+    case BucketHashType::Mod:
+      return "Mod";
+    default:
+      return "Unknown";
   }
 }
 
@@ -46,6 +63,8 @@ struct bucket_index_normal_layout {
   uint32_t num_shards = 1;
 
   BucketHashType hash_type = BucketHashType::Mod;
+
+  void dump(ceph::Formatter *f) const;
 };
 
 void encode(const bucket_index_normal_layout& l, bufferlist& bl, uint64_t f=0);
@@ -57,6 +76,8 @@ struct bucket_index_layout {
 
   // TODO: variant of layout types?
   bucket_index_normal_layout normal;
+
+  void dump(ceph::Formatter *f) const;
 };
 
 void encode(const bucket_index_layout& l, bufferlist& bl, uint64_t f=0);
@@ -66,6 +87,8 @@ void decode(bucket_index_layout& l, bufferlist::const_iterator& bl);
 struct bucket_index_layout_generation {
   uint64_t gen = 0;
   bucket_index_layout layout;
+
+  void dump(ceph::Formatter *f) const;
 };
 
 void encode(const bucket_index_layout_generation& l, bufferlist& bl, uint64_t f=0);
@@ -76,6 +99,17 @@ enum class BucketReshardState : uint8_t {
   NONE,
   IN_PROGRESS,
 };
+
+inline std::string bucket_reshard_state_to_str(const BucketReshardState& reshard_state) {
+  switch (reshard_state) {
+    case BucketReshardState::NONE:
+      return "none";
+    case BucketReshardState::IN_PROGRESS:
+      return "in-progress";
+    default:
+      return "unknown";
+  }
+}
 
 // describes the layout of bucket index objects
 struct BucketLayout {
@@ -89,6 +123,8 @@ struct BucketLayout {
 
   // target index layout of a resharding operation
   std::optional<bucket_index_layout_generation> target_index;
+
+  void dump(ceph::Formatter *f) const;
 };
 
 void encode(const BucketLayout& l, bufferlist& bl, uint64_t f=0);
