@@ -73,13 +73,13 @@ void decode(bucket_index_layout_generation& l, bufferlist::const_iterator& bl);
 
 
 enum class BucketReshardState : uint8_t {
-  None,
-  InProgress,
+  NONE,
+  IN_PROGRESS,
 };
 
 // describes the layout of bucket index objects
 struct BucketLayout {
-  BucketReshardState resharding = BucketReshardState::None;
+  BucketReshardState resharding = BucketReshardState::NONE;
 
   // current bucket index layout
   bucket_index_layout_generation current_index;
@@ -90,5 +90,9 @@ struct BucketLayout {
 
 void encode(const BucketLayout& l, bufferlist& bl, uint64_t f=0);
 void decode(BucketLayout& l, bufferlist::const_iterator& bl);
+
+inline uint32_t current_num_shards(const BucketLayout& layout) {
+  return std::max(layout.current_index.layout.normal.num_shards, 1u);
+  }
 
 } // namespace rgw

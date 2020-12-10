@@ -1597,7 +1597,7 @@ int RGWBucketAdminOp::set_quota(rgw::sal::RGWRadosStore *store, RGWBucketAdminOp
 
 static int purge_bucket_instance(rgw::sal::RGWRadosStore *store, const RGWBucketInfo& bucket_info)
 {
-  int max_shards = (bucket_info.layout.current_index.layout.normal.num_shards > 0 ? bucket_info.layout.current_index.layout.normal.num_shards : 1);
+  int max_shards = rgw::current_num_shards(bucket_info.layout);
   for (int i = 0; i < max_shards; i++) {
     RGWRados::BucketShard bs(store->getRados());
     int shard_id = (bucket_info.layout.current_index.layout.normal.num_shards > 0  ? i : -1);
@@ -2618,7 +2618,7 @@ int RGWMetadataHandlerPut_BucketInstance::put_post()
 
   objv_tracker = bci.info.objv_tracker;
 
-  int ret = bihandler->svc.bi->init_index(bci.info);
+  int ret = bihandler->svc.bi->init_index(bci.info, bci.info.layout.current_index);
   if (ret < 0) {
     return ret;
   }

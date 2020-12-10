@@ -22,6 +22,7 @@ extern "C" {
 #include "common/Formatter.h"
 #include "common/errno.h"
 #include "common/safe_io.h"
+#include "common/fault_injector.h"
 
 #include "include/util.h"
 
@@ -434,6 +435,9 @@ void usage()
   cout << "   --event-id                event id in a pubsub subscription\n";
   cout << "\nScript options:\n";
   cout << "   --context                 context in which the script runs. one of: preRequest, postRequest\n";
+  cout << "\nFault injection options (testing):";
+  cout << "   --inject-error-at         for testing fault injection\n";
+  cout << "   --inject-abort-at         for testing fault abort\n";
   cout << "\n";
   generic_client_usage();
 }
@@ -1082,9 +1086,6 @@ static void show_reshard_status(
   for (const auto& entry : status) {
     formatter->open_object_section("entry");
     formatter->dump_string("reshard_status", to_string(entry.reshard_status));
-    formatter->dump_string("new_bucket_instance_id",
-			   entry.new_bucket_instance_id);
-    formatter->dump_int("num_shards", entry.num_shards);
     formatter->close_section();
   }
   formatter->close_section();
@@ -2710,7 +2711,7 @@ int check_reshard_bucket_params(rgw::sal::RGWRadosStore *store,
     return -EBUSY;
   }
 
-  int num_source_shards = (bucket_info.layout.current_index.layout.normal.num_shards > 0 ? bucket_info.layout.current_index.layout.normal.num_shards : 1);
+  int num_source_shards = rgw::current_num_shards(bucket_info.layout);
 
   if (num_shards <= num_source_shards && !yes_i_really_mean_it) {
     cerr << "num shards is less or equal to current shards count" << std::endl
@@ -3213,6 +3214,9 @@ int main(int argc, const char **argv)
   ceph::timespan opt_retry_delay_ms = std::chrono::milliseconds(2000);
   ceph::timespan opt_timeout_sec = std::chrono::seconds(60);
 
+  std::optional<std::string> inject_error_at;
+  std::optional<std::string> inject_abort_at;
+
   SimpleCmd cmd(all_cmds, cmd_aliases);
 
   for (std::vector<const char*>::iterator i = args.begin(); i != args.end(); ) {
@@ -3630,6 +3634,10 @@ int main(int argc, const char **argv)
       opt_retry_delay_ms = std::chrono::milliseconds(atoi(val.c_str()));
     } else if (ceph_argparse_witharg(args, i, &val, "--timeout-sec", (char*)NULL)) {
       opt_timeout_sec = std::chrono::seconds(atoi(val.c_str()));
+    } else if (ceph_argparse_witharg(args, i, &val, "--inject-error-at", (char*)NULL)) {
+      inject_error_at = val;
+    } else if (ceph_argparse_witharg(args, i, &val, "--inject-abort-at", (char*)NULL)) {
+      inject_abort_at = val;
     } else if (ceph_argparse_binary_flag(args, i, &detail, NULL, "--detail", (char*)NULL)) {
       // do nothing
     } else if (ceph_argparse_witharg(args, i, &val, "--context", (char*)NULL)) {
@@ -5420,6 +5428,9 @@ int main(int argc, const char **argv)
       return EINVAL;
   }
 
+  // to test using FaultInjector
+  FaultInjector<std::string_view> fault;
+
   if (!user_id.empty()) {
     user_op.set_user_id(user_id);
     bucket_op.set_user_id(user_id);
@@ -6542,7 +6553,7 @@ next:
       max_entries = 1000;
     }
 
-    int max_shards = (bucket_info.layout.current_index.layout.normal.num_shards > 0 ? bucket_info.layout.current_index.layout.normal.num_shards : 1);
+    int max_shards = rgw::current_num_shards(bucket_info.layout);
 
     formatter->open_array_section("entries");
 
@@ -6550,8 +6561,8 @@ next:
     for (; i < max_shards; i++) {
       RGWRados::BucketShard bs(store->getRados());
       int shard_id = (bucket_info.layout.current_index.layout.normal.num_shards > 0  ? i : -1);
-
-      int ret = bs.init(bucket, shard_id, bucket_info.layout.current_index, nullptr /* no RGWBucketInfo */);
+      int ret = bs.init(bucket, shard_id, bucket_info.layout.current_index,
+      nullptr /* no RGWBucketInfo */);
       marker.clear();
 
       if (ret < 0) {
@@ -6610,12 +6621,13 @@ next:
       return EINVAL;
     }
 
-    int max_shards = (bucket_info.layout.current_index.layout.normal.num_shards > 0 ? bucket_info.layout.current_index.layout.normal.num_shards : 1);
+    int max_shards = rgw::current_num_shards(bucket_info.layout);
 
     for (int i = 0; i < max_shards; i++) {
       RGWRados::BucketShard bs(store->getRados());
       int shard_id = (bucket_info.layout.current_index.layout.normal.num_shards > 0  ? i : -1);
-      int ret = bs.init(bucket, shard_id, bucket_info.layout.current_index, nullptr /* no RGWBucketInfo */);
+      int ret = bs.init(bucket, shard_id, bucket_info.layout.current_index,
+      nullptr /* no RGWBucketInfo */);
       if (ret < 0) {
         cerr << "ERROR: bs.init(bucket=" << bucket << ", shard=" << shard_id << "): " << cpp_strerror(-ret) << std::endl;
         return -ret;
@@ -6890,8 +6902,12 @@ next:
       max_entries = DEFAULT_RESHARD_MAX_ENTRIES;
     }
 
-    return br.execute(num_shards, max_entries,
-                      verbose, &cout, formatter.get());
+    if (inject_error_at) {
+      fault.inject(*inject_error_at, InjectError{-EIO, dpp()});
+    } else if (inject_abort_at) {
+      fault.inject(*inject_abort_at, InjectAbort{});
+    }
+    return br.execute(num_shards, fault, max_entries, verbose, &cout, formatter.get());
   }
 
   if (opt_cmd == OPT::RESHARD_ADD) {
@@ -6913,7 +6929,7 @@ next:
       return ret;
     }
 
-    int num_source_shards = (bucket_info.layout.current_index.layout.normal.num_shards > 0 ? bucket_info.layout.current_index.layout.normal.num_shards : 1);
+    int num_source_shards = rgw::current_num_shards(bucket_info.layout);
 
     RGWReshard reshard(store);
     cls_rgw_reshard_entry entry;
