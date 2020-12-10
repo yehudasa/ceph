@@ -364,7 +364,8 @@ void RGWOp_BILog_List::execute() {
          bucket_name = s->info.args.get("bucket"),
          marker = s->info.args.get("marker"),
          max_entries_str = s->info.args.get("max-entries"),
-         bucket_instance = s->info.args.get("bucket-instance");
+         bucket_instance = s->info.args.get("bucket-instance"),
+         gen_str = s->info.args.get("gen");
   RGWBucketInfo bucket_info;
   unsigned max_entries;
 
@@ -379,6 +380,18 @@ void RGWOp_BILog_List::execute() {
   op_ret = rgw_bucket_parse_bucket_instance(bucket_instance, &bn, &bucket_instance, &shard_id);
   if (op_ret < 0) {
     return;
+  }
+
+  std::optional<uint64_t> opt_gen;
+
+  if (!gen_str.empty()) {
+    string err;
+    opt_gen = (unsigned)strict_strtoll(gen_str.c_str(), 10, &err);
+    if (!err.empty()) {
+      ldpp_dout(s, 5) << "Failed parsing gen param: gen=" << gen_str << dendl;
+      op_ret = -EINVAL;
+      return;
+    }
   }
 
   if (!bucket_instance.empty()) {
@@ -407,7 +420,7 @@ void RGWOp_BILog_List::execute() {
   send_response();
   do {
     list<rgw_bi_log_entry> entries;
-    int ret = store->svc()->bilog_rados->log_list(bucket_info, shard_id,
+    int ret = store->svc()->bilog_rados->log_list(bucket_info, opt_gen, shard_id,
                                                marker, max_entries - count, 
                                                entries, &truncated);
     if (ret < 0) {

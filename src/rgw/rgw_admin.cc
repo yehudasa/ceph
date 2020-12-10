@@ -3217,6 +3217,8 @@ int main(int argc, const char **argv)
   std::optional<std::string> inject_error_at;
   std::optional<std::string> inject_abort_at;
 
+  std::optional<uint64_t> opt_gen;
+
   SimpleCmd cmd(all_cmds, cmd_aliases);
 
   for (std::vector<const char*>::iterator i = args.begin(); i != args.end(); ) {
@@ -3642,6 +3644,8 @@ int main(int argc, const char **argv)
       // do nothing
     } else if (ceph_argparse_witharg(args, i, &val, "--context", (char*)NULL)) {
       str_script_ctx = val;
+    } else if (ceph_argparse_witharg(args, i, &val, "--gen", (char*)NULL)) {
+      opt_gen = atoi(val.c_str());
     } else if (strncmp(*i, "-", 1) == 0) {
       cerr << "ERROR: invalid flag " << *i << std::endl;
       return EINVAL;
@@ -8146,7 +8150,7 @@ next:
 
     do {
       list<rgw_bi_log_entry> entries;
-      ret = store->svc()->bilog_rados->log_list(bucket_info, shard_id, marker, max_entries - count, entries, &truncated);
+      ret = store->svc()->bilog_rados->log_list(bucket_info, opt_gen, shard_id, marker, max_entries - count, entries, &truncated);
       if (ret < 0) {
         cerr << "ERROR: list_bi_log_entries(): " << cpp_strerror(-ret) << std::endl;
         return -ret;

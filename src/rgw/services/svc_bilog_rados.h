@@ -43,6 +43,7 @@ public:
                std::string& start_marker,
                std::string& end_marker);
   int log_list(const RGWBucketInfo& bucket_info,
+               std::optional<uint64_t> opt_gen,
                int shard_id,
                std::string& marker,
                uint32_t max,
