@@ -458,7 +458,8 @@ void RGWOp_BILog_List::send_response_end() {
 void RGWOp_BILog_Info::execute() {
   string tenant_name = s->info.args.get("tenant"),
          bucket_name = s->info.args.get("bucket"),
-         bucket_instance = s->info.args.get("bucket-instance");
+         bucket_instance = s->info.args.get("bucket-instance"),
+         gen_str = s->info.args.get("gen");
   RGWBucketInfo bucket_info;
 
   if (bucket_name.empty() && bucket_instance.empty()) {
@@ -488,8 +489,30 @@ void RGWOp_BILog_Info::execute() {
       return;
     }
   }
+
+  std::optional<uint64_t> opt_gen;
+
+  if (!gen_str.empty()) {
+    string err;
+    opt_gen = (unsigned)strict_strtoll(gen_str.c_str(), 10, &err);
+    if (!err.empty()) {
+      ldpp_dout(s, 5) << "Failed parsing gen param: gen=" << gen_str << dendl;
+      op_ret = -EINVAL;
+      return;
+    }
+  }
+
+  auto playout = bucket_info.find_layout(opt_gen);
+  if (!playout) {
+    op_ret = -ENOENT;
+    ldpp_dout(s, 5) << "Couldn't find layout for gen=" << gen_str << dendl;
+    return;
+  }
+
+  layout = *playout;
+
   map<RGWObjCategory, RGWStorageStats> stats;
-  int ret =  store->getRados()->get_bucket_stats(bucket_info, shard_id, &bucket_ver, &master_ver, stats, &max_marker, &syncstopped);
+  int ret =  store->getRados()->get_bucket_stats(bucket_info, opt_gen, shard_id, &bucket_ver, &master_ver, stats, &max_marker, &syncstopped);
   if (ret < 0 && ret != -ENOENT) {
     op_ret = ret;
     return;
@@ -509,6 +532,7 @@ void RGWOp_BILog_Info::send_response() {
   encode_json("master_ver", master_ver, s->formatter);
   encode_json("max_marker", max_marker, s->formatter);
   encode_json("syncstopped", syncstopped, s->formatter);
+  encode_json("layout", layout, s->formatter);
   s->formatter->close_section();
 
   flusher.flush();

@@ -1041,6 +1041,8 @@ struct RGWBucketInfo {
 
   bool empty_sync_policy() const;
 
+  const rgw::bucket_index_layout_generation *find_layout(std::optional<uint64_t> opt_gen) const;
+
   RGWBucketInfo();
   ~RGWBucketInfo();
 };

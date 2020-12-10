@@ -26,7 +26,7 @@ int RGWSI_BILog_RADOS::log_trim(const RGWBucketInfo& bucket_info, int shard_id, 
   BucketIndexShardsManager start_marker_mgr;
   BucketIndexShardsManager end_marker_mgr;
 
-  int r = svc.bi->open_bucket_index(bucket_info, shard_id, &index_pool, &bucket_objs, nullptr);
+  int r = svc.bi->open_bucket_index(bucket_info, std::nullopt, shard_id, &index_pool, &bucket_objs, nullptr);
   if (r < 0) {
     return r;
   }
@@ -49,7 +49,7 @@ int RGWSI_BILog_RADOS::log_start(const RGWBucketInfo& bucket_info, int shard_id)
 {
   RGWSI_RADOS::Pool index_pool;
   map<int, string> bucket_objs;
-  int r = svc.bi->open_bucket_index(bucket_info, shard_id, &index_pool, &bucket_objs, nullptr);
+  int r = svc.bi->open_bucket_index(bucket_info, std::nullopt, shard_id, &index_pool, &bucket_objs, nullptr);
   if (r < 0)
     return r;
 
@@ -60,7 +60,7 @@ int RGWSI_BILog_RADOS::log_stop(const RGWBucketInfo& bucket_info, int shard_id)
 {
   RGWSI_RADOS::Pool index_pool;
   map<int, string> bucket_objs;
-  int r = svc.bi->open_bucket_index(bucket_info, shard_id, &index_pool, &bucket_objs, nullptr);
+  int r = svc.bi->open_bucket_index(bucket_info, std::nullopt, shard_id, &index_pool, &bucket_objs, nullptr);
   if (r < 0)
     return r;
 
@@ -86,7 +86,7 @@ int RGWSI_BILog_RADOS::log_list(const RGWBucketInfo& bucket_info, int shard_id, 
   RGWSI_RADOS::Pool index_pool;
   map<int, string> oids;
   map<int, cls_rgw_bi_log_list_ret> bi_log_lists;
-  int r = svc.bi->open_bucket_index(bucket_info, shard_id, &index_pool, &oids, nullptr);
+  int r = svc.bi->open_bucket_index(bucket_info, std::nullopt, shard_id, &index_pool, &oids, nullptr);
   if (r < 0)
     return r;
 
@@ -181,7 +181,7 @@ int RGWSI_BILog_RADOS::get_log_status(const RGWBucketInfo& bucket_info,
 {
   vector<rgw_bucket_dir_header> headers;
   map<int, string> bucket_instance_ids;
-  int r = svc.bi->cls_bucket_head(bucket_info, shard_id, &headers, &bucket_instance_ids, null_yield);
+  int r = svc.bi->cls_bucket_head(bucket_info, std::nullopt, shard_id, &headers, &bucket_instance_ids, null_yield);
   if (r < 0)
     return r;
 

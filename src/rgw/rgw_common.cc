@@ -2167,3 +2167,17 @@ bool RGWBucketInfo::empty_sync_policy() const
   return sync_policy->empty();
 }
 
+const rgw::bucket_index_layout_generation *RGWBucketInfo::find_layout(std::optional<uint64_t> opt_gen) const
+{
+  if (!opt_gen ||
+      *opt_gen == layout.current_index.gen) {
+    return &layout.current_index;
+  }
+
+  auto iter = layout.gen_index.find(*opt_gen);
+  if (iter == layout.gen_index.end()) {
+    return nullptr;
+  }
+
+  return &(iter->second);
+}
