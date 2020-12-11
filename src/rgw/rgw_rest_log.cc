@@ -411,7 +411,7 @@ void RGWOp_BILog_List::execute(optional_yield y) {
     list<rgw_bi_log_entry> entries;
     int ret = store->svc()->bilog_rados->log_list(bucket_info, shard_id, gen_id,
                                                marker, max_entries - count,
-                                               entries, latest_generation, &truncated);
+                                               entries, &latest_generation, &truncated);
     if (ret < 0) {
       ldpp_dout(s, 5) << "ERROR: list_bi_log_entries()" << dendl;
       return;
@@ -478,8 +478,11 @@ void RGWOp_BILog_Info::execute(optional_yield y) {
     return;
   }
 
-  oldest_gen = bucket_info.layout.logs.front().gen;
-  latest_gen = bucket_info.layout.logs.back().gen;
+
+  if (!bucket_info.layout.logs.empty()) {
+    oldest_gen = bucket_info.layout.logs.begin()->first;
+    latest_gen = bucket_info.layout.logs.rbegin()->first;
+  }
 
   if (!bucket_instance.empty()) {
     rgw_bucket b(rgw_bucket_key(tenant_name, bn, bucket_instance));
@@ -496,7 +499,8 @@ void RGWOp_BILog_Info::execute(optional_yield y) {
     }
   }
   map<RGWObjCategory, RGWStorageStats> stats;
-  int ret =  store->getRados()->get_bucket_stats(bucket_info, shard_id, latest_gen, &bucket_ver, &master_ver, stats, &max_marker, &syncstopped);
+  int ret =  store->getRados()->get_bucket_stats(bucket_info, shard_id, latest_gen.value_or(RGW_DEFAULT_GENERATION),
+                                                 &bucket_ver, &master_ver, stats, &max_marker, &syncstopped);
   if (ret < 0 && ret != -ENOENT) {
     op_ret = ret;
     return;

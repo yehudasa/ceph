@@ -8161,7 +8161,7 @@ next:
     do {
       list<rgw_bi_log_entry> entries;
       ret = store->svc()->bilog_rados->log_list(bucket_info, shard_id, gen_id, marker, max_entries - count, entries,
-              generation, &truncated);
+              &generation, &truncated);
       if (ret < 0) {
         cerr << "ERROR: list_bi_log_entries(): " << cpp_strerror(-ret) << std::endl;
         return -ret;

@@ -148,7 +148,7 @@ void decode(BucketLayout& l, bufferlist::const_iterator& bl)
     if (l.current_index.layout.type == BucketIndexType::Normal) {
       const auto gen = l.current_index.gen;
       const auto& index = l.current_index.layout.normal;
-      l.logs.push_back(log_layout_from_index(gen, index));
+      l.logs.emplace(std::make_pair(gen, log_layout_from_index(gen, index)));
     }
   } else {
     decode(l.logs, bl);
