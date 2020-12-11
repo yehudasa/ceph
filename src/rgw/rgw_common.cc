@@ -2202,3 +2202,22 @@ bool RGWBucketInfo::empty_sync_policy() const
   return sync_policy->empty();
 }
 
+const rgw::bucket_log_layout_generation *RGWBucketInfo::find_log_layout(std::optional<uint64_t> opt_gen) const
+{
+  if (layout.logs.empty()) {
+    return nullptr;
+  }
+
+  if (!opt_gen ||
+      *opt_gen == layout.current_index.gen) {
+    auto iter = layout.logs.rbegin();
+    return &(iter->second);
+  }
+
+  auto iter = layout.logs.find(*opt_gen);
+  if (iter == layout.logs.end()) {
+    return nullptr;
+  }
+
+  return &(iter->second);
+}

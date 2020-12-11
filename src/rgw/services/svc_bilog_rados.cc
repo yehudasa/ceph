@@ -78,7 +78,7 @@ static void build_bucket_index_marker(const string& shard_id_str,
 }
 
 int RGWSI_BILog_RADOS::log_list(const RGWBucketInfo& bucket_info, int shard_id, uint64_t gen_id, string& marker, uint32_t max,
-                                std::list<rgw_bi_log_entry>& result, uint64_t& generation, bool *truncated)
+                                std::list<rgw_bi_log_entry>& result, uint64_t *generation, bool *truncated)
 {
   ldout(cct, 20) << __func__ << ": " << bucket_info.bucket << " marker " << marker << " shard_id=" << shard_id << " max " << max << dendl;
   result.clear();
@@ -104,7 +104,11 @@ int RGWSI_BILog_RADOS::log_list(const RGWBucketInfo& bucket_info, int shard_id, 
   if (r < 0)
     return r;
 
-  generation = bucket_info.layout.logs.back().gen;
+  auto layout = bucket_info.find_log_layout(gen_id);
+
+  if (generation) {
+    *generation = layout->gen;
+  }
 
   map<int, list<rgw_bi_log_entry>::iterator> vcurrents;
   map<int, list<rgw_bi_log_entry>::iterator> vends;

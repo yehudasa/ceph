@@ -181,7 +181,7 @@ struct BucketLayout {
 
   // history of untrimmed bucket log layout generations, with the current
   // generation at the back()
-  std::vector<bucket_log_layout_generation> logs;
+  std::map<uint64_t, bucket_log_layout_generation> logs;
 
   void dump(ceph::Formatter *f) const;
 };

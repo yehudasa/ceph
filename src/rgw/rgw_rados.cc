@@ -2253,7 +2253,7 @@ int RGWRados::create_bucket(const RGWUserInfo& owner, rgw_bucket& bucket,
       // use the same index layout for the bilog
       const auto gen = info.layout.current_index.gen;
       const auto& index = info.layout.current_index.layout.normal;
-      info.layout.logs.push_back(rgw::log_layout_from_index(gen, index));
+      info.layout.logs.emplace(std::make_pair(gen, rgw::log_layout_from_index(gen, index)));
     }
 
     info.requester_pays = false;
