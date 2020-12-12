@@ -187,13 +187,17 @@ int rgw_bucket_parse_bucket_instance(const string& bucket_instance, string *buck
   *bucket_id = first.substr(pos + 1);
 
   string err;
-  *gen_id = static_cast<uint64_t>(strict_strtoll(second.substr(0,pos).c_str(), 10, &err));
-  if (!err.empty()) {
-    *gen_id = 0;
+  if (gen_id) {
+    *gen_id = static_cast<uint64_t>(strict_strtoll(second.substr(0,pos).c_str(), 10, &err));
+    if (!err.empty()) {
+      *gen_id = 0;
+    }
   }
-  *shard_id = strict_strtol(second.substr(pos+1).c_str(), 10, &err);
-  if (!err.empty()) {
-    return -EINVAL;
+  if (shard_id) {
+    *shard_id = strict_strtol(second.substr(pos+1).c_str(), 10, &err);
+    if (!err.empty()) {
+      return -EINVAL;
+    }
   }
 
   return 0;
@@ -381,7 +385,7 @@ int rgw_remove_bucket_bypass_gc(rgw::sal::RGWRadosStore *store, rgw_bucket& buck
   if (ret < 0)
     return ret;
 
-  ret = store->getRados()->get_bucket_stats(info, RGW_NO_SHARD, RGW_DEFAULT_GENERATION, &bucket_ver, &master_ver, stats, NULL);
+  ret = store->getRados()->get_bucket_stats(info, std::nullopt, RGW_NO_SHARD, &bucket_ver, &master_ver, stats, NULL);
   if (ret < 0)
     return ret;
 
@@ -964,7 +968,7 @@ int RGWBucket::check_object_index(RGWBucketAdminOpState& op_state,
     result.reserve(listing_max_entries);
 
     int r = store->getRados()->cls_bucket_list_ordered(
-      bucket_info, RGW_NO_SHARD, RGW_DEFAULT_GENERATION, marker, prefix, empty_delimiter,
+      bucket_info, std::nullopt, RGW_NO_SHARD, marker, prefix, empty_delimiter,
       listing_max_entries, true, expansion_factor,
       result, &is_truncated, &cls_filtered, &marker,
       y, rgw_bucket_object_check_filter);
@@ -1036,9 +1040,9 @@ int RGWBucket::sync(RGWBucketAdminOpState& op_state, map<string, bufferlist> *at
     return r;
   }
 
-  int shards_num = bucket_info.layout.current_index.layout.normal.num_shards? bucket_info.layout.current_index.layout.normal.num_shards : 1;
-  int shard_id = bucket_info.layout.current_index.layout.normal.num_shards? 0 : -1;
-  auto gen_id = bucket_info.layout.current_index.gen;
+  int shards_num = bucket_info.layout.current_index().layout.normal.num_shards? bucket_info.layout.current_index().layout.normal.num_shards : 1;
+  int shard_id = bucket_info.layout.current_index().layout.normal.num_shards? 0 : -1;
+  auto gen_id = bucket_info.layout.current_index().gen;
 
   if (!sync) {
     r = store->svc()->bilog_rados->log_stop(bucket_info, -1, gen_id);
@@ -1325,7 +1329,8 @@ static int bucket_stats(rgw::sal::RGWRadosStore *store,
 
   string bucket_ver, master_ver;
   string max_marker;
-  int ret = store->getRados()->get_bucket_stats(bucket_info, RGW_NO_SHARD, RGW_DEFAULT_GENERATION,
+  int ret = store->getRados()->get_bucket_stats(bucket_info, std::nullopt,
+                                                RGW_NO_SHARD,
 						&bucket_ver, &master_ver, stats,
 						&max_marker);
   if (ret < 0) {
@@ -1339,14 +1344,14 @@ static int bucket_stats(rgw::sal::RGWRadosStore *store,
   formatter->open_object_section("stats");
   formatter->dump_string("bucket", bucket.name);
   formatter->dump_int("num_shards",
-		      bucket_info.layout.current_index.layout.normal.num_shards);
+		      bucket_info.layout.current_index().layout.normal.num_shards);
   formatter->dump_string("tenant", bucket.tenant);
   formatter->dump_string("zonegroup", bucket_info.zonegroup);
   formatter->dump_string("placement_rule", bucket_info.placement_rule.to_str());
   ::encode_json("explicit_placement", bucket.explicit_placement, formatter);
   formatter->dump_string("id", bucket.bucket_id);
   formatter->dump_string("marker", bucket.marker);
-  formatter->dump_stream("index_type") << bucket_info.layout.current_index.layout.type;
+  formatter->dump_stream("index_type") << bucket_info.layout.current_index().layout.type;
   ::encode_json("owner", bucket_info.owner, formatter);
   formatter->dump_string("ver", bucket_ver);
   formatter->dump_string("master_ver", master_ver);
@@ -1438,7 +1443,7 @@ int RGWBucketAdminOp::limit_check(rgw::sal::RGWRadosStore *store,
 	/* need stats for num_entries */
 	string bucket_ver, master_ver;
 	std::map<RGWObjCategory, RGWStorageStats> stats;
-	ret = store->getRados()->get_bucket_stats(info, RGW_NO_SHARD, RGW_DEFAULT_GENERATION, &bucket_ver,
+	ret = store->getRados()->get_bucket_stats(info, std::nullopt, RGW_NO_SHARD, &bucket_ver,
 				      &master_ver, stats, nullptr);
 
 	if (ret < 0)
@@ -1448,7 +1453,7 @@ int RGWBucketAdminOp::limit_check(rgw::sal::RGWRadosStore *store,
 	  num_objects += s.second.num_objects;
 	}
 
-	num_shards = info.layout.current_index.layout.normal.num_shards;
+	num_shards = info.layout.current_index().layout.normal.num_shards;
 	uint64_t objs_per_shard =
 	  (num_shards) ? num_objects/num_shards : num_objects;
 	{
@@ -1608,8 +1613,8 @@ static int purge_bucket_instance(rgw::sal::RGWRadosStore *store, const RGWBucket
   int max_shards = rgw::current_num_shards(bucket_info.layout);
   for (int i = 0; i < max_shards; i++) {
     RGWRados::BucketShard bs(store->getRados());
-    int shard_id = (bucket_info.layout.current_index.layout.normal.num_shards > 0  ? i : -1);
-    int ret = bs.init(bucket_info.bucket, shard_id, bucket_info.layout.current_index, nullptr);
+    int shard_id = (bucket_info.layout.current_index().layout.normal.num_shards > 0  ? i : -1);
+    int ret = bs.init(bucket_info.bucket, shard_id, bucket_info.layout.current_index(), nullptr);
     if (ret < 0) {
       cerr << "ERROR: bs.init(bucket=" << bucket_info.bucket << ", shard=" << shard_id
            << "): " << cpp_strerror(-ret) << std::endl;
@@ -2536,11 +2541,13 @@ int RGWBucketInstanceMetadataHandler::do_put(RGWSI_MetaBackend_Handler::Op *op,
 }
 
 void init_default_bucket_layout(CephContext *cct, RGWBucketInfo& info, const RGWZone& zone) {
-  info.layout.current_index.gen = 0;
-  info.layout.current_index.layout.normal.hash_type = rgw::BucketHashType::Mod;
-  info.layout.current_index.layout.type = rgw::BucketIndexType::Normal;
+  auto& current_index = info.layout.current_index();
 
-  info.layout.current_index.layout.normal.num_shards = (
+  current_index.gen = 0;
+  current_index.layout.normal.hash_type = rgw::BucketHashType::Mod;
+  current_index.layout.type = rgw::BucketIndexType::Normal;
+
+  current_index.layout.normal.num_shards = (
       cct->_conf->rgw_override_bucket_index_max_shards > 0 ?
       cct->_conf->rgw_override_bucket_index_max_shards : zone.bucket_index_max_shards);
 }
@@ -2585,7 +2592,7 @@ int RGWMetadataHandlerPut_BucketInstance::put_check()
         return ret;
       }
     }
-    bci.info.layout.current_index.layout.type = rule_info.index_type;
+    bci.info.layout.current_index().layout.type = rule_info.index_type;
   } else {
     /* existing bucket, keep its placement */
     bci.info.bucket.explicit_placement = old_bci->info.bucket.explicit_placement;
@@ -2627,7 +2634,7 @@ int RGWMetadataHandlerPut_BucketInstance::put_post()
 
   objv_tracker = bci.info.objv_tracker;
 
-  int ret = bihandler->svc.bi->init_index(bci.info, bci.info.layout.current_index);
+  int ret = bihandler->svc.bi->init_index(bci.info, bci.info.layout.current_index());
   if (ret < 0) {
     return ret;
   }

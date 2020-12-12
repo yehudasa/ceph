@@ -47,8 +47,11 @@ class RGWOp_BILog_Info : public RGWRESTOp {
   string master_ver;
   string max_marker;
   bool syncstopped{false};
-  std::optional<uint64_t> oldest_gen;
-  std::optional<uint64_t> latest_gen;
+
+  uint64_t oldest_gen;
+  uint64_t latest_gen;
+
+  rgw::bucket_log_layout_generation layout;
 
 public:
   RGWOp_BILog_Info() {}

@@ -112,13 +112,6 @@ void decode(bucket_log_layout& l, bufferlist::const_iterator& bl)
   DECODE_FINISH(bl);
 }
 
-void encode(const bucket_log_layout_generation& l, bufferlist& bl, uint64_t f)
-{
-  ENCODE_START(1, 1, bl);
-  encode(l.gen, bl);
-  encode(l.layout, bl);
-  ENCODE_FINISH(bl);
-}
 void decode(bucket_log_layout_generation& l, bufferlist::const_iterator& bl)
 {
   DECODE_START(1, bl);
@@ -127,32 +120,68 @@ void decode(bucket_log_layout_generation& l, bufferlist::const_iterator& bl)
   DECODE_FINISH(bl);
 }
 
-void encode(const BucketLayout& l, bufferlist& bl, uint64_t f)
+void encode(const bucket_log_layout_generation& l, bufferlist& bl, uint64_t f)
 {
-  ENCODE_START(2, 1, bl);
-  encode(l.resharding, bl);
-  encode(l.current_index, bl);
-  encode(l.target_index, bl);
-  encode(l.logs, bl);
+  ENCODE_START(1, 1, bl);
+  encode(l.gen, bl);
+  encode(l.layout, bl);
   ENCODE_FINISH(bl);
 }
+
+void encode(const bucket_layout_generation& l, bufferlist& bl, uint64_t f)
+{
+  ENCODE_START(1, 1, bl);
+  encode(l.gen, bl);
+  encode(l.index, bl);
+  encode(l.log, bl);
+  ENCODE_FINISH(bl);
+}
+
+void decode(bucket_layout_generation& l, bufferlist::const_iterator& bl)
+{
+  DECODE_START(1, bl);
+  decode(l.gen, bl);
+  decode(l.index, bl);
+  decode(l.log, bl);
+  DECODE_FINISH(bl);
+}
+
+void encode(const BucketLayout& l, bufferlist& bl, uint64_t f)
+{
+  ENCODE_START(3, 1, bl);
+  encode(l.resharding, bl);
+  encode(l.current_gen.index, bl);
+  encode(l.target_index, bl);
+  encode(l.gens, bl);
+  encode(l.current_gen.log, bl);
+  ENCODE_FINISH(bl);
+}
+
 void decode(BucketLayout& l, bufferlist::const_iterator& bl)
 {
   DECODE_START(2, bl);
   decode(l.resharding, bl);
-  decode(l.current_index, bl);
+  decode(l.current_gen.index, bl);
   decode(l.target_index, bl);
+
+  auto gen = l.current_gen.index.gen;
+  l.current_gen.gen = gen;
+
   if (struct_v < 2) {
-    l.logs.clear();
+    l.gens.clear();
     // initialize the log layout to match the current index layout
-    if (l.current_index.layout.type == BucketIndexType::Normal) {
-      const auto gen = l.current_index.gen;
-      const auto& index = l.current_index.layout.normal;
-      l.logs.emplace(std::make_pair(gen, log_layout_from_index(gen, index)));
+    if (l.current_gen.index.layout.type == BucketIndexType::Normal) {
+      const auto& index = l.current_gen.index.layout.normal;
+      l.current_gen.log = log_layout_from_index(gen, index);
+      l.gens[gen] = { gen,
+                      l.current_gen.index,
+                      l.current_gen.log };
     }
   } else {
-    decode(l.logs, bl);
+    decode(l.current_gen.log, bl);
+    decode(l.gens, bl);
   }
+
   DECODE_FINISH(bl);
 }
 

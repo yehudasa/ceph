@@ -364,7 +364,8 @@ void RGWOp_BILog_List::execute(optional_yield y) {
          bucket_name = s->info.args.get("bucket"),
          marker = s->info.args.get("marker"),
          max_entries_str = s->info.args.get("max-entries"),
-         bucket_instance = s->info.args.get("bucket-instance");
+         bucket_instance = s->info.args.get("bucket-instance"),
+         gen_str = s->info.args.get("gen");
   RGWBucketInfo bucket_info;
   unsigned max_entries;
 
@@ -376,10 +377,21 @@ void RGWOp_BILog_List::execute(optional_yield y) {
 
   int shard_id;
   string bn;
-  uint64_t gen_id;
-  op_ret = rgw_bucket_parse_bucket_instance(bucket_instance, &bn, &bucket_instance, &gen_id, &shard_id);
+  op_ret = rgw_bucket_parse_bucket_instance(bucket_instance, &bn, &bucket_instance, nullptr, &shard_id);
   if (op_ret < 0) {
     return;
+  }
+
+  std::optional<uint64_t> opt_gen;
+
+  if (!gen_str.empty()) {
+    string err;
+    opt_gen = (unsigned)strict_strtoll(gen_str.c_str(), 10, &err);
+    if (!err.empty()) {
+      ldpp_dout(s, 5) << "Failed parsing gen param: gen=" << gen_str << dendl;
+      op_ret = -EINVAL;
+      return;
+    }
   }
 
   if (!bucket_instance.empty()) {
@@ -409,7 +421,7 @@ void RGWOp_BILog_List::execute(optional_yield y) {
   send_response();
   do {
     list<rgw_bi_log_entry> entries;
-    int ret = store->svc()->bilog_rados->log_list(bucket_info, shard_id, gen_id,
+    int ret = store->svc()->bilog_rados->log_list(bucket_info, opt_gen, shard_id,
                                                marker, max_entries - count,
                                                entries, &latest_generation, &truncated);
     if (ret < 0) {
@@ -461,7 +473,8 @@ void RGWOp_BILog_List::send_response_end() {
 void RGWOp_BILog_Info::execute(optional_yield y) {
   string tenant_name = s->info.args.get("tenant"),
          bucket_name = s->info.args.get("bucket"),
-         bucket_instance = s->info.args.get("bucket-instance");
+         bucket_instance = s->info.args.get("bucket-instance"),
+         gen_str = s->info.args.get("gen");
   RGWBucketInfo bucket_info;
 
   if (bucket_name.empty() && bucket_instance.empty()) {
@@ -472,16 +485,18 @@ void RGWOp_BILog_Info::execute(optional_yield y) {
 
   int shard_id;
   string bn;
-  uint64_t gen_id;
-  op_ret = rgw_bucket_parse_bucket_instance(bucket_instance, &bn, &bucket_instance, &gen_id, &shard_id);
+  op_ret = rgw_bucket_parse_bucket_instance(bucket_instance, &bn, &bucket_instance, nullptr, &shard_id);
   if (op_ret < 0) {
     return;
   }
 
 
-  if (!bucket_info.layout.logs.empty()) {
-    oldest_gen = bucket_info.layout.logs.begin()->first;
-    latest_gen = bucket_info.layout.logs.rbegin()->first;
+  if (!bucket_info.layout.gens.empty()) {
+    oldest_gen = bucket_info.layout.gens.begin()->first;
+    latest_gen = bucket_info.layout.gens.rbegin()->first;
+  } else {
+    oldest_gen = bucket_info.layout.current_log().gen;
+    latest_gen = oldest_gen;
   }
 
   if (!bucket_instance.empty()) {
@@ -498,9 +513,30 @@ void RGWOp_BILog_Info::execute(optional_yield y) {
       return;
     }
   }
+
+  std::optional<uint64_t> opt_gen;
+
+  if (!gen_str.empty()) {
+    string err;
+    opt_gen = (unsigned)strict_strtoll(gen_str.c_str(), 10, &err);
+    if (!err.empty()) {
+      ldpp_dout(s, 5) << "Failed parsing gen param: gen=" << gen_str << dendl;
+      op_ret = -EINVAL;
+      return;
+    }
+  }
+
+  auto playout = bucket_info.find_layout(opt_gen);
+  if (!playout) {
+    op_ret = -ENOENT;
+    ldpp_dout(s, 5) << "Couldn't find layout for gen=" << gen_str << dendl;
+    return;
+  }
+
+  layout = playout->log;
+
   map<RGWObjCategory, RGWStorageStats> stats;
-  int ret =  store->getRados()->get_bucket_stats(bucket_info, shard_id, latest_gen.value_or(RGW_DEFAULT_GENERATION),
-                                                 &bucket_ver, &master_ver, stats, &max_marker, &syncstopped);
+  int ret =  store->getRados()->get_bucket_stats(bucket_info, opt_gen, shard_id, &bucket_ver, &master_ver, stats, &max_marker, &syncstopped);
   if (ret < 0 && ret != -ENOENT) {
     op_ret = ret;
     return;
@@ -523,6 +559,7 @@ void RGWOp_BILog_Info::send_response() {
   encode_json("syncstopped", syncstopped, s->formatter);
   encode_json("oldest_gen", oldest_gen, s->formatter);
   encode_json("latest_gen", latest_gen, s->formatter);
+  encode_json("layout", layout, s->formatter);
   s->formatter->close_section();
 
   flusher.flush();
@@ -533,7 +570,8 @@ void RGWOp_BILog_Delete::execute(optional_yield y) {
          bucket_name = s->info.args.get("bucket"),
          start_marker = s->info.args.get("start-marker"),
          end_marker = s->info.args.get("end-marker"),
-         bucket_instance = s->info.args.get("bucket-instance");
+         bucket_instance = s->info.args.get("bucket-instance"),
+         gen_str = s->info.args.get("gen");
 
   RGWBucketInfo bucket_info;
 
@@ -545,10 +583,21 @@ void RGWOp_BILog_Delete::execute(optional_yield y) {
     return;
   }
 
+  std::optional<uint64_t> opt_gen;
+
+  if (!gen_str.empty()) {
+    string err;
+    opt_gen = (unsigned)strict_strtoll(gen_str.c_str(), 10, &err);
+    if (!err.empty()) {
+      ldpp_dout(s, 5) << "Failed parsing gen param: gen=" << gen_str << dendl;
+      op_ret = -EINVAL;
+      return;
+    }
+  }
+
   int shard_id;
   string bn;
-  uint64_t gen_id;
-  op_ret = rgw_bucket_parse_bucket_instance(bucket_instance, &bn, &bucket_instance, &gen_id, &shard_id);
+  op_ret = rgw_bucket_parse_bucket_instance(bucket_instance, &bn, &bucket_instance, nullptr, &shard_id);
   if (op_ret < 0) {
     return;
   }
@@ -567,7 +616,7 @@ void RGWOp_BILog_Delete::execute(optional_yield y) {
       return;
     }
   }
-  op_ret = store->svc()->bilog_rados->log_trim(bucket_info, shard_id, gen_id, start_marker, end_marker);
+  op_ret = store->svc()->bilog_rados->log_trim(bucket_info, opt_gen, shard_id, start_marker, end_marker);
   if (op_ret < 0) {
     ldpp_dout(s, 5) << "ERROR: trim_bi_log_entries() " << dendl;
   }

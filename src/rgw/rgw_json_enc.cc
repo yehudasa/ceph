@@ -781,8 +781,8 @@ void RGWBucketInfo::dump(Formatter *f) const
   encode_json("placement_rule", placement_rule, f);
   encode_json("has_instance_obj", has_instance_obj, f);
   encode_json("quota", quota, f);
-  encode_json("num_shards", layout.current_index.layout.normal.num_shards, f);
-  encode_json("bi_shard_hash_type", (uint32_t)layout.current_index.layout.normal.hash_type, f);
+  encode_json("num_shards", layout.current_index().layout.normal.num_shards, f);
+  encode_json("bi_shard_hash_type", (uint32_t)layout.current_index().layout.normal.hash_type, f);
   encode_json("layout", layout, f);
   encode_json("requester_pays", requester_pays, f);
   encode_json("has_website", has_website, f);
@@ -791,7 +791,7 @@ void RGWBucketInfo::dump(Formatter *f) const
   }
   encode_json("swift_versioning", swift_versioning, f);
   encode_json("swift_ver_location", swift_ver_location, f);
-  encode_json("index_type", (uint32_t)layout.current_index.layout.type, f);
+  encode_json("index_type", (uint32_t)layout.current_index().layout.type, f);
   encode_json("mdsearch_config", mdsearch_config, f);
   encode_json("reshard_status", (int)reshard_status, f);
   encode_json("new_bucket_instance_id", new_bucket_instance_id, f);
@@ -817,10 +817,10 @@ void RGWBucketInfo::decode_json(JSONObj *obj) {
   placement_rule.from_str(pr);
   JSONDecoder::decode_json("has_instance_obj", has_instance_obj, obj);
   JSONDecoder::decode_json("quota", quota, obj);
-  JSONDecoder::decode_json("num_shards", layout.current_index.layout.normal.num_shards, obj);
+  JSONDecoder::decode_json("num_shards", layout.current_index().layout.normal.num_shards, obj);
   uint32_t hash_type;
   JSONDecoder::decode_json("bi_shard_hash_type", hash_type, obj);
-  layout.current_index.layout.normal.hash_type = static_cast<rgw::BucketHashType>(hash_type);
+  layout.current_index().layout.normal.hash_type = static_cast<rgw::BucketHashType>(hash_type);
   JSONDecoder::decode_json("requester_pays", requester_pays, obj);
   JSONDecoder::decode_json("has_website", has_website, obj);
   if (has_website) {
@@ -830,7 +830,7 @@ void RGWBucketInfo::decode_json(JSONObj *obj) {
   JSONDecoder::decode_json("swift_ver_location", swift_ver_location, obj);
   uint32_t it;
   JSONDecoder::decode_json("index_type", it, obj);
-  layout.current_index.layout.type = (rgw::BucketIndexType)it;
+  layout.current_index().layout.type = (rgw::BucketIndexType)it;
   JSONDecoder::decode_json("mdsearch_config", mdsearch_config, obj);
   int rs;
   JSONDecoder::decode_json("reshard_status", rs, obj);
@@ -2200,11 +2200,18 @@ void rgw::bucket_log_layout_generation::dump(Formatter *f) const
   encode_json("layout", layout, f);
 }
 
+void rgw::bucket_layout_generation::dump(Formatter *f) const
+{
+  encode_json("gen", gen, f);
+  encode_json("index", index, f);
+  encode_json("log", log, f);
+}
+
 
 void rgw::BucketLayout::dump(Formatter *f) const
 {
   encode_json("reshard-state", rgw::bucket_reshard_state_to_str(resharding), f);
-  encode_json("current_index", current_index, f);
+  encode_json("current_gen", current_gen, f);
   encode_json("target_index", target_index, f);
-  encode_json("logs", logs, f);
+  encode_json("gens", gens, f);
 }
