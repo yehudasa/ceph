@@ -111,7 +111,7 @@ int RGWSI_BILog_RADOS::log_list(const RGWBucketInfo& bucket_info, std::optional<
   }
 
   if (generation) {
-    *generation = layout->gen;
+    *generation = layout->log.gen;
   }
 
   map<int, list<rgw_bi_log_entry>::iterator> vcurrents;

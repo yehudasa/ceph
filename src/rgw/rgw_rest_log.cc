@@ -365,7 +365,8 @@ void RGWOp_BILog_List::execute(optional_yield y) {
          marker = s->info.args.get("marker"),
          max_entries_str = s->info.args.get("max-entries"),
          bucket_instance = s->info.args.get("bucket-instance"),
-         gen_str = s->info.args.get("gen");
+         gen_str = s->info.args.get("gen"),
+         format_ver_str = s->info.args.get("format-ver");
   RGWBucketInfo bucket_info;
   unsigned max_entries;
 
@@ -394,6 +395,21 @@ void RGWOp_BILog_List::execute(optional_yield y) {
     }
   }
 
+  if (!format_ver_str.empty()) {
+    string err;
+    format_ver = (unsigned)strict_strtoll(format_ver_str.c_str(), 10, &err);
+    if (!err.empty()) {
+      ldpp_dout(s, 5) << "Failed parsing format-ver param: gen=" << format_ver_str << dendl;
+      op_ret = -EINVAL;
+      return;
+    }
+
+    if (format_ver > 2) {
+      op_ret = -ENOTSUP;
+      return;
+    }
+  }
+
   if (!bucket_instance.empty()) {
     rgw_bucket b(rgw_bucket_key(tenant_name, bn, bucket_instance));
     op_ret = store->getRados()->get_bucket_instance_info(*s->sysobj_ctx, b, bucket_info, NULL, NULL, s->yield);
@@ -409,8 +425,7 @@ void RGWOp_BILog_List::execute(optional_yield y) {
     }
   }
 
-  bool truncated;
-  uint64_t latest_generation; //gets highest generation number
+  latest_generation = bucket_info.layout.current_log().gen;
   unsigned count = 0;
   string err;
 
@@ -423,7 +438,7 @@ void RGWOp_BILog_List::execute(optional_yield y) {
     list<rgw_bi_log_entry> entries;
     int ret = store->svc()->bilog_rados->log_list(bucket_info, opt_gen, shard_id,
                                                marker, max_entries - count,
-                                               entries, &latest_generation, &truncated);
+                                               entries, &generation, &truncated);
     if (ret < 0) {
       ldpp_dout(s, 5) << "ERROR: list_bi_log_entries()" << dendl;
       return;
@@ -431,7 +446,7 @@ void RGWOp_BILog_List::execute(optional_yield y) {
 
     count += entries.size();
 
-    send_response(entries, marker, latest_generation);
+    send_response(entries, marker);
   } while (truncated && count < max_entries);
 
   send_response_end();
@@ -450,15 +465,18 @@ void RGWOp_BILog_List::send_response() {
   if (op_ret < 0)
     return;
 
+  if (format_ver >= 2) {
+    s->formatter->open_array_section("result");
+  }
+
   s->formatter->open_array_section("entries");
 }
 
-void RGWOp_BILog_List::send_response(list<rgw_bi_log_entry>& entries, string& marker, uint64_t generation)
+void RGWOp_BILog_List::send_response(list<rgw_bi_log_entry>& entries, string& marker)
 {
   for (list<rgw_bi_log_entry>::iterator iter = entries.begin(); iter != entries.end(); ++iter) {
     rgw_bi_log_entry& entry = *iter;
     encode_json("entry", entry, s->formatter);
-    encode_json("generation", generation, s->formatter);
 
     marker = entry.id;
     flusher.flush();
@@ -467,6 +485,14 @@ void RGWOp_BILog_List::send_response(list<rgw_bi_log_entry>& entries, string& ma
 
 void RGWOp_BILog_List::send_response_end() {
   s->formatter->close_section();
+  if (format_ver >= 2) {
+    encode_json("generation", generation, s->formatter);
+    encode_json("latest_generation", latest_generation, s->formatter);
+    encode_json("more", truncated, s->formatter);
+    bool complete = (!truncated && latest_generation > generation);
+    encode_json("complete", complete, s->formatter);
+    s->formatter->close_section();
+  }
   flusher.flush();
 }
       
