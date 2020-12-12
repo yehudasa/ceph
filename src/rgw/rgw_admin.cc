@@ -3217,6 +3217,8 @@ int main(int argc, const char **argv)
   std::optional<std::string> inject_error_at;
   std::optional<std::string> inject_abort_at;
 
+  std::optional<uint64_t> opt_gen;
+
   SimpleCmd cmd(all_cmds, cmd_aliases);
 
   for (std::vector<const char*>::iterator i = args.begin(); i != args.end(); ) {
@@ -3642,6 +3644,8 @@ int main(int argc, const char **argv)
       // do nothing
     } else if (ceph_argparse_witharg(args, i, &val, "--context", (char*)NULL)) {
       str_script_ctx = val;
+    } else if (ceph_argparse_witharg(args, i, &val, "--gen", (char*)NULL)) {
+      opt_gen = atoi(val.c_str());
     } else if (strncmp(*i, "-", 1) == 0) {
       cerr << "ERROR: invalid flag " << *i << std::endl;
       return EINVAL;
@@ -6569,8 +6573,8 @@ next:
     int i = (specified_shard_id ? shard_id : 0);
     for (; i < max_shards; i++) {
       RGWRados::BucketShard bs(store->getRados());
-      int shard_id = (bucket_info.layout.current_index.layout.normal.num_shards > 0  ? i : -1);
-      int ret = bs.init(bucket, shard_id, bucket_info.layout.current_index,
+      int shard_id = (bucket_info.layout.current_index().layout.normal.num_shards > 0  ? i : -1);
+      int ret = bs.init(bucket, shard_id, bucket_info.layout.current_index(),
       nullptr /* no RGWBucketInfo */);
       marker.clear();
 
@@ -6634,8 +6638,8 @@ next:
 
     for (int i = 0; i < max_shards; i++) {
       RGWRados::BucketShard bs(store->getRados());
-      int shard_id = (bucket_info.layout.current_index.layout.normal.num_shards > 0  ? i : -1);
-      int ret = bs.init(bucket, shard_id, bucket_info.layout.current_index,
+      int shard_id = (bucket_info.layout.current_index().layout.normal.num_shards > 0  ? i : -1);
+      int ret = bs.init(bucket, shard_id, bucket_info.layout.current_index(),
       nullptr /* no RGWBucketInfo */);
       if (ret < 0) {
         cerr << "ERROR: bs.init(bucket=" << bucket << ", shard=" << shard_id << "): " << cpp_strerror(-ret) << std::endl;
@@ -6817,7 +6821,7 @@ next:
       result.reserve(NUM_ENTRIES);
 
       int r = store->getRados()->cls_bucket_list_ordered(
-	bucket_info, RGW_NO_SHARD, RGW_DEFAULT_GENERATION,
+	bucket_info, std::nullopt, RGW_NO_SHARD,
 	marker, empty_prefix, empty_delimiter,
 	NUM_ENTRIES, true, expansion_factor,
 	result, &is_truncated, &cls_filtered, &marker,
@@ -8156,11 +8160,9 @@ next:
     if (max_entries < 0)
       max_entries = 1000;
 
-    auto gen_id = bucket_info.layout.current_index.gen;
-
     do {
       list<rgw_bi_log_entry> entries;
-      ret = store->svc()->bilog_rados->log_list(bucket_info, shard_id, gen_id, marker, max_entries - count, entries,
+      ret = store->svc()->bilog_rados->log_list(bucket_info, opt_gen, shard_id, marker, max_entries - count, entries,
               &generation, &truncated);
       if (ret < 0) {
         cerr << "ERROR: list_bi_log_entries(): " << cpp_strerror(-ret) << std::endl;
@@ -8644,7 +8646,7 @@ next:
       cerr << "ERROR: could not init bucket: " << cpp_strerror(-ret) << std::endl;
       return -ret;
     }
-    auto gen_id = bucket_info.layout.current_index.gen;
+    auto gen_id = bucket_info.layout.current_index().gen;
     ret = store->svc()->bilog_rados->log_trim(bucket_info, shard_id, gen_id, start_marker, end_marker);
     if (ret < 0) {
       cerr << "ERROR: trim_bi_log_entries(): " << cpp_strerror(-ret) << std::endl;
@@ -8664,7 +8666,7 @@ next:
       return -ret;
     }
     map<int, string> markers;
-    auto gen_id = bucket_info.layout.current_index.gen;
+    auto gen_id = bucket_info.layout.current_index().gen;
     ret = store->svc()->bilog_rados->get_log_status(bucket_info, shard_id, gen_id,
 						    &markers, null_yield);
     if (ret < 0) {

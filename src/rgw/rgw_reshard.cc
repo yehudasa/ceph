@@ -299,7 +299,7 @@ int RGWBucketReshard::clear_resharding(rgw::sal::RGWRadosStore* store,
 int RGWBucketReshard::clear_index_shard_reshard_status(rgw::sal::RGWRadosStore* store,
 						       const RGWBucketInfo& bucket_info)
 {
-  uint32_t num_shards = bucket_info.layout.current_index.layout.normal.num_shards;
+  uint32_t num_shards = bucket_info.layout.current_index().layout.normal.num_shards;
 
   if (num_shards < std::numeric_limits<uint32_t>::max()) {
     int ret = set_resharding_status(store, bucket_info,
@@ -326,7 +326,7 @@ static int set_target_layout(rgw::sal::RGWRadosStore *store,
   bucket_info.layout.target_index->layout.normal.num_shards = new_num_shards;
   
   //increment generation number
-  bucket_info.layout.target_index->gen = bucket_info.layout.current_index.gen;
+  bucket_info.layout.target_index->gen = bucket_info.layout.current_index().gen;
   bucket_info.layout.target_index->gen++;
 
   int ret = store->svc()->bi->init_index(bucket_info, *(bucket_info.layout.target_index));
@@ -543,7 +543,7 @@ int RGWBucketReshard::do_reshard(int num_shards,
     (*out) << "total entries:";
   }
 
-  auto current_shards = bucket_info.layout.current_index.layout.normal.num_shards;
+  auto current_shards = bucket_info.layout.current_index().layout.normal.num_shards;
   const int num_source_shards =
     (current_shards > 0 ? current_shards : 1);
   string marker;
@@ -646,7 +646,7 @@ int RGWBucketReshard::do_reshard(int num_shards,
   if (ret = f.check("before_layout_overwrite"); ret < 0) { return ret; }
 
   //overwrite current_index for the next reshard process
-  bucket_info.layout.current_index = *bucket_info.layout.target_index;
+  bucket_info.layout.current_index() = *bucket_info.layout.target_index;
   bucket_info.layout.target_index = std::nullopt; // target_layout doesn't need to exist after reshard
 
   ret = RGWBucketReshard::update_bucket(rgw::BucketReshardState::NONE);
@@ -700,7 +700,7 @@ int RGWBucketReshard::execute(int num_shards,
   }
   
   // keep a copy of old index layout
-  prev_index = bucket_info.layout.current_index;
+  prev_index = bucket_info.layout.current_index();
 
   ret = do_reshard(num_shards, max_op_entries, f, verbose, out, formatter);
   if (ret < 0) {
@@ -747,7 +747,7 @@ error_out:
     }
   }
     // restore old index
-  bucket_info.layout.current_index = prev_index;
+  bucket_info.layout.current_index() = prev_index;
 
   ret = RGWBucketReshard::update_bucket(rgw::BucketReshardState::NONE);
   if (ret < 0) {

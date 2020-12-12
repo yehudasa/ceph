@@ -954,7 +954,7 @@ public:
 
       UpdateIndex(RGWRados::Bucket *_target, const rgw_obj& _obj) : target(_target), obj(_obj),
                                                               bs(target->get_store()) {
-                                                                blind = (target->get_bucket_info().layout.current_index.layout.type == rgw::BucketIndexType::Indexless);
+                                                                blind = (target->get_bucket_info().layout.current_index().layout.type == rgw::BucketIndexType::Indexless);
                                                               }
 
       int get_bucket_shard(BucketShard **pbs) {
@@ -1340,9 +1340,9 @@ public:
     rctx->set_prefetch_data(obj);
   }
   int decode_policy(bufferlist& bl, ACLOwner *owner);
-  int get_bucket_stats(RGWBucketInfo& bucket_info, int shard_id, uint64_t gen_id, string *bucket_ver, string *master_ver,
+  int get_bucket_stats(RGWBucketInfo& bucket_info, std::optional<uint64_t> opt_gen, int shard_id, string *bucket_ver, string *master_ver,
       map<RGWObjCategory, RGWStorageStats>& stats, string *max_marker, bool* syncstopped = NULL);
-  int get_bucket_stats_async(RGWBucketInfo& bucket_info, int shard_id, uint64_t gen_id, RGWGetBucketStats_CB *cb);
+  int get_bucket_stats_async(RGWBucketInfo& bucket_info, std::optional<uint64_t> opt_gen, int shard_id, RGWGetBucketStats_CB *cb);
 
   int put_bucket_instance_info(RGWBucketInfo& info, bool exclusive, ceph::real_time mtime, map<string, bufferlist> *pattrs);
   /* xxx dang obj_ctx -> svc */
@@ -1383,8 +1383,8 @@ public:
   using check_filter_t = bool (*)(const std::string&);
 
   int cls_bucket_list_ordered(RGWBucketInfo& bucket_info,
+                              std::optional<uint64_t> gen_id,
 			      const int shard_id,
-            const uint64_t gen_id,
 			      const rgw_obj_index_key& start_after,
 			      const string& prefix,
 			      const string& delimiter,
@@ -1398,7 +1398,8 @@ public:
                               optional_yield y,
 			      check_filter_t force_check_filter = nullptr);
   int cls_bucket_list_unordered(RGWBucketInfo& bucket_info,
-				int shard_id, uint64_t gen_id,
+                                std::optional<uint64_t> gen_id,
+				int shard_id,
 				const rgw_obj_index_key& start_after,
 				const string& prefix,
 				uint32_t num_entries,
@@ -1408,8 +1409,9 @@ public:
 				rgw_obj_index_key *last_entry,
                                 optional_yield y,
 				check_filter_t = nullptr);
-  int cls_bucket_head(const RGWBucketInfo& bucket_info, int shard_id, uint64_t gen_id, vector<rgw_bucket_dir_header>& headers, map<int, string> *bucket_instance_ids = NULL);
-  int cls_bucket_head_async(const RGWBucketInfo& bucket_info, int shard_id, uint64_t gen_id, RGWGetDirHeader_CB *ctx, int *num_aio);
+
+  int cls_bucket_head_async(const RGWBucketInfo& bucket_info, std::optional<uint64_t> opt_gen, int shard_id,
+                            RGWGetDirHeader_CB *ctx, int *num_aio);
 
   int bi_get_instance(const RGWBucketInfo& bucket_info, const rgw_obj& obj, rgw_bucket_dir_entry *dirent);
   int bi_get_olh(const RGWBucketInfo& bucket_info, const rgw_obj& obj, rgw_bucket_olh_entry *olh);

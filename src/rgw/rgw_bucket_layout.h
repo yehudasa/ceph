@@ -135,7 +135,6 @@ struct bucket_log_layout {
 void encode(const bucket_log_layout& l, bufferlist& bl, uint64_t f=0);
 void decode(bucket_log_layout& l, bufferlist::const_iterator& bl);
 
-
 struct bucket_log_layout_generation {
   uint64_t gen = 0;
   bucket_log_layout layout;
@@ -152,6 +151,17 @@ inline bucket_log_layout_generation log_layout_from_index(
 {
   return {gen, {BucketLogType::InIndex, {gen, index}}};
 }
+
+struct bucket_layout_generation {
+  uint64_t gen = 0;
+  bucket_index_layout_generation index;
+  bucket_log_layout_generation log;
+
+  void dump(ceph::Formatter *f) const;
+};
+
+void encode(const bucket_layout_generation& l, bufferlist& bl, uint64_t f=0);
+void decode(bucket_layout_generation& l, bufferlist::const_iterator& bl);
 
 enum class BucketReshardState : uint8_t {
   NONE,
@@ -173,15 +183,31 @@ inline std::string bucket_reshard_state_to_str(const BucketReshardState& reshard
 struct BucketLayout {
   BucketReshardState resharding = BucketReshardState::NONE;
 
-  // current bucket index layout
-  bucket_index_layout_generation current_index;
+  bucket_layout_generation current_gen;
 
   // target index layout of a resharding operation
   std::optional<bucket_index_layout_generation> target_index;
 
-  // history of untrimmed bucket log layout generations, with the current
-  // generation at the back()
-  std::map<uint64_t, bucket_log_layout_generation> logs;
+  // history of layouts, with the current generation at the back
+  std::map<uint64_t, bucket_layout_generation> gens;
+
+  // current bucket index layout
+  const bucket_index_layout_generation& current_index() const {
+    return current_gen.index;
+  }
+
+  bucket_index_layout_generation& current_index() {
+    return current_gen.index;
+  }
+
+  // current bucket log layout
+  const bucket_log_layout_generation& current_log() const {
+    return current_gen.log;
+  }
+
+  bucket_log_layout_generation& current_log() {
+    return current_gen.log;
+  }
 
   void dump(ceph::Formatter *f) const;
 };
@@ -190,7 +216,7 @@ void encode(const BucketLayout& l, bufferlist& bl, uint64_t f=0);
 void decode(BucketLayout& l, bufferlist::const_iterator& bl);
 
 inline uint32_t current_num_shards(const BucketLayout& layout) {
-  return std::max(layout.current_index.layout.normal.num_shards, 1u);
+  return std::max(layout.current_gen.index.layout.normal.num_shards, 1u);
   }
 
 } // namespace rgw
