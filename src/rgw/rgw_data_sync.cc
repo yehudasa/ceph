@@ -3520,14 +3520,42 @@ class RGWListBucketIndexLogCR: public RGWCoroutine {
   const string instance_key;
   string marker;
 
+  struct list_result {
+    list<rgw_bi_log_entry> entries;
+    std::optional<bool> more; /* shouldn't rely on this field if it's not new format response */
+    bool complete{false};
+    uint64_t gen{0};
+    uint64_t latest_gen{0};
+
+    void decode_json(JSONObj *obj) {
+      if (obj->is_array()) { /* older format response */
+        decode_json_obj(entries, obj);
+        return;
+      }
+      JSONDecoder::decode_json("entries", entries, obj);
+      bool m;
+      JSONDecoder::decode_json("more", m, obj);
+      more = m;
+      JSONDecoder::decode_json("complete", complete, obj);
+      JSONDecoder::decode_json("generation", gen, obj);
+      JSONDecoder::decode_json("latest_generation", latest_gen, obj);
+    }
+  } lresult;
+
   list<rgw_bi_log_entry> *result;
+  uint64_t *gen;
+  bool *complete;
+
   std::optional<PerfGuard> timer;
 
 public:
   RGWListBucketIndexLogCR(RGWDataSyncCtx *_sc, const rgw_bucket_shard& bs,
-                          string& _marker, list<rgw_bi_log_entry> *_result)
+                          string& _marker, list<rgw_bi_log_entry> *_result,
+                          uint64_t *_gen,
+                          bool *_complete)
     : RGWCoroutine(_sc->cct), sc(_sc), sync_env(_sc->env),
-      instance_key(bs.get_key()), marker(_marker), result(_result) {}
+      instance_key(bs.get_key()), marker(_marker), result(_result),
+      gen(_gen), complete(_complete) {}
 
   int operate() override {
     reenter(this) {
@@ -3539,9 +3567,10 @@ public:
 					{ "format" , "json" },
 					{ "marker" , marker.c_str() },
 					{ "type", "bucket-index" },
+					{ "format-ver", "2" }, /* we want extra info */
 	                                { NULL, NULL } };
 
-        call(new RGWReadRESTResourceCR<list<rgw_bi_log_entry> >(sync_env->cct, sc->conn, sync_env->http_manager, "/admin/log", pairs, result));
+        call(new RGWReadRESTResourceCR<list_result>(sync_env->cct, sc->conn, sync_env->http_manager, "/admin/log", pairs, &lresult));
       }
       timer.reset();
       if (retcode < 0) {
@@ -3550,6 +3579,11 @@ public:
         }
         return set_cr_error(retcode);
       }
+
+      *result = std::move(lresult.entries);
+      *gen = lresult.gen;
+      *complete = lresult.complete;
+
       return set_cr_done();
     }
     return 0;
@@ -4110,6 +4144,9 @@ class RGWBucketShardIncrementalSyncCR : public RGWCoroutine {
   int sync_status{0};
   bool syncstopped{false};
 
+  uint64_t gen{0};
+  bool complete{false};
+
   RGWSyncTraceNodeRef tn;
   RGWBucketIncSyncShardMarkerTrack marker_tracker;
 
@@ -4165,7 +4202,7 @@ int RGWBucketShardIncrementalSyncCR::operate()
       tn->log(20, SSTR("listing bilog for incremental sync; position=" << sync_info.inc_marker.position));
       set_status() << "listing bilog; position=" << sync_info.inc_marker.position;
       yield call(new RGWListBucketIndexLogCR(sc, bs, sync_info.inc_marker.position,
-                                             &list_result));
+                                             &list_result, &gen, &complete));
       if (retcode < 0 && retcode != -ENOENT) {
         /* wait for all operations to complete */
         drain_all();
