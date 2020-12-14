@@ -2133,9 +2133,9 @@ void RGWBucketInfo::decode(bufferlist::const_iterator& bl) {
     decode(quota, bl);
   static constexpr uint8_t new_layout_v = 22;
   if (struct_v >= 10 && struct_v < new_layout_v)
-    decode(layout.current_gen.index.layout.normal.num_shards, bl);
+    decode(layout.current.index.layout.normal.num_shards, bl);
   if (struct_v >= 11 && struct_v < new_layout_v)
-    decode(layout.current_gen.index.layout.normal.hash_type, bl);
+    decode(layout.current.index.layout.normal.hash_type, bl);
   if (struct_v >= 12)
     decode(requester_pays, bl);
   if (struct_v >= 13)
@@ -2151,9 +2151,9 @@ void RGWBucketInfo::decode(bufferlist::const_iterator& bl) {
   if (struct_v >= 15 && struct_v < new_layout_v) {
     uint32_t it;
     decode(it, bl);
-    layout.current_gen.index.layout.type = (rgw::BucketIndexType)it;
+    layout.current.index.layout.type = (rgw::BucketIndexType)it;
   } else {
-    layout.current_gen.index.layout.type = rgw::BucketIndexType::Normal;
+    layout.current.index.layout.type = rgw::BucketIndexType::Normal;
   }
   swift_versioning = false;
   swift_ver_location.clear();
@@ -2202,15 +2202,30 @@ bool RGWBucketInfo::empty_sync_policy() const
   return sync_policy->empty();
 }
 
-const rgw::bucket_layout_generation *RGWBucketInfo::find_layout(std::optional<uint64_t> opt_gen) const
+const rgw::bucket_index_layout_generation *RGWBucketInfo::find_index_layout(std::optional<uint64_t> opt_gen) const
 {
   if (!opt_gen ||
-      *opt_gen == layout.current_gen.gen) {
-    return &layout.current_gen;
+      *opt_gen == layout.current.index.gen) {
+    return &layout.current.index;
   }
 
-  auto iter = layout.gens.find(*opt_gen);
-  if (iter == layout.gens.end()) {
+  auto iter = layout.indexes.find(*opt_gen);
+  if (iter == layout.indexes.end()) {
+    return nullptr;
+  }
+
+  return &(iter->second);
+}
+
+const rgw::bucket_log_layout_generation *RGWBucketInfo::find_log_layout(std::optional<uint64_t> opt_gen) const
+{
+  if (!opt_gen ||
+      *opt_gen == layout.current.log.gen) {
+    return &layout.current.log;
+  }
+
+  auto iter = layout.logs.find(*opt_gen);
+  if (iter == layout.logs.end()) {
     return nullptr;
   }
 

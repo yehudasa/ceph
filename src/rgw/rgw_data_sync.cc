@@ -896,7 +896,7 @@ public:
             call(new RGWReadRESTResourceCR<bucket_instance_meta_info>(sync_env->cct, sc->conn, sync_env->http_manager, path, pairs, &meta_info));
           }
 
-          num_shards = meta_info.data.get_bucket_info().layout.current_index().layout.normal.num_shards;
+          num_shards = meta_info.data.get_bucket_info().layout.current.index.layout.normal.num_shards;
           if (num_shards > 0) {
             for (i = 0; i < num_shards; i++) {
               char buf[16];
@@ -2808,12 +2808,12 @@ RGWRemoteBucketManager::RGWRemoteBucketManager(const DoutPrefixProvider *_dpp,
                                                                     source_bucket_info.bucket,
                                                                     dest_bucket))
 {
-  int num_shards = (source_bucket_info.layout.current_index().layout.normal.num_shards <= 0 ? 
-                    1 : source_bucket_info.layout.current_index().layout.normal.num_shards);
+  int num_shards = (source_bucket_info.layout.current.index.layout.normal.num_shards <= 0 ? 
+                    1 : source_bucket_info.layout.current.index.layout.normal.num_shards);
 
   sync_pairs.resize(num_shards);
 
-  int cur_shard = std::min<int>(source_bucket_info.layout.current_index().layout.normal.num_shards, 0);
+  int cur_shard = std::min<int>(source_bucket_info.layout.current.index.layout.normal.num_shards, 0);
 
   for (int i = 0; i < num_shards; ++i, ++cur_shard) {
     auto& sync_pair = sync_pairs[i];
@@ -2821,7 +2821,7 @@ RGWRemoteBucketManager::RGWRemoteBucketManager(const DoutPrefixProvider *_dpp,
     sync_pair.source_bs.bucket = source_bucket_info.bucket;
     sync_pair.dest_bs.bucket = dest_bucket;
 
-    sync_pair.source_bs.shard_id = (source_bucket_info.layout.current_index().layout.normal.num_shards > 0 ? cur_shard : -1);
+    sync_pair.source_bs.shard_id = (source_bucket_info.layout.current.index.layout.normal.num_shards > 0 ? cur_shard : -1);
 
     if (dest_bucket == source_bucket_info.bucket) {
       sync_pair.dest_bs.shard_id = sync_pair.source_bs.shard_id;
@@ -4586,8 +4586,8 @@ int RGWRunBucketSourcesSyncCR::operate()
       {
         ldpp_dout(sync_env->dpp, 20) << __func__ << "(): sync pipe=" << *siter << dendl;
 
-        source_num_shards = siter->source.get_bucket_info().layout.current_index().layout.normal.num_shards;
-        target_num_shards = siter->target.get_bucket_info().layout.current_index().layout.normal.num_shards;
+        source_num_shards = siter->source.get_bucket_info().layout.current.index.layout.normal.num_shards;
+        target_num_shards = siter->target.get_bucket_info().layout.current.index.layout.normal.num_shards;
         if (source_bs) {
           sync_pair.source_bs = *source_bs;
         } else {
@@ -5114,7 +5114,7 @@ int RGWSyncBucketCR::operate()
         // init sync status
         yield {
           init_check_compat = objv.read_version.ver <= 1; // newly-created
-          int num_shards = sync_pipe.dest_bucket_info.layout.current_index().layout.normal.num_shards;
+          int num_shards = sync_pipe.dest_bucket_info.layout.current.index.layout.normal.num_shards;
           call(new InitBucketFullSyncStatusCR(sc, sync_pair, status_obj,
                                               bucket_status, objv, num_shards,
                                               init_check_compat));
@@ -5400,13 +5400,13 @@ class RGWCollectBucketSyncStatusCR : public RGWShardCollectCR {
       dest_bucket_info(dest_bucket_info),
       i(status->begin()), end(status->end())
   {
-    shard_to_shard_sync = (source_bucket_info.layout.current_index().layout.normal.num_shards == dest_bucket_info.layout.current_index().layout.normal.num_shards);
+    shard_to_shard_sync = (source_bucket_info.layout.current.index.layout.normal.num_shards == dest_bucket_info.layout.current.index.layout.normal.num_shards);
 
-    source_bs = rgw_bucket_shard(source_bucket_info.bucket, source_bucket_info.layout.current_index().layout.normal.num_shards > 0 ? 0 : -1);
-    dest_bs = rgw_bucket_shard(dest_bucket_info.bucket, dest_bucket_info.layout.current_index().layout.normal.num_shards > 0 ? 0 : -1);
+    source_bs = rgw_bucket_shard(source_bucket_info.bucket, source_bucket_info.layout.current.index.layout.normal.num_shards > 0 ? 0 : -1);
+    dest_bs = rgw_bucket_shard(dest_bucket_info.bucket, dest_bucket_info.layout.current.index.layout.normal.num_shards > 0 ? 0 : -1);
 
     status->clear();
-    status->resize(std::max<size_t>(1, source_bucket_info.layout.current_index().layout.normal.num_shards));
+    status->resize(std::max<size_t>(1, source_bucket_info.layout.current.index.layout.normal.num_shards));
 
     i = status->begin();
     end = status->end();

@@ -1040,9 +1040,9 @@ int RGWBucket::sync(RGWBucketAdminOpState& op_state, map<string, bufferlist> *at
     return r;
   }
 
-  int shards_num = bucket_info.layout.current_index().layout.normal.num_shards? bucket_info.layout.current_index().layout.normal.num_shards : 1;
-  int shard_id = bucket_info.layout.current_index().layout.normal.num_shards? 0 : -1;
-  auto gen_id = bucket_info.layout.current_index().gen;
+  int shards_num = bucket_info.layout.current.index.layout.normal.num_shards? bucket_info.layout.current.index.layout.normal.num_shards : 1;
+  int shard_id = bucket_info.layout.current.index.layout.normal.num_shards? 0 : -1;
+  auto gen_id = bucket_info.layout.current.index.gen;
 
   if (!sync) {
     r = store->svc()->bilog_rados->log_stop(bucket_info, -1, gen_id);
@@ -1344,14 +1344,14 @@ static int bucket_stats(rgw::sal::RGWRadosStore *store,
   formatter->open_object_section("stats");
   formatter->dump_string("bucket", bucket.name);
   formatter->dump_int("num_shards",
-		      bucket_info.layout.current_index().layout.normal.num_shards);
+		      bucket_info.layout.current.index.layout.normal.num_shards);
   formatter->dump_string("tenant", bucket.tenant);
   formatter->dump_string("zonegroup", bucket_info.zonegroup);
   formatter->dump_string("placement_rule", bucket_info.placement_rule.to_str());
   ::encode_json("explicit_placement", bucket.explicit_placement, formatter);
   formatter->dump_string("id", bucket.bucket_id);
   formatter->dump_string("marker", bucket.marker);
-  formatter->dump_stream("index_type") << bucket_info.layout.current_index().layout.type;
+  formatter->dump_stream("index_type") << bucket_info.layout.current.index.layout.type;
   ::encode_json("owner", bucket_info.owner, formatter);
   formatter->dump_string("ver", bucket_ver);
   formatter->dump_string("master_ver", master_ver);
@@ -1453,7 +1453,7 @@ int RGWBucketAdminOp::limit_check(rgw::sal::RGWRadosStore *store,
 	  num_objects += s.second.num_objects;
 	}
 
-	num_shards = info.layout.current_index().layout.normal.num_shards;
+	num_shards = info.layout.current.index.layout.normal.num_shards;
 	uint64_t objs_per_shard =
 	  (num_shards) ? num_objects/num_shards : num_objects;
 	{
@@ -1613,8 +1613,8 @@ static int purge_bucket_instance(rgw::sal::RGWRadosStore *store, const RGWBucket
   int max_shards = rgw::current_num_shards(bucket_info.layout);
   for (int i = 0; i < max_shards; i++) {
     RGWRados::BucketShard bs(store->getRados());
-    int shard_id = (bucket_info.layout.current_index().layout.normal.num_shards > 0  ? i : -1);
-    int ret = bs.init(bucket_info.bucket, shard_id, bucket_info.layout.current_index(), nullptr);
+    int shard_id = (bucket_info.layout.current.index.layout.normal.num_shards > 0  ? i : -1);
+    int ret = bs.init(bucket_info.bucket, shard_id, bucket_info.layout.current.index, nullptr);
     if (ret < 0) {
       cerr << "ERROR: bs.init(bucket=" << bucket_info.bucket << ", shard=" << shard_id
            << "): " << cpp_strerror(-ret) << std::endl;
@@ -2541,7 +2541,7 @@ int RGWBucketInstanceMetadataHandler::do_put(RGWSI_MetaBackend_Handler::Op *op,
 }
 
 void init_default_bucket_layout(CephContext *cct, RGWBucketInfo& info, const RGWZone& zone) {
-  auto& current_index = info.layout.current_index();
+  auto& current_index = info.layout.current.index;
 
   current_index.gen = 0;
   current_index.layout.normal.hash_type = rgw::BucketHashType::Mod;
@@ -2592,7 +2592,7 @@ int RGWMetadataHandlerPut_BucketInstance::put_check()
         return ret;
       }
     }
-    bci.info.layout.current_index().layout.type = rule_info.index_type;
+    bci.info.layout.current.index.layout.type = rule_info.index_type;
   } else {
     /* existing bucket, keep its placement */
     bci.info.bucket.explicit_placement = old_bci->info.bucket.explicit_placement;
@@ -2634,7 +2634,7 @@ int RGWMetadataHandlerPut_BucketInstance::put_post()
 
   objv_tracker = bci.info.objv_tracker;
 
-  int ret = bihandler->svc.bi->init_index(bci.info, bci.info.layout.current_index());
+  int ret = bihandler->svc.bi->init_index(bci.info, bci.info.layout.current.index);
   if (ret < 0) {
     return ret;
   }

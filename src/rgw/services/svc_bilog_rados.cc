@@ -104,14 +104,14 @@ int RGWSI_BILog_RADOS::log_list(const RGWBucketInfo& bucket_info, std::optional<
   if (r < 0)
     return r;
 
-  auto layout = bucket_info.find_layout(opt_gen);
+  auto layout = bucket_info.find_log_layout(opt_gen);
   if (!layout) {
     ldout(cct, 20) << __func__ << ": couldn't find bucket layout generation bucket=" << bucket_info.bucket << " gen=" << (int64_t)opt_gen.value_or(-1) << dendl;
     return -ENOENT;
   }
 
   if (generation) {
-    *generation = layout->log.gen;
+    *generation = layout->gen;
   }
 
   map<int, list<rgw_bi_log_entry>::iterator> vcurrents;

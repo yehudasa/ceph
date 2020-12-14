@@ -6573,8 +6573,8 @@ next:
     int i = (specified_shard_id ? shard_id : 0);
     for (; i < max_shards; i++) {
       RGWRados::BucketShard bs(store->getRados());
-      int shard_id = (bucket_info.layout.current_index().layout.normal.num_shards > 0  ? i : -1);
-      int ret = bs.init(bucket, shard_id, bucket_info.layout.current_index(),
+      int shard_id = (bucket_info.layout.current.index.layout.normal.num_shards > 0  ? i : -1);
+      int ret = bs.init(bucket, shard_id, bucket_info.layout.current.index,
       nullptr /* no RGWBucketInfo */);
       marker.clear();
 
@@ -6638,8 +6638,8 @@ next:
 
     for (int i = 0; i < max_shards; i++) {
       RGWRados::BucketShard bs(store->getRados());
-      int shard_id = (bucket_info.layout.current_index().layout.normal.num_shards > 0  ? i : -1);
-      int ret = bs.init(bucket, shard_id, bucket_info.layout.current_index(),
+      int shard_id = (bucket_info.layout.current.index.layout.normal.num_shards > 0  ? i : -1);
+      int ret = bs.init(bucket, shard_id, bucket_info.layout.current.index,
       nullptr /* no RGWBucketInfo */);
       if (ret < 0) {
         cerr << "ERROR: bs.init(bucket=" << bucket << ", shard=" << shard_id << "): " << cpp_strerror(-ret) << std::endl;
@@ -8646,7 +8646,7 @@ next:
       cerr << "ERROR: could not init bucket: " << cpp_strerror(-ret) << std::endl;
       return -ret;
     }
-    auto gen_id = bucket_info.layout.current_index().gen;
+    auto gen_id = bucket_info.layout.current.index.gen;
     ret = store->svc()->bilog_rados->log_trim(bucket_info, shard_id, gen_id, start_marker, end_marker);
     if (ret < 0) {
       cerr << "ERROR: trim_bi_log_entries(): " << cpp_strerror(-ret) << std::endl;
@@ -8666,7 +8666,7 @@ next:
       return -ret;
     }
     map<int, string> markers;
-    auto gen_id = bucket_info.layout.current_index().gen;
+    auto gen_id = bucket_info.layout.current.index.gen;
     ret = store->svc()->bilog_rados->get_log_status(bucket_info, shard_id, gen_id,
 						    &markers, null_yield);
     if (ret < 0) {
