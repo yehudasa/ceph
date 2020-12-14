@@ -1059,7 +1059,7 @@ int RGWRadosStore::create_bucket(RGWUser& u, const rgw_bucket& b,
     ldpp_dout(this, 20) << "got creation time: << " << std::put_time(std::localtime(&ctime), "%F %T") << dendl;
     pmaster_bucket= &master_info.bucket;
     creation_time = master_info.creation_time;
-    pmaster_num_shards = &master_info.layout.current_index().layout.normal.num_shards;
+    pmaster_num_shards = &master_info.layout.current.index.layout.normal.num_shards;
     pobjv = &objv;
     if (master_info.obj_lock_enabled()) {
       info.flags = BUCKET_VERSIONED | BUCKET_OBJ_LOCK_ENABLED;

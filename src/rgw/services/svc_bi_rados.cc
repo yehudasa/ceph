@@ -165,17 +165,17 @@ static void get_bucket_instance_ids(const RGWBucketInfo& bucket_info,
   const rgw_bucket& bucket = bucket_info.bucket;
   string plain_id = bucket.name + ":" + bucket.bucket_id;
 
-  if (!bucket_info.layout.current_index().layout.normal.num_shards) {
+  if (!bucket_info.layout.current.index.layout.normal.num_shards) {
     (*result)[0] = plain_id;
   } else {
     char buf[16];
     if (shard_id < 0) {
-      for (uint32_t i = 0; i < bucket_info.layout.current_index().layout.normal.num_shards; ++i) {
+      for (uint32_t i = 0; i < bucket_info.layout.current.index.layout.normal.num_shards; ++i) {
         snprintf(buf, sizeof(buf), ":%d", i);
         (*result)[i] = plain_id + buf;
       }
     } else {
-      if (static_cast<uint32_t>(shard_id) > bucket_info.layout.current_index().layout.normal.num_shards) {
+      if (static_cast<uint32_t>(shard_id) > bucket_info.layout.current.index.layout.normal.num_shards) {
         return;
       }
       snprintf(buf, sizeof(buf), ":%d", shard_id);
@@ -191,7 +191,7 @@ int RGWSI_BucketIndex_RADOS::open_bucket_index(const RGWBucketInfo& bucket_info,
                                                map<int, string> *bucket_objs,
                                                map<int, string> *bucket_instance_ids)
 {
-  auto pgen_layout = bucket_info.find_layout(opt_gen);
+  auto pgen_layout = bucket_info.find_index_layout(opt_gen);
   if (!pgen_layout) {
     ldout(cct, 20) << __func__ << ": couldn't find layout for gen=" << (int64_t)opt_gen.value_or(-1) << dendl;
     return -ENOENT;
@@ -208,7 +208,7 @@ int RGWSI_BucketIndex_RADOS::open_bucket_index(const RGWBucketInfo& bucket_info,
 
   //auto gen = bucket_info.layout.current_index.gen;
 
-  get_bucket_index_objects(bucket_oid_base, pgen_layout->index.layout.normal.num_shards, pgen_layout->gen, bucket_objs, shard_id);
+  get_bucket_index_objects(bucket_oid_base, pgen_layout->layout.normal.num_shards, pgen_layout->gen, bucket_objs, shard_id);
   if (bucket_instance_ids) {
     // TODO: generation need to be passed here
     get_bucket_instance_ids(bucket_info, shard_id, bucket_instance_ids);
@@ -291,14 +291,14 @@ int RGWSI_BucketIndex_RADOS::open_bucket_index_shard(const RGWBucketInfo& bucket
 
   string oid;
 
-  auto layout = bucket_info.find_layout(opt_gen);
+  auto layout = bucket_info.find_index_layout(opt_gen);
   if (!layout) {
     ldout(cct, 20) << __func__ << ": couldn't find layout for gen=" << (int64_t)opt_gen.value_or(-1) << dendl;
     return -ENOENT;
   }
 
-  ret = get_bucket_index_object(bucket_oid_base, obj_key, layout->index.layout.normal.num_shards,
-        layout->index.layout.normal.hash_type, layout->index.gen, &oid, shard_id);
+  ret = get_bucket_index_object(bucket_oid_base, obj_key, layout->layout.normal.num_shards,
+        layout->layout.normal.hash_type, layout->gen, &oid, shard_id);
   if (ret < 0) {
     ldout(cct, 10) << "get_bucket_index_object() returned ret=" << ret << dendl;
     return ret;
@@ -473,8 +473,8 @@ int RGWSI_BucketIndex_RADOS::handle_overwrite(const RGWBucketInfo& info,
 
   if (old_sync_enabled != new_sync_enabled) {
     int shards_num = rgw::current_num_shards(info.layout);
-    int shard_id = info.layout.current_index().layout.normal.num_shards? 0 : -1;
-    auto gen_id = info.layout.current_gen.gen;
+    int shard_id = info.layout.current.index.layout.normal.num_shards? 0 : -1;
+    auto gen_id = info.layout.current.index.gen;
 
     int ret;
     if (!new_sync_enabled) {

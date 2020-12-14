@@ -425,7 +425,7 @@ void RGWOp_BILog_List::execute(optional_yield y) {
     }
   }
 
-  latest_generation = bucket_info.layout.current_log().gen;
+  latest_generation = bucket_info.layout.current.log.gen;
   unsigned count = 0;
   string err;
 
@@ -517,11 +517,11 @@ void RGWOp_BILog_Info::execute(optional_yield y) {
   }
 
 
-  if (!bucket_info.layout.gens.empty()) {
-    oldest_gen = bucket_info.layout.gens.begin()->first;
-    latest_gen = bucket_info.layout.gens.rbegin()->first;
+  if (!bucket_info.layout.logs.empty()) {
+    oldest_gen = bucket_info.layout.logs.begin()->first;
+    latest_gen = bucket_info.layout.logs.rbegin()->first;
   } else {
-    oldest_gen = bucket_info.layout.current_log().gen;
+    oldest_gen = bucket_info.layout.current.log.gen;
     latest_gen = oldest_gen;
   }
 
@@ -552,14 +552,14 @@ void RGWOp_BILog_Info::execute(optional_yield y) {
     }
   }
 
-  auto playout = bucket_info.find_layout(opt_gen);
+  auto playout = bucket_info.find_log_layout(opt_gen);
   if (!playout) {
     op_ret = -ENOENT;
     ldpp_dout(s, 5) << "Couldn't find layout for gen=" << gen_str << dendl;
     return;
   }
 
-  layout = playout->log;
+  layout = *playout;
 
   map<RGWObjCategory, RGWStorageStats> stats;
   int ret =  store->getRados()->get_bucket_stats(bucket_info, opt_gen, shard_id, &bucket_ver, &master_ver, stats, &max_marker, &syncstopped);

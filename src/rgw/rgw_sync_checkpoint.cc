@@ -87,7 +87,7 @@ int bucket_source_sync_checkpoint(const DoutPrefixProvider* dpp,
                                   ceph::timespan retry_delay,
                                   ceph::coarse_mono_time timeout_at)
 {
-  const auto num_shards = source_bucket_info.layout.current_index().layout.normal.num_shards;
+  const auto num_shards = source_bucket_info.layout.current.index.layout.normal.num_shards;
 
   if (empty(remote_markers, num_shards)) {
     ldpp_dout(dpp, 1) << "bucket sync caught up with empty source" << dendl;
