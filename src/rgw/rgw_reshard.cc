@@ -27,6 +27,8 @@ const string reshard_oid_prefix = "reshard.";
 const string reshard_lock_name = "reshard_process";
 const string bucket_instance_lock_name = "bucket_instance_lock";
 
+const string default_sync_policy_group = "_reshard";
+
 /* All primes up to 2000 used to attempt to make dynamic sharding use
  * a prime numbers of shards. Note: this list also includes 1 for when
  * 1 shard is the most appropriate, even though 1 is not prime.
@@ -325,6 +327,44 @@ int RGWBucketReshard::clear_index_shard_reshard_status(rgw::sal::RGWRadosStore* 
   return 0;
 }
 
+static int update_sync_policy(rgw::sal::RGWRadosStore *store,
+                              const RGWBucketInfo& old_bucket_info,
+                              RGWBucketInfo& bucket_info)
+{
+  rgw_sync_policy_info sync_policy;
+  if (bucket_info.sync_policy) {
+    sync_policy = *bucket_info.sync_policy;
+  }
+
+  auto& group = sync_policy.groups[default_sync_policy_group];
+  group.id = default_sync_policy_group;
+
+  if (!group.set_status("enabled")) {
+    /* shouldn't happen */
+    lderr(store->ctx()) << "ERROR: failed to enable status on sync policy group" << dendl;
+    return -EIO;
+  }
+
+  rgw_sync_bucket_pipes *pipe;
+
+  string pipe_id = old_bucket_info.bucket.bucket_id;
+
+  group.find_pipe(pipe_id, true, &pipe);
+
+  rgw_zone_id any_zone("*");
+
+  pipe->source.add_zones({ any_zone });
+  pipe->source.set_bucket(old_bucket_info.bucket.tenant,
+                          old_bucket_info.bucket.name,
+                          old_bucket_info.bucket.bucket_id);
+
+  pipe->dest.add_zones({ any_zone });
+
+  bucket_info.set_sync_policy(std::move(sync_policy));
+
+  return 0;
+}
+
 static int create_new_bucket_instance(rgw::sal::RGWRadosStore *store,
 				      int new_num_shards,
 				      const RGWBucketInfo& bucket_info,
@@ -344,6 +384,12 @@ static int create_new_bucket_instance(rgw::sal::RGWRadosStore *store,
   int ret = store->svc()->bi->init_index(new_bucket_info);
   if (ret < 0) {
     cerr << "ERROR: failed to init new bucket indexes: " << cpp_strerror(-ret) << std::endl;
+    return ret;
+  }
+
+  ret = update_sync_policy(store, bucket_info, new_bucket_info);
+  if (ret < 0) {
+    cerr << "ERROR: failed to update new bucket sync policy: " << cpp_strerror(-ret) << std::endl;
     return ret;
   }
 
