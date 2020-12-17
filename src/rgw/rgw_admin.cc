@@ -3193,6 +3193,7 @@ int main(int argc, const char **argv)
   std::optional<string> opt_tenant;
   std::optional<string> opt_bucket_name;
   std::optional<string> opt_bucket_id;
+  std::optional<string> opt_new_bucket_id;
   std::optional<rgw_bucket> opt_source_bucket;
   std::optional<string> opt_source_tenant;
   std::optional<string> opt_source_bucket_name;
@@ -3381,6 +3382,8 @@ int main(int argc, const char **argv)
         cerr << "no value for bucket-id" << std::endl;
         exit(1);
       }
+    } else if (ceph_argparse_witharg(args, i, &val, "--new-bucket-id", (char*)NULL)) {
+      opt_new_bucket_id = val;
     } else if (ceph_argparse_witharg(args, i, &val, "--bucket-new-name", (char*)NULL)) {
       new_bucket_name = val;
     } else if (ceph_argparse_witharg(args, i, &val, "--format", (char*)NULL)) {
@@ -6899,7 +6902,7 @@ next:
       max_entries = DEFAULT_RESHARD_MAX_ENTRIES;
     }
 
-    return br.execute(num_shards, max_entries,
+    return br.execute(num_shards, max_entries, opt_new_bucket_id,
                       verbose, &cout, formatter.get());
   }
 

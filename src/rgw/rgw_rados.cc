@@ -1369,6 +1369,9 @@ int RGWRados::initialize()
     return ret;
   }
 
+  RGWBucketInstanceMetadataHandlerBase::ReshardHandlerRef bi_reshard_handler(new RGWBucketInstanceMeta_ReshardHandler_RadosStore(store));
+  ctl.meta.bucket_instance->set_reshard_handler(bi_reshard_handler);
+
   host_id = svc.zone_utils->gen_host_id();
 
   ret = init_rados();

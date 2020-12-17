@@ -193,10 +193,53 @@ public:
 
 class RGWBucketInstanceMetadataHandlerBase : public RGWMetadataHandler_GenericMetaBE {
 public:
+  class ReshardHandler;
+
+  using ReshardHandlerRef = std::shared_ptr<ReshardHandler>;
+
+private:
+  ReshardHandlerRef reshard_handler;
+
+public:
+  class ReshardHandler {
+  public:
+    virtual ~ReshardHandler() {}
+    virtual int reshard(const RGWBucketInfo& old_bucket_info,
+                        const map<string, bufferlist>& attrs,
+                        int new_num_shards,
+                        const string& new_bucket_id) = 0;
+
+    virtual const RGWBucketInfo& get_bucket_info() = 0;
+  };
+
   virtual ~RGWBucketInstanceMetadataHandlerBase() {}
   virtual void init(RGWSI_Zone *zone_svc,
                     RGWSI_Bucket *bucket_svc,
                     RGWSI_BucketIndex *bi_svc) = 0;
+  void set_reshard_handler(ReshardHandlerRef& handler) {
+    reshard_handler = handler;
+  }
+
+  ReshardHandlerRef get_reshard_handler() {
+    return reshard_handler;
+  }
+};
+
+class RGWBucketInstanceMeta_ReshardHandler_RadosStore : public RGWBucketInstanceMetadataHandlerBase::ReshardHandler {
+  rgw::sal::RGWRadosStore *store;
+
+  RGWBucketInfo bucket_info;
+public:
+  RGWBucketInstanceMeta_ReshardHandler_RadosStore(rgw::sal::RGWRadosStore *_store) : store(_store) {}
+
+  int reshard(const RGWBucketInfo& old_bucket_info,
+              const map<string, bufferlist>& attrs,
+              int new_num_shards,
+              const string& new_bucket_id) override;
+
+  const RGWBucketInfo& get_bucket_info() override {
+    return bucket_info;
+  }
 };
 
 class RGWBucketMetaHandlerAllocator {

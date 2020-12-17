@@ -85,6 +85,7 @@ private:
   static const std::initializer_list<uint16_t> reshard_primes;
 
   int create_new_bucket_instance(int new_num_shards,
+                                 std::optional<string> new_bucket_id,
 				 RGWBucketInfo& new_bucket_info);
   int do_reshard(int num_shards,
 		 RGWBucketInfo& new_bucket_info,
@@ -101,6 +102,7 @@ public:
                    const std::map<string, bufferlist>& _bucket_attrs,
 		   RGWBucketReshardLock* _outer_reshard_lock);
   int execute(int num_shards, int max_op_entries,
+              std::optional<string> new_bucket_id,
               bool verbose = false, ostream *out = nullptr,
               Formatter *formatter = nullptr,
 	      RGWReshard *reshard_log = nullptr);

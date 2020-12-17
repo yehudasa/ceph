@@ -163,6 +163,8 @@ struct RGWServices
 
 class RGWMetadataManager;
 class RGWMetadataHandler;
+class RGWBucketInstanceMetadataHandlerBase;
+class RGWMetadataBIHandler;
 class RGWUserCtl;
 class RGWBucketCtl;
 class RGWOTPCtl;
@@ -171,7 +173,7 @@ struct RGWCtlDef {
   struct _meta {
     std::unique_ptr<RGWMetadataManager> mgr;
     std::unique_ptr<RGWMetadataHandler> bucket;
-    std::unique_ptr<RGWMetadataHandler> bucket_instance;
+    std::unique_ptr<RGWBucketInstanceMetadataHandlerBase> bucket_instance;
     std::unique_ptr<RGWMetadataHandler> user;
     std::unique_ptr<RGWMetadataHandler> otp;
 
@@ -199,7 +201,7 @@ struct RGWCtl {
     RGWMetadataManager *mgr{nullptr};
 
     RGWMetadataHandler *bucket{nullptr};
-    RGWMetadataHandler *bucket_instance{nullptr};
+    RGWBucketInstanceMetadataHandlerBase *bucket_instance{nullptr};
     RGWMetadataHandler *user{nullptr};
     RGWMetadataHandler *otp{nullptr};
   } meta;

@@ -367,13 +367,18 @@ static int update_sync_policy(rgw::sal::RGWRadosStore *store,
 
 static int create_new_bucket_instance(rgw::sal::RGWRadosStore *store,
 				      int new_num_shards,
+                                      std::optional<string> new_bucket_id,
 				      const RGWBucketInfo& bucket_info,
 				      map<string, bufferlist>& attrs,
 				      RGWBucketInfo& new_bucket_info)
 {
   new_bucket_info = bucket_info;
 
-  store->getRados()->create_bucket_id(&new_bucket_info.bucket.bucket_id);
+  if (new_bucket_id) {
+    new_bucket_info.bucket.bucket_id = *new_bucket_id;
+  } else {
+    store->getRados()->create_bucket_id(&new_bucket_info.bucket.bucket_id);
+  }
 
   new_bucket_info.layout.current_index.layout.normal.num_shards = new_num_shards;
   new_bucket_info.objv_tracker.clear();
@@ -403,9 +408,10 @@ static int create_new_bucket_instance(rgw::sal::RGWRadosStore *store,
 }
 
 int RGWBucketReshard::create_new_bucket_instance(int new_num_shards,
+                                                 std::optional<string> new_bucket_id,
                                                  RGWBucketInfo& new_bucket_info)
 {
-  return ::create_new_bucket_instance(store, new_num_shards,
+  return ::create_new_bucket_instance(store, new_num_shards, new_bucket_id,
 				      bucket_info, bucket_attrs, new_bucket_info);
 }
 
@@ -733,6 +739,7 @@ int RGWBucketReshard::get_status(list<cls_rgw_bucket_instance_entry> *status)
 
 
 int RGWBucketReshard::execute(int num_shards, int max_op_entries,
+                              std::optional<string> new_bucket_id,
                               bool verbose, ostream *out, Formatter *formatter,
 			      RGWReshard* reshard_log)
 {
@@ -742,7 +749,7 @@ int RGWBucketReshard::execute(int num_shards, int max_op_entries,
   }
 
   RGWBucketInfo new_bucket_info;
-  ret = create_new_bucket_instance(num_shards, new_bucket_info);
+  ret = create_new_bucket_instance(num_shards, new_bucket_id, new_bucket_info);
   if (ret < 0) {
     // shard state is uncertain, but this will attempt to remove them anyway
     goto error_out;
@@ -776,6 +783,8 @@ int RGWBucketReshard::execute(int num_shards, int max_op_entries,
 
   reshard_lock.unlock();
 
+#warning handle trimming
+#if 0
   // resharding successful, so remove old bucket index shards; use
   // best effort and don't report out an error; the lock isn't needed
   // at this point since all we're using a best effor to to remove old
@@ -795,6 +804,7 @@ int RGWBucketReshard::execute(int num_shards, int max_op_entries,
       bucket_info.bucket.get_key() <<
       "\"created after successful resharding with error " << ret << dendl;
   }
+#endif
 
   ldout(store->ctx(), 1) << __func__ <<
     " INFO: reshard of bucket \"" << bucket_info.bucket.name << "\" from \"" <<
@@ -1100,7 +1110,7 @@ int RGWReshard::process_single_logshard(int logshard_num)
 	}
 
 	RGWBucketReshard br(store, bucket_info, attrs, nullptr);
-	ret = br.execute(entry.new_num_shards, max_entries, false, nullptr,
+	ret = br.execute(entry.new_num_shards, max_entries, std::nullopt, false, nullptr,
 			 nullptr, this);
 	if (ret < 0) {
 	  ldout(store->ctx(), 0) <<  __func__ <<
