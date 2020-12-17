@@ -398,7 +398,10 @@ static int create_new_bucket_instance(rgw::sal::RGWRadosStore *store,
     return ret;
   }
 
-  ret = store->getRados()->put_bucket_instance_info(new_bucket_info, true, real_time(), &attrs);
+  /*
+   * not an exclusive write, so that we can override multisite sync operation
+   */
+  ret = store->getRados()->put_bucket_instance_info(new_bucket_info, false, real_time(), &attrs);
   if (ret < 0) {
     cerr << "ERROR: failed to store new bucket instance info: " << cpp_strerror(-ret) << std::endl;
     return ret;
