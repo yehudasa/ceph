@@ -830,6 +830,7 @@ void RGWBucketInfo::decode_json(JSONObj *obj) {
   JSONDecoder::decode_json("index_type", it, obj);
   layout.current_index.layout.type = (rgw::BucketIndexType)it;
   JSONDecoder::decode_json("mdsearch_config", mdsearch_config, obj);
+  JSONDecoder::decode_json("new_bucket_instance_id", new_bucket_instance_id, obj);
   int rs;
   JSONDecoder::decode_json("reshard_status", rs, obj);
   reshard_status = (cls_rgw_reshard_status)rs;
