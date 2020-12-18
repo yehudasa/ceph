@@ -401,7 +401,7 @@ static int create_new_bucket_instance(rgw::sal::RGWRadosStore *store,
   /*
    * not an exclusive write, so that we can override multisite sync operation
    */
-  ret = store->getRados()->put_bucket_instance_info(new_bucket_info, false, real_time(), &attrs);
+  ret = store->getRados()->push_bucket_instance_info(new_bucket_info, false, real_time(), &attrs);
   if (ret < 0) {
     cerr << "ERROR: failed to store new bucket instance info: " << cpp_strerror(-ret) << std::endl;
     return ret;
@@ -441,7 +441,7 @@ class BucketInfoReshardUpdate
 
   int set_status(cls_rgw_reshard_status s) {
     bucket_info.reshard_status = s;
-    int ret = store->getRados()->put_bucket_instance_info(bucket_info, false, real_time(), &bucket_attrs);
+    int ret = store->getRados()->push_bucket_instance_info(bucket_info, false, real_time(), &bucket_attrs);
     if (ret < 0) {
       ldout(store->ctx(), 0) << "ERROR: failed to write bucket info, ret=" << ret << dendl;
       return ret;

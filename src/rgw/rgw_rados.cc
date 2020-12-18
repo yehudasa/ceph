@@ -7723,6 +7723,63 @@ int RGWRados::put_bucket_instance_info(RGWBucketInfo& info, bool exclusive,
 						.set_attrs(pattrs));
 }
 
+int RGWRados::push_bucket_instance_info(RGWBucketInfo& info, bool exclusive,
+                                        real_time mtime, map<string, bufferlist> *pattrs)
+{
+  int ret = ctl.bucket->store_bucket_instance_info(info.bucket, info, null_yield,
+                                                   RGWBucketCtl::BucketInstance::PutParams()
+                                                   .set_exclusive(exclusive)
+                                                   .set_mtime(mtime)
+                                                   .set_attrs(pattrs));
+  if (ret < 0) {
+    return ret;
+  }
+
+
+  if (svc.zone->is_meta_master()) {
+    return 0;
+  }
+
+  auto key = string("bucket.instance:") + RGWSI_Bucket::get_bi_meta_key(info.bucket);
+
+  JSONFormatter f(false);
+
+  ret = ctl.meta.mgr->get(key, &f, null_yield);
+  if (ret < 0) {
+    cerr << "ERROR: can't get key: " << cpp_strerror(-ret) << std::endl;
+    return -ret;
+  }
+
+  bufferlist bl;
+
+  f.flush(bl);
+
+  RGWCoroutinesManager crs(cct, get_cr_registry());
+  RGWHTTPManager http(cct, crs.get_completion_mgr());
+  http.start();
+
+  rgw_http_param_pair pairs[] = { { "key", key.c_str() },
+                                  { nullptr, nullptr } };
+
+  auto conn = svc.zone->get_master_conn();
+
+  list<RGWCoroutinesStack *> stacks;
+  RGWCoroutinesStack *stack = new RGWCoroutinesStack(store->ctx(), &crs);
+  stack->call(new RGWPutRawRESTResourceCR<int, int>(store->ctx(), conn, &http, "/admin/metadata", pairs, bl, nullptr));
+  stacks.push_back(stack);
+
+  ret = crs.run(stacks);
+
+  http.stop();
+
+  if (ret < 0) {
+    ldout(cct, 5) << "ERROR: failed to push key=" << key << " to master: ret=" << ret << dendl;
+    return ret;
+  }
+
+  return 0;
+}
+
 int RGWRados::put_linked_bucket_info(RGWBucketInfo& info, bool exclusive, real_time mtime, obj_version *pep_objv,
                                      map<string, bufferlist> *pattrs, bool create_entry_point)
 {

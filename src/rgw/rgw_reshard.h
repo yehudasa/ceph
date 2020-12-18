@@ -185,6 +185,10 @@ public:
 
     return final_num_shards;
   }
+
+  const RGWBucketInfo& get_bucket_info() const {
+    return bucket_info;
+  }
 }; // RGWBucketReshard
 
 
