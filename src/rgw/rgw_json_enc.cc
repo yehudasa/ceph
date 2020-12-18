@@ -792,7 +792,7 @@ void RGWBucketInfo::dump(Formatter *f) const
   encode_json("index_type", (uint32_t)layout.current_index.layout.type, f);
   encode_json("mdsearch_config", mdsearch_config, f);
   encode_json("reshard_status", (int)reshard_status, f);
-  encode_json("new_bucket_instance_id", new_bucket_instance_id, f);
+  encode_json("reshard_info", reshard_info, f);
   if (!empty_sync_policy()) {
     encode_json("sync_policy", *sync_policy, f);
   }
@@ -830,16 +830,40 @@ void RGWBucketInfo::decode_json(JSONObj *obj) {
   JSONDecoder::decode_json("index_type", it, obj);
   layout.current_index.layout.type = (rgw::BucketIndexType)it;
   JSONDecoder::decode_json("mdsearch_config", mdsearch_config, obj);
-  JSONDecoder::decode_json("new_bucket_instance_id", new_bucket_instance_id, obj);
   int rs;
   JSONDecoder::decode_json("reshard_status", rs, obj);
   reshard_status = (cls_rgw_reshard_status)rs;
+
+  JSONDecoder::decode_json("reshard_info", reshard_info, obj);
+
+  if (!reshard_info) {
+    /* backward compatibility */
+    std::optional<string> new_bucket_instance_id;
+    JSONDecoder::decode_json("new_bucket_instance_id", new_bucket_instance_id, obj);
+
+    if (new_bucket_instance_id) {
+      reshard_info.emplace();
+      reshard_info->new_bucket_instance_id = *new_bucket_instance_id;
+    }
+  }
 
   rgw_sync_policy_info sp;
   JSONDecoder::decode_json("sync_policy", sp, obj);
   if (!sp.empty()) {
     set_sync_policy(std::move(sp));
   }
+}
+
+void RGWBucketInfo::_reshard_info::dump(Formatter *f) const
+{
+  encode_json("new_bucket_instance_id", new_bucket_instance_id, f);
+  encode_json("new_num_shards", new_num_shards, f);
+}
+
+void RGWBucketInfo::_reshard_info::decode_json(JSONObj *obj)
+{
+  JSONDecoder::decode_json("new_bucket_instance_id", new_bucket_instance_id, obj);
+  JSONDecoder::decode_json("new_num_shards", new_num_shards, obj);
 }
 
 void rgw_sync_directional_rule::dump(Formatter *f) const

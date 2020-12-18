@@ -1017,7 +1017,28 @@ struct RGWBucketInfo {
 
   // resharding
   cls_rgw_reshard_status reshard_status{cls_rgw_reshard_status::NOT_RESHARDING};
-  string new_bucket_instance_id;
+
+  struct _reshard_info {
+    string new_bucket_instance_id;
+    uint32_t new_num_shards{0};
+
+    void encode(bufferlist& bl) const {
+      ENCODE_START(1, 1, bl);
+      encode(new_bucket_instance_id, bl);
+      encode(new_num_shards, bl);
+      ENCODE_FINISH(bl);
+    }
+    void decode(bufferlist::const_iterator& bl) {
+      DECODE_START(1, bl);
+      decode(new_bucket_instance_id, bl);
+      decode(new_num_shards, bl);
+      DECODE_FINISH(bl);
+    }
+
+    void dump(Formatter *f) const;
+    void decode_json(JSONObj *obj);
+  };
+  std::optional<_reshard_info> reshard_info;
 
   RGWObjectLock obj_lock;
 
@@ -1050,6 +1071,7 @@ struct RGWBucketInfo {
   RGWBucketInfo();
   ~RGWBucketInfo();
 };
+WRITE_CLASS_ENCODER(RGWBucketInfo::_reshard_info)
 WRITE_CLASS_ENCODER(RGWBucketInfo)
 
 struct RGWBucketEntryPoint

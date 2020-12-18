@@ -383,8 +383,8 @@ static int create_new_bucket_instance(rgw::sal::RGWRadosStore *store,
   new_bucket_info.layout.current_index.layout.normal.num_shards = new_num_shards;
   new_bucket_info.objv_tracker.clear();
 
-  new_bucket_info.new_bucket_instance_id.clear();
   new_bucket_info.reshard_status = cls_rgw_reshard_status::NOT_RESHARDING;
+  new_bucket_info.reshard_info.reset();
 
   int ret = store->svc()->bi->init_index(new_bucket_info);
   if (ret < 0) {
@@ -453,12 +453,17 @@ public:
   BucketInfoReshardUpdate(rgw::sal::RGWRadosStore *_store,
 			  RGWBucketInfo& _bucket_info,
                           map<string, bufferlist>& _bucket_attrs,
-			  const string& new_bucket_id) :
+			  const string& new_bucket_id,
+                          uint32_t new_num_shards) :
     store(_store),
     bucket_info(_bucket_info),
     bucket_attrs(_bucket_attrs)
   {
-    bucket_info.new_bucket_instance_id = new_bucket_id;
+    if (!bucket_info.reshard_info) {
+      bucket_info.reshard_info.emplace();
+    }
+    bucket_info.reshard_info->new_bucket_instance_id = new_bucket_id;
+    bucket_info.reshard_info->new_num_shards = new_num_shards;
   }
 
   ~BucketInfoReshardUpdate() {
@@ -470,7 +475,7 @@ public:
 	lderr(store->ctx()) << "Error: " << __func__ <<
 	  " clear_index_shard_status returned " << ret << dendl;
       }
-      bucket_info.new_bucket_instance_id.clear();
+      bucket_info.reshard_info.reset();
 
       // clears new_bucket_instance as well
       set_status(cls_rgw_reshard_status::NOT_RESHARDING);
@@ -601,17 +606,19 @@ int RGWBucketReshard::do_reshard(int num_shards,
     return -EINVAL;
   }
 
+  int num_target_shards = (new_bucket_info.layout.current_index.layout.normal.num_shards > 0 ? new_bucket_info.layout.current_index.layout.normal.num_shards : 1);
+
   // NB: destructor cleans up sharding state if reshard does not
   // complete successfully
-  BucketInfoReshardUpdate bucket_info_updater(store, bucket_info, bucket_attrs, new_bucket_info.bucket.bucket_id);
+  BucketInfoReshardUpdate bucket_info_updater(store, bucket_info, bucket_attrs,
+                                              new_bucket_info.bucket.bucket_id,
+                                              num_target_shards);
 
   int ret = bucket_info_updater.start();
   if (ret < 0) {
     ldout(store->ctx(), 0) << __func__ << ": failed to update bucket info ret=" << ret << dendl;
     return ret;
   }
-
-  int num_target_shards = (new_bucket_info.layout.current_index.layout.normal.num_shards > 0 ? new_bucket_info.layout.current_index.layout.normal.num_shards : 1);
 
   BucketReshardManager target_shards_mgr(store, new_bucket_info, num_target_shards);
 

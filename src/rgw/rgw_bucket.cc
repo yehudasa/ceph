@@ -1682,7 +1682,8 @@ void get_stale_instances(rgw::sal::RGWRadosStore *store, const std::string& buck
   other_instances.erase(std::remove_if(other_instances.begin(), other_instances.end(),
                                        [&cur_bucket_info](const RGWBucketInfo& b){
                                          return (b.bucket.bucket_id == cur_bucket_info.bucket.bucket_id ||
-                                                 b.bucket.bucket_id == cur_bucket_info.new_bucket_instance_id);
+                                                 (cur_bucket_info.reshard_info &&
+                                                  b.bucket.bucket_id == cur_bucket_info.reshard_info->new_bucket_instance_id));
                                        }),
                         other_instances.end());
 
@@ -2558,6 +2559,21 @@ void init_default_bucket_layout(CephContext *cct, RGWBucketInfo& info, const RGW
       cct->_conf->rgw_override_bucket_index_max_shards : zone.bucket_index_max_shards);
 }
 
+static bool reshard_status_is_compatible(const RGWBucketInfo& info, const RGWBucketInfo::_reshard_info& new_reshard_info)
+{
+  switch (info.reshard_status) {
+    case cls_rgw_reshard_status::NOT_RESHARDING:
+      return true;
+    case cls_rgw_reshard_status::IN_PROGRESS:
+      return info.reshard_info &&
+             (info.reshard_info->new_bucket_instance_id == new_reshard_info.new_bucket_instance_id);
+    default:
+      break;
+  }
+
+  return false;
+}
+
 int RGWMetadataHandlerPut_BucketInstance::put_check()
 {
   int ret;
@@ -2575,40 +2591,40 @@ int RGWMetadataHandlerPut_BucketInstance::put_check()
     if (!exists) {
       init_default_bucket_layout(cct, bci.info, bihandler->svc.zone->get_zone());
     } else {
-      bci.info.layout = old_bci->info.layout;
-
       /* might be reshard */
       auto reshard_handler = bihandler->get_reshard_handler();
       if (reshard_handler &&
-          !bci.info.new_bucket_instance_id.empty() &&
-          bci.info.reshard_status == cls_rgw_reshard_status::DONE &&
-          ((bci.info.new_bucket_instance_id == old_bci->info.new_bucket_instance_id &&
-            old_bci->info.reshard_status == cls_rgw_reshard_status::IN_PROGRESS) || /* we might have synced the IN_PROGRESS state earlier */
-           old_bci->info.reshard_status == cls_rgw_reshard_status::NOT_RESHARDING)) {
+          bci.info.reshard_info) {
+        auto& reshard_info = *bci.info.reshard_info;
 
-        /* source has resharded, let's do the same */
+        if (bci.info.reshard_info->new_num_shards > 0 && /* note that older implementations don't provide num_shards,
+                                                            which we need to reshard correctly */
+            bci.info.reshard_status == cls_rgw_reshard_status::DONE && /* only reshard if source is done*/
+            reshard_status_is_compatible(old_bci->info, reshard_info)) {
 
-        int new_num_shards = bci.info.layout.current_index.layout.normal.num_shards;
+          /* source has resharded, let's do the same */
 
-        ldout(cct, 5) << "NOTICE: remote bucket is resharding: bucket=" << bci.info.bucket << " new_num_shards=" << new_num_shards
-          << " new_bucket_instance_id=" << bci.info.new_bucket_instance_id << dendl;
+          ldout(cct, 5) << "NOTICE: remote bucket is resharding: bucket=" << bci.info.bucket
+            << " new_num_shards=" << reshard_info.new_num_shards
+            << " new_bucket_instance_id=" << reshard_info.new_bucket_instance_id << dendl;
 
-        ret = reshard_handler->reshard(bci.info, bci.attrs,
-                                       new_num_shards,
-                                       bci.info.new_bucket_instance_id);
-        if (ret < 0) {
-          ldout(cct, 0) << "ERROR: failed to reshard bucket: ret=" << ret << dendl;
-          return ret;
+          ret = reshard_handler->reshard(old_bci->info, old_bci->attrs,
+                                         reshard_info.new_num_shards,
+                                         reshard_info.new_bucket_instance_id);
+          if (ret < 0) {
+            ldout(cct, 0) << "ERROR: failed to reshard bucket: ret=" << ret << dendl;
+            return ret;
+          }
+
+          /* now continue as with post-reshard bucket info to apply the new info over */
+          old_bci->info = reshard_handler->get_bucket_info();
+          objv_tracker = old_bci->info.objv_tracker;
         }
-
-        /* now continue as with post-reshard bucket info to apply the new info over */
-        old_bci->info = reshard_handler->get_bucket_info();
-        objv_tracker = old_bci->info.objv_tracker;
-
-        bci.info.layout = old_bci->info.layout;
       }
-    }
-  }
+
+      bci.info.layout = old_bci->info.layout;
+    } /* exists */
+  } /* from remote zone */
 
   if (!exists || old_bci->info.bucket.bucket_id != bci.info.bucket.bucket_id) {
     /* a new bucket, we need to select a new bucket placement for it */
