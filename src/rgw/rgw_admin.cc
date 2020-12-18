@@ -7440,7 +7440,18 @@ next:
   }
 
   if (opt_cmd == OPT::LC_PROCESS) {
-    int ret = store->getRados()->process_lc(bucket_name);
+    rgw_bucket* lc_bucket = nullptr;
+    if (!bucket_name.empty()) {
+      RGWBucketInfo bucket_info;
+      int ret = init_bucket(tenant, bucket_name, bucket_id, bucket_info, bucket);
+      if (ret < 0) {
+        cerr << "ERROR: could not init bucket: " << cpp_strerror(-ret) << std::endl;
+        return 1;
+      }
+      lc_bucket = &bucket;
+    }
+    int ret = store->getRados()->process_lc(lc_bucket);
+
     if (ret < 0) {
       cerr << "ERROR: lc processing returned error: " << cpp_strerror(-ret) << std::endl;
       return 1;

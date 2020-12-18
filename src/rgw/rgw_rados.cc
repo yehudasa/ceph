@@ -8228,12 +8228,12 @@ int RGWRados::list_lc_progress(string& marker, uint32_t max_entries,
   return lc->list_lc_progress(marker, max_entries, progress_map, index);
 }
 
-int RGWRados::process_lc(const string& bucket_name)
+int RGWRados::process_lc(rgw_bucket* bucket)
 {
   RGWLC lc;
   lc.initialize(cct, this->store);
   RGWLC::LCWorker worker(&lc, cct, &lc, 0);
-  auto ret = lc.process(&worker, true /* once */, bucket_name);
+  auto ret = lc.process(&worker, true /* once */, bucket);
   lc.stop_processor(); // sets down_flag, but returns immediately
   return ret;
 }
