@@ -682,6 +682,15 @@ int rgw_bucket_sync_status(const DoutPrefixProvider *dpp,
                            const RGWBucketInfo *psource_bucket_info,
                            std::vector<rgw_bucket_shard_sync_info> *status);
 
+// cloning marker status of one bucket instance target into another
+// needed when resharding
+int rgw_bucket_sync_markers_clone(const DoutPrefixProvider *dpp,
+                                  rgw::sal::RGWRadosStore *store,
+                                  const rgw_zone_id& dest_zone,
+                                  const RGWBucketInfo& orig_dest_info,
+                                  const rgw_bucket& new_dest_bucket,
+                                  uint32_t num_dest_shards);
+
 class RGWDefaultSyncModule : public RGWSyncModule {
 public:
   RGWDefaultSyncModule() {}

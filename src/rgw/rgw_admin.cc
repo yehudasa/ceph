@@ -600,6 +600,7 @@ enum class OPT {
   BUCKET_SYNC_INFO,
   BUCKET_SYNC_STATUS,
   BUCKET_SYNC_MARKERS,
+  BUCKET_SYNC_MARKERS_CLONE,
   BUCKET_SYNC_INIT,
   BUCKET_SYNC_RUN,
   BUCKET_SYNC_DISABLE,
@@ -801,6 +802,7 @@ static SimpleCmd::Commands all_cmds = {
   { "bucket sync info", OPT::BUCKET_SYNC_INFO },
   { "bucket sync status", OPT::BUCKET_SYNC_STATUS },
   { "bucket sync markers", OPT::BUCKET_SYNC_MARKERS },
+  { "bucket sync markers clone", OPT::BUCKET_SYNC_MARKERS_CLONE },
   { "bucket sync init", OPT::BUCKET_SYNC_INIT },
   { "bucket sync run", OPT::BUCKET_SYNC_RUN },
   { "bucket sync disable", OPT::BUCKET_SYNC_DISABLE },
@@ -8094,6 +8096,52 @@ next:
 
     encode_json("sync_status", sync_status, formatter.get());
     formatter->flush(cout);
+  }
+
+  if (opt_cmd == OPT::BUCKET_SYNC_MARKERS_CLONE) {
+    if (!opt_source_bucket) {
+      cerr << "ERROR: source bucket not specified" << std::endl;
+      return EINVAL;
+    }
+    if (!opt_dest_bucket) {
+      cerr << "ERROR: dest bucket not specified" << std::endl;
+      return EINVAL;
+    }
+
+    uint32_t dest_num_shards;
+    rgw_bucket dest_bucket;
+    RGWBucketInfo dest_bucket_info;
+    int ret = init_bucket(opt_dest_bucket->tenant, opt_dest_bucket->name, opt_dest_bucket->bucket_id, dest_bucket_info, dest_bucket);
+    if (ret == 0) {
+      dest_num_shards = (dest_bucket_info.layout.current_index.layout.normal.num_shards > 0 ? dest_bucket_info.layout.current_index.layout.normal.num_shards : 1);
+    } else if (ret == -ENOENT) {
+      if (!num_shards_specified) {
+        cerr << "ERROR: --num-shards not specified (need num shards when dest bucket does not exist)" << std::endl;
+        return -EINVAL;
+      }
+      dest_num_shards = num_shards;
+    } else if (ret < 0) {
+      return -ret;
+    }
+
+    rgw_bucket source_bucket;
+    RGWBucketInfo source_bucket_info;
+    ret = init_bucket(opt_source_bucket->tenant, opt_source_bucket->name, opt_source_bucket->bucket_id, source_bucket_info, source_bucket);
+    if (ret < 0) {
+      return -ret;
+    }
+
+    const auto& zone_id = store->svc()->zone->get_zone().id;
+
+    ret = rgw_bucket_sync_markers_clone(dpp(), store,
+                                        zone_id,
+                                        source_bucket_info,
+                                        dest_bucket,
+                                        dest_num_shards);
+    if (ret < 0) {
+      cerr << "ERROR: failed to clone bucket markers (" << source_bucket_info.bucket << " -> " << dest_bucket << "): " << cpp_strerror(-ret) << std::endl;
+      return -ret;
+    }
   }
 
  if (opt_cmd == OPT::BUCKET_SYNC_RUN) {

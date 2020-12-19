@@ -5061,3 +5061,139 @@ int rgw_bucket_sync_status(const DoutPrefixProvider *dpp,
                                                   dest_bucket_info,
                                                   status));
 }
+
+int rgw_bucket_store_sync_status(const DoutPrefixProvider *dpp,
+                                 rgw::sal::RGWRadosStore *store,
+                                 const rgw_sync_bucket_pipe& pipe,
+                                 uint32_t dest_num_shards,
+                                 std::vector<rgw_bucket_shard_sync_info>& status)
+{
+  if (!pipe.source.zone ||
+      !pipe.source.bucket ||
+      !pipe.dest.zone ||
+      !pipe.dest.bucket) {
+    return -EINVAL;
+  }
+
+  uint32_t num_shards = status.size();
+
+  bool shard_to_shard = (dest_num_shards == num_shards);
+
+  const rgw_bucket& source_bucket = *pipe.source.bucket;
+
+  RGWDataSyncEnv env;
+  RGWSyncModuleInstanceRef module; // null sync module
+  env.init(dpp, store->ctx(), store, store->svc(), store->svc()->rados->get_async_processor(),
+           nullptr, nullptr, nullptr, module, nullptr);
+
+  RGWDataSyncCtx sc;
+  sc.init(&env, nullptr, *pipe.source.zone);
+
+  RGWCoroutinesManager cr_mgr(store->ctx(), store->getRados()->get_cr_registry());
+
+  std::vector<RGWCoroutinesStack *> stacks_vec;
+
+#define MAX_CONCURRENT_STACKS 16
+  int num_stacks = std::min(num_shards, (uint32_t)MAX_CONCURRENT_STACKS);
+
+  stacks_vec.resize(num_stacks);
+
+  std::list<RGWCoroutinesStack *> stacks;
+
+  for (int i = 0; i < num_stacks; ++i) {
+    auto stack = new RGWCoroutinesStack(store->ctx(), &cr_mgr);
+    stacks_vec[i] = stack;
+
+    stacks.push_back(stack);
+  }
+
+  auto iter = status.begin();
+
+  for (int source_shard = 0; source_shard < (int)num_shards; ++source_shard, ++iter) {
+    int dest_shard = (shard_to_shard ? source_shard : -1);
+
+    rgw_bucket_sync_pair_info sync_pair;
+    sync_pair.source_bs = { source_bucket, source_shard };
+    sync_pair.dest_bs = { *pipe.dest.bucket, dest_shard };
+
+    auto status_oid = RGWBucketPipeSyncStatusManager::status_oid(*pipe.source.zone, sync_pair);
+    auto obj = rgw_raw_obj(env.svc->zone->get_zone_params().log_pool, status_oid);
+
+    auto& shard_status = *iter;
+    map<string, bufferlist> attrs;
+    shard_status.encode_all_attrs(attrs);
+
+    auto stack = stacks_vec[source_shard % num_stacks];
+
+    stack->call(new RGWSimpleRadosWriteAttrsCR(env.async_rados, env.svc->sysobj, obj, attrs, nullptr));
+  }
+
+  int r = cr_mgr.run(stacks);
+  if (r < 0) {
+    ldpp_dout(dpp, 0) << "ERROR: failed to store bucket sync status: (r=" << r << ")" << dendl;
+    return r;
+  }
+
+  return 0;
+}
+
+
+int rgw_bucket_sync_markers_clone(const DoutPrefixProvider *dpp,
+                                  rgw::sal::RGWRadosStore *store,
+                                  const rgw_zone_id& dest_zone,
+                                  const RGWBucketInfo& orig_dest_info,
+                                  const rgw_bucket& new_dest_bucket,
+                                  uint32_t num_dest_shards)
+{
+  RGWBucketSyncPolicyHandlerRef handler;
+
+  int r = store->ctl()->bucket->get_sync_policy_handler(dest_zone, orig_dest_info.bucket, &handler, null_yield);
+  if (r < 0) {
+    ldpp_dout(dpp, 0) << "ERROR: " << __func__ << "(): failed to get policy handler for bucket (" << orig_dest_info.bucket << "): r=" << r << dendl;
+    return r;
+  }
+
+  auto dests = handler->get_all_sources();
+
+  for (auto& entry : dests) {
+    auto pipe = entry.second;
+
+    if (!pipe.dest.bucket ||
+        !pipe.dest.zone ||
+        *pipe.dest.bucket != orig_dest_info.bucket ||
+        *pipe.dest.zone != dest_zone) {
+      continue;
+    }
+
+    std::vector<rgw_bucket_shard_sync_info> status;
+
+    int r = rgw_bucket_sync_status(dpp, store,
+                                   pipe,
+                                   orig_dest_info,
+                                   nullptr,
+                                   &status);
+    if (r < 0) {
+      ldpp_dout(dpp, 0) << "ERROR: " << __func__ << "(): failed to get bucket sync status for pipe=" << pipe << ": r=" << r << dendl;
+      if (r == -ENOENT) {
+        /* could have raced with bucket removal, skipping */
+        continue;
+      }
+      return r;
+    }
+
+    ldpp_dout(dpp, 20) << "cloning markers for pipe=" << pipe << " to dest bucket=" << new_dest_bucket << dendl;
+
+    pipe.dest.bucket = new_dest_bucket;
+
+    r = rgw_bucket_store_sync_status(dpp, store,
+                                     pipe,
+                                     num_dest_shards,
+                                     status);
+    if (r < 0) {
+      ldpp_dout(dpp, 20) << "ERROR: failed storing sync status for pipe=" << pipe << ": r=" << r << dendl;
+      return r;
+    }
+  }
+
+  return 0;
+}
