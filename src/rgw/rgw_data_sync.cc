@@ -4982,8 +4982,11 @@ class RGWCollectBucketSyncStatusCR : public RGWShardCollectCR {
   {
     shard_to_shard_sync = (source_bucket_info.layout.current_index.layout.normal.num_shards == dest_bucket_info.layout.current_index.layout.normal.num_shards);
 
-    source_bs = rgw_bucket_shard(source_bucket_info.bucket, source_bucket_info.layout.current_index.layout.normal.num_shards > 0 ? 0 : -1);
-    dest_bs = rgw_bucket_shard(dest_bucket_info.bucket, dest_bucket_info.layout.current_index.layout.normal.num_shards > 0 ? 0 : -1);
+    auto source_num_shards = source_bucket_info.layout.current_index.layout.normal.num_shards;
+    auto dest_num_shards = dest_bucket_info.layout.current_index.layout.normal.num_shards;
+
+    source_bs = rgw_bucket_shard(source_bucket_info.bucket, source_num_shards > 0 ? 0 : -1);
+    dest_bs = rgw_bucket_shard(dest_bucket_info.bucket, dest_num_shards == source_num_shards ? source_bs.shard_id : -1);
 
     status->clear();
     status->resize(std::max<size_t>(1, source_bucket_info.layout.current_index.layout.normal.num_shards));
