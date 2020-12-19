@@ -9,6 +9,7 @@
 #include "rgw_reshard.h"
 #include "rgw_sal.h"
 #include "rgw_sal_rados.h"
+#include "rgw_data_sync.h"
 #include "cls/rgw/cls_rgw_client.h"
 #include "cls/lock/cls_lock_client.h"
 #include "common/errno.h"
@@ -395,6 +396,19 @@ static int create_new_bucket_instance(rgw::sal::RGWRadosStore *store,
   ret = update_sync_policy(store, bucket_info, new_bucket_info);
   if (ret < 0) {
     cerr << "ERROR: failed to update new bucket sync policy: " << cpp_strerror(-ret) << std::endl;
+    return ret;
+  }
+
+  const auto& zone_id = store->svc()->zone->get_zone().id;
+
+  ret = rgw_bucket_sync_markers_clone(store /* dpp */,
+                                      store,
+                                      zone_id,
+                                      bucket_info,
+                                      new_bucket_info.bucket,
+                                      new_num_shards);
+  if (ret < 0) {
+    cerr << "ERROR: failed to clone sync markers for reshard of bucket=" << bucket_info.bucket << ": r=" << ret << std::endl;
     return ret;
   }
 
