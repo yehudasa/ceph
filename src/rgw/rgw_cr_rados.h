@@ -1412,4 +1412,21 @@ public:
   int request_complete() override;
 };
 
+struct rgw_get_bilog_status_params {
+  RGWBucketInfo bucket_info;
+  int shard_id{-1};
+};
+
+struct rgw_get_bilog_status_result {
+  map<int, std::string> markers;
+};
+
+using RGWGetBILogStatusCR = RGWSimpleAsyncCR<rgw_get_bilog_status_params, rgw_get_bilog_status_result>;
+
+struct rgw_bucket_index_purge_params {
+  RGWBucketInfo bucket_info;
+};
+
+using RGWBucketIndexPurgeCR = RGWSimpleWriteOnlyAsyncCR<rgw_bucket_index_purge_params>;
+
 #endif

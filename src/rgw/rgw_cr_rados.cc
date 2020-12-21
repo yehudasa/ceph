@@ -13,6 +13,7 @@
 #include "services/svc_zone_utils.h"
 #include "services/svc_sys_obj.h"
 #include "services/svc_cls.h"
+#include "services/svc_bilog_rados.h"
 
 #include "cls/lock/cls_lock_client.h"
 #include "cls/rgw/cls_rgw_client.h"
@@ -971,4 +972,16 @@ int RGWRadosNotifyCR::request_complete()
   set_status() << "request complete; ret=" << r;
 
   return r;
+}
+
+template<>
+int RGWGetBILogStatusCR::Request::_send_request()
+{
+  return store->svc()->bilog_rados->get_log_status(params.bucket_info, params.shard_id, &(result->markers), null_yield);
+}
+
+template<>
+int RGWBucketIndexPurgeCR::Request::_send_request()
+{
+  return store->svc()->bi->clean_index(params.bucket_info);
 }

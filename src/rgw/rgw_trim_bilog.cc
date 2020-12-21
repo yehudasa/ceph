@@ -421,6 +421,8 @@ class BucketTrimInstanceCR : public RGWCoroutine {
   std::string bucket_instance;
   rgw_bucket_get_sync_policy_params get_policy_params;
   std::shared_ptr<rgw_bucket_get_sync_policy_result> source_policy;
+  rgw_get_bilog_status_params get_bilog_status_params;
+  std::shared_ptr<rgw_get_bilog_status_result> get_bilog_status_result;
   rgw_bucket bucket;
   const std::string& zone_id; //< my zone id
   RGWBucketInfo _bucket_info; 
@@ -430,6 +432,10 @@ class BucketTrimInstanceCR : public RGWCoroutine {
   using StatusShards = std::vector<rgw_bucket_shard_sync_info>;
   std::vector<StatusShards> peer_status; //< sync status for each peer
   std::vector<std::string> min_markers; //< min marker per shard
+
+  std::optional<std::vector<std::string> > purge_markers;
+  rgw_bucket_index_purge_params purge_params;
+  bool can_purge = false;
 
  public:
   BucketTrimInstanceCR(rgw::sal::RGWRadosStore *store, RGWHTTPManager *http,
@@ -471,6 +477,32 @@ int BucketTrimInstanceCR::operate()
     } else {
       /* this shouldn't really happen */
       return set_cr_error(-ENOENT);
+    }
+
+    if (pbucket_info->reshard_status == cls_rgw_reshard_status::DONE) {
+      /* resharded bucket, a newer instance exists so we can delete
+       * bucket indexes if all targets are caught up. Will need to read
+       * our current bi positions and compare
+       */
+
+      ldout(cct, 20) << __func__ << "(): bucket was resharded, will check if bucket instance can be removed, bucket=" << bucket << dendl;
+
+      get_bilog_status_params.bucket_info = *pbucket_info;
+      get_bilog_status_params.shard_id = -1;
+      get_bilog_status_result = std::make_shared<rgw_get_bilog_status_result>();
+
+      yield call(new RGWGetBILogStatusCR(store->svc()->rados->get_async_processor(),
+                                         store,
+                                         get_bilog_status_params,
+                                         get_bilog_status_result));
+      if (retcode < 0) {
+        ldout(cct, 0) << "ERROR: failed to fetch bilog status for bucket=" << bucket << ", won't try to purge resharded bucket instance: retcode=" << retcode << dendl;
+      } else {
+        purge_markers.emplace(pbucket_info->layout.current_index.layout.normal.num_shards);
+        for (auto& entry : get_bilog_status_result->markers) {
+          (*purge_markers)[entry.first] = std::move(entry.second);
+        }
+      }
     }
 
     // query peers for sync status
@@ -538,6 +570,35 @@ int BucketTrimInstanceCR::operate()
     if (retcode < 0) {
       ldout(cct, 4) << "failed to correlate bucket sync status from peers" << dendl;
       return set_cr_error(retcode);
+    }
+
+    if (purge_markers) {
+      can_purge = true;
+      for (size_t i = 0; i < purge_markers->size(); ++i) {
+        auto& min_marker = min_markers[i];
+        auto& purge_marker = (*purge_markers)[i];
+        ldout(cct, 10) << __func__ << "(): checking purge_marker for bucket=" << bucket <<", shard_id=" << i << ": min_marker=" << min_marker
+          <<" purge_marker=" << purge_marker << dendl;
+        if (min_marker < purge_marker) {
+          can_purge = false;
+          break;
+        }
+      }
+      ldout(cct, 10) << __func__ << "(): bucket " << (can_purge ? "can" : "can't") << " be purged, bucket=" << bucket << dendl;
+    }
+
+    if (can_purge) {
+      purge_params.bucket_info = *pbucket_info;
+      yield(call(new RGWBucketIndexPurgeCR(store->svc()->rados->get_async_processor(),
+                                           store,
+                                           purge_params,
+                                           store /* dpp */)));
+      if (retcode < 0 && retcode != -ENOENT) {
+        ldout(cct, 0) << "ERROR: failed to purge bucket index for bucket=" << bucket << dendl;
+        return set_cr_error(retcode);
+      }
+
+      return set_cr_done();
     }
 
     // trim shards with a ShardCollectCR
