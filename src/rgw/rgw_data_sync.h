@@ -70,6 +70,10 @@ struct rgw_bucket_sync_pipe {
   RGWBucketInfo dest_bucket_info;
   map<string, bufferlist> dest_bucket_attrs;
 
+  const RGWBucketSyncFlowManager::pipe_rules_ref& get_rules() const {
+    return info.handler.rules;
+  }
+
   RGWBucketSyncFlowManager::pipe_rules_ref& get_rules() {
     return info.handler.rules;
   }
@@ -604,18 +608,42 @@ inline std::ostream& operator<<(std::ostream& out, const BucketSyncState& s) {
 void encode_json(const char *name, BucketSyncState state, Formatter *f);
 void decode_json_obj(BucketSyncState& state, JSONObj *obj);
 
+struct rgw_bucket_inc_sync_status {
+  uint64_t gen_num{0};
+  uint32_t num_shards{0};
+  uint32_t num_shards_complete{0};
+  std::vector<bool> shards_done;
+
+  void encode(bufferlist& bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(gen_num, bl);
+    encode(num_shards, bl);
+    encode(shards_done, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(bufferlist::const_iterator& bl) {
+    DECODE_START(1, bl);
+    decode(gen_num, bl);
+    decode(num_shards, bl);
+    decode(shards_done, bl);
+    DECODE_FINISH(bl);
+  }
+
+  void dump(Formatter *f) const;
+  void decode_json(JSONObj *obj);
+};
+WRITE_CLASS_ENCODER(rgw_bucket_inc_sync_status)
+
 struct rgw_bucket_sync_status {
   BucketSyncState state = BucketSyncState::Init;
   rgw_bucket_full_sync_status full;
-  uint64_t incremental_gen;
-  std::vector<bool> shards_done_with_gen;
-
+  rgw_bucket_inc_sync_status inc;
   void encode(bufferlist& bl) const {
     ENCODE_START(2, 1, bl);
     encode(state, bl);
     encode(full, bl);
-    encode(incremental_gen, bl);
-    encode(shards_done_with_gen, bl);
+    encode(inc, bl);
     ENCODE_FINISH(bl);
   }
 
@@ -623,9 +651,8 @@ struct rgw_bucket_sync_status {
     DECODE_START(2, bl);
     decode(state, bl);
     decode(full, bl);
-    if (struct_v > 1) {
-      decode(incremental_gen, bl);
-      decode(shards_done_with_gen, bl);
+    if (struct_v >= 2) {
+      decode(inc, bl);
     }
     DECODE_FINISH(bl);
   }
@@ -653,6 +680,8 @@ struct rgw_bucket_index_marker_info {
   }
 };
 
+struct rgw_sync_pipe_handler_info;
+class RGWSyncPipeControlMgr;
 
 class RGWRemoteBucketManager {
   const DoutPrefixProvider *dpp;
@@ -671,16 +700,17 @@ class RGWRemoteBucketManager {
 
   RGWBucketSyncCR *sync_cr{nullptr};
 
+  std::unique_ptr<rgw_sync_pipe_handler_info> pipe;
+  std::unique_ptr<RGWSyncPipeControlMgr> pipe_ctl;
 public:
   RGWRemoteBucketManager(const DoutPrefixProvider *_dpp,
                      RGWDataSyncEnv *_sync_env,
                      const rgw_zone_id& _source_zone, RGWRESTConn *_conn,
-                     const RGWBucketInfo& source_bucket_info,
-                     const rgw_bucket& dest_bucket);
+                     const rgw_sync_pipe_handler_info& _pipe);
 
   RGWCoroutine *read_sync_status_cr(int num, rgw_bucket_shard_sync_info *sync_status);
   RGWCoroutine *init_sync_status_cr(RGWObjVersionTracker& objv_tracker);
-  RGWCoroutine *run_sync_cr(int num);
+  RGWCoroutine *run_sync_cr();
 
   int num_pipes() {
     return sync_pairs.size();
