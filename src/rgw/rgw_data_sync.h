@@ -19,6 +19,7 @@
 #include "rgw_sync_policy.h"
 
 #include "rgw_bucket_sync.h"
+#include "rgw_bucket_layout.h"
 
 // represents an obligation to sync an entry up a given time
 struct rgw_data_sync_obligation {
@@ -632,6 +633,14 @@ struct rgw_bucket_inc_sync_status {
 
   void dump(Formatter *f) const;
   void decode_json(JSONObj *obj);
+
+  void init_gen(uint64_t num,
+                uint32_t nshards) {
+    gen_num = num;
+    num_shards = nshards;
+    num_shards_complete = 0;
+    shards_done.clear();
+  }
 };
 WRITE_CLASS_ENCODER(rgw_bucket_inc_sync_status)
 
@@ -669,6 +678,7 @@ struct rgw_bucket_index_marker_info {
   bool syncstopped{false};
   uint64_t oldest_gen;
   uint64_t latest_gen;
+  rgw::bucket_log_layout_generation layout;
 
   void decode_json(JSONObj *obj) {
     JSONDecoder::decode_json("bucket_ver", bucket_ver, obj);
@@ -677,6 +687,7 @@ struct rgw_bucket_index_marker_info {
     JSONDecoder::decode_json("syncstopped", syncstopped, obj);
     JSONDecoder::decode_json("oldest_gen", oldest_gen, obj);
     JSONDecoder::decode_json("latest_gen", latest_gen, obj);
+    JSONDecoder::decode_json("layout", layout, obj);
   }
 };
 

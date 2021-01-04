@@ -2164,6 +2164,14 @@ void rgw::bucket_index_normal_layout::dump(Formatter *f) const
   encode_json("hash_type", rgw::bucket_hash_type_to_str(hash_type), f);
 }
 
+void rgw::bucket_index_normal_layout::decode_json(JSONObj *obj)
+{
+  JSONDecoder::decode_json("num_shards", num_shards, obj);
+  string s;
+  JSONDecoder::decode_json("hash_type", s, obj);
+  hash_type = rgw::bucket_hash_type_from_str(s);
+}
+
 void rgw::bucket_index_layout::dump(Formatter *f) const
 {
   encode_json("type", rgw::bucket_index_type_to_str(type), f);
@@ -2185,6 +2193,12 @@ void rgw::bucket_index_log_layout::dump(Formatter *f) const
   encode_json("layout", layout, f);
 }
 
+void rgw::bucket_index_log_layout::decode_json(JSONObj *obj)
+{
+  JSONDecoder::decode_json("gen", gen, obj);
+  JSONDecoder::decode_json("layout", layout, obj);
+}
+
 void rgw::bucket_log_layout::dump(Formatter *f) const
 {
   encode_json("type", rgw::bucket_log_type_to_str(type), f);
@@ -2194,10 +2208,26 @@ void rgw::bucket_log_layout::dump(Formatter *f) const
   }
 }
 
+void rgw::bucket_log_layout::decode_json(JSONObj *obj)
+{
+  string s;
+  JSONDecoder::decode_json("type", s, obj);
+  type = rgw::bucket_log_type_from_str(s);
+  if (type == BucketLogType::InIndex) {
+    JSONDecoder::decode_json("params", in_index, obj);
+  }
+}
+
 void rgw::bucket_log_layout_generation::dump(Formatter *f) const
 {
   encode_json("gen", gen, f);
   encode_json("layout", layout, f);
+}
+
+void rgw::bucket_log_layout_generation::decode_json(JSONObj *obj)
+{
+  JSONDecoder::decode_json("gen", gen, obj);
+  JSONDecoder::decode_json("layout", layout, obj);
 }
 
 void rgw::BucketLayout::dump(Formatter *f) const

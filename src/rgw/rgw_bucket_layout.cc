@@ -97,6 +97,8 @@ void encode(const bucket_log_layout& l, bufferlist& bl, uint64_t f)
   case BucketLogType::InIndex:
     encode(l.in_index, bl);
     break;
+  default:
+    break;
   }
   ENCODE_FINISH(bl);
 }
@@ -107,6 +109,8 @@ void decode(bucket_log_layout& l, bufferlist::const_iterator& bl)
   switch (l.type) {
   case BucketLogType::InIndex:
     decode(l.in_index, bl);
+    break;
+  default:
     break;
   }
   DECODE_FINISH(bl);

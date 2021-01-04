@@ -19,6 +19,8 @@
 #include <string>
 #include "include/encoding.h"
 
+class JSONObj;
+
 namespace ceph {
   class Formatter;
 } // namespace ceph
@@ -32,6 +34,7 @@ enum class BucketIndexType : uint8_t {
 
 enum class BucketHashType : uint8_t {
   Mod, // rjenkins hash of object name, modulo num_shards
+  Unknown,
 };
 
 inline std::string bucket_index_type_to_str(const BucketIndexType& index_type) {
@@ -59,12 +62,20 @@ inline std::string bucket_hash_type_to_str(const BucketHashType& hash_type) {
   }
 }
 
+inline BucketHashType bucket_hash_type_from_str(const std::string& s) {
+  if (s == "Mod") {
+    return BucketHashType::Mod;
+  }
+  return BucketHashType::Unknown;
+}
+
 struct bucket_index_normal_layout {
   uint32_t num_shards = 1;
 
   BucketHashType hash_type = BucketHashType::Mod;
 
   void dump(ceph::Formatter *f) const;
+  void decode_json(JSONObj *obj);
 };
 
 void encode(const bucket_index_normal_layout& l, bufferlist& bl, uint64_t f=0);
@@ -98,6 +109,7 @@ void decode(bucket_index_layout_generation& l, bufferlist::const_iterator& bl);
 enum class BucketLogType : uint8_t {
   // colocated with bucket index, so the log layout matches the index layout
   InIndex,
+  Unknown,
 };
 
 inline std::string bucket_log_type_to_str(const BucketLogType& log_type) {
@@ -107,6 +119,13 @@ inline std::string bucket_log_type_to_str(const BucketLogType& log_type) {
     default:
       return "Unknown";
   }
+}
+
+inline BucketLogType bucket_log_type_from_str(const std::string& s) {
+  if (s == "InIndex") {
+    return BucketLogType::InIndex;
+  }
+  return BucketLogType::Unknown;
 }
 
 inline std::ostream& operator<<(std::ostream& out, const BucketLogType &log_type)
@@ -119,6 +138,7 @@ struct bucket_index_log_layout {
   bucket_index_normal_layout layout;
 
   void dump(ceph::Formatter *f) const;
+  void decode_json(JSONObj *obj);
 };
 
 void encode(const bucket_index_log_layout& l, bufferlist& bl, uint64_t f=0);
@@ -130,6 +150,7 @@ struct bucket_log_layout {
   bucket_index_log_layout in_index;
 
   void dump(ceph::Formatter *f) const;
+  void decode_json(JSONObj *obj);
 };
 
 void encode(const bucket_log_layout& l, bufferlist& bl, uint64_t f=0);
@@ -140,6 +161,7 @@ struct bucket_log_layout_generation {
   bucket_log_layout layout;
 
   void dump(ceph::Formatter *f) const;
+  void decode_json(JSONObj *obj);
 };
 
 void encode(const bucket_log_layout_generation& l, bufferlist& bl, uint64_t f=0);
@@ -194,6 +216,10 @@ void decode(BucketLayout& l, bufferlist::const_iterator& bl);
 
 inline uint32_t current_num_shards(const BucketLayout& layout) {
   return std::max(layout.current.index.layout.normal.num_shards, 1u);
-  }
+}
+
+inline uint32_t log_layout_num_shards(const bucket_log_layout& layout) {
+  return std::max(layout.in_index.layout.num_shards, 1u);
+}
 
 } // namespace rgw

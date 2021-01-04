@@ -2677,22 +2677,38 @@ class RGWReadRemoteBucketIndexLogInfoCR : public RGWCoroutine {
   RGWDataSyncEnv *sync_env;
   const string instance_key;
 
+  std::optional<uint32_t> opt_gen;
+
+  const char *gen_key{nullptr};
+  const char *gen_val{nullptr};
+  char gen_buf[32];
+
   rgw_bucket_index_marker_info *info;
 
 public:
   RGWReadRemoteBucketIndexLogInfoCR(RGWDataSyncCtx *_sc,
                                   const rgw_bucket& bucket,
+                                  std::optional<uint32_t> _opt_gen,
                                   rgw_bucket_index_marker_info *_info)
     : RGWCoroutine(_sc->cct), sc(_sc), sync_env(_sc->env),
-      instance_key(bucket.get_key()), info(_info) {}
+      instance_key(bucket.get_key()), opt_gen(_opt_gen),
+      info(_info) {}
 
   int operate() override {
     reenter(this) {
       yield {
+        if (opt_gen) {
+          gen_key = "gen";
+
+          snprintf(gen_buf, sizeof(gen_buf), "%d", (int)*opt_gen);
+          gen_val = gen_buf;
+        }
+
         rgw_http_param_pair pairs[] = { { "type" , "bucket-index" },
 	                                { "bucket-instance", instance_key.c_str() },
-					{ "info" , NULL },
-	                                { NULL, NULL } };
+					{ "info" , nullptr },
+                                        { gen_key, gen_val },
+	                                { nullptr, nullptr } };
 
         string p = "/admin/log/";
         call(new RGWReadRESTResourceCR<rgw_bucket_index_marker_info>(sync_env->cct, sc->conn, sync_env->http_manager, p, pairs, info));
@@ -3060,7 +3076,7 @@ public:
 
   int operate() override {
     reenter(this) {
-      yield call(new RGWReadRemoteBucketIndexLogInfoCR(sc, sync_pair.dest_bs.bucket, &info));
+      yield call(new RGWReadRemoteBucketIndexLogInfoCR(sc, sync_pair.dest_bs.bucket, std::nullopt, &info));
       if (retcode < 0) {
         lderr(cct) << "failed to read remote bilog info: "
             << cpp_strerror(retcode) << dendl;
@@ -3107,7 +3123,8 @@ public:
         }
       }
 
-      status.inc.gen_num = info.latest_gen;
+      status.inc.gen_num = info.layout.gen;
+      status.inc.num_shards = log_layout_num_shards(info.layout.layout);
 
       ldout(cct, 20) << "writing bucket sync state=" << status.state << dendl;
 
@@ -4538,12 +4555,15 @@ class RGWSyncPipeControlMgr {
 
   bool initialized{false};
 
-  class InitCR : public RGWCoroutine {
+  class InitStatusCR : public RGWCoroutine {
     RGWSyncPipeControlMgr *mgr;
 
+    rgw_bucket_sync_status& bucket_status;
+
   public:
-    InitCR(RGWSyncPipeControlMgr *_mgr) : RGWCoroutine(_mgr->sc->cct),
-                                          mgr(_mgr) {}
+    InitStatusCR(RGWSyncPipeControlMgr *_mgr) : RGWCoroutine(_mgr->sc->cct),
+                                                mgr(_mgr),
+                                                bucket_status(mgr->bucket_status) {}
 
     int operate() override {
       reenter(this) {
@@ -4551,17 +4571,59 @@ class RGWSyncPipeControlMgr {
         yield call(mgr->read_status_cr());
         if (retcode == -ENOENT) {
           // use exclusive create to set state=Init
-          yield call(mgr->write_status_cr());
+          yield call(mgr->write_status_cr(true));
           if (retcode == -EEXIST) {
-            // raced with another create, read its status
-            yield call(mgr->read_status_cr());
+            // raced with another create, need to retry
+            return set_cr_error(-ECANCELED);
           }
         }
         if (retcode < 0) {
           return set_cr_error(retcode);
         }
 
-#warning FIXME identify new generation transition here
+        if (bucket_status.inc.num_shards > 0 &&
+            bucket_status.inc.num_shards_complete == bucket_status.inc.num_shards) {
+          yield call(mgr->init_gen_cr(bucket_status.inc.gen_num + 1));
+          if (retcode < 0) {
+            return set_cr_error(retcode);
+          }
+        }
+
+        return set_cr_done();
+      }
+
+      return 0;
+    }
+  };
+
+  class InitCR : public RGWCoroutine {
+    RGWSyncPipeControlMgr *mgr;
+
+    int i{0};
+
+    static constexpr int max_retries = 10;
+
+  public:
+    InitCR(RGWSyncPipeControlMgr *_mgr) : RGWCoroutine(_mgr->sc->cct),
+                                          mgr(_mgr) {}
+
+    int operate() override {
+      reenter(this) {
+
+        for (; i < max_retries; ++i) {
+          yield call(mgr->init_status_cr());
+          if (retcode != -ECANCELED) {
+            break;
+          }
+        }
+        if (retcode == -ECANCELED) {
+          lderr(cct) <<  "ERROR: too many retries when trying to read status (pipe=" << mgr->pipe << "): likely a bug!" << dendl;
+          return set_cr_error(-EIO);
+        }
+
+        if (retcode < 0) {
+          return set_cr_error(retcode);
+        }
 
         return set_cr_done();
       }
@@ -4591,6 +4653,7 @@ class RGWSyncPipeControlMgr {
       reenter(this) {
         // read bucket sync status
         using ReadCR = RGWSimpleRadosReadCR<rgw_bucket_sync_status>;
+        objv.clear();
         yield call(new ReadCR(env->async_rados, env->svc->sysobj,
                               status_obj, &bucket_status, false, &objv));
         if (retcode < 0) {
@@ -4612,23 +4675,76 @@ class RGWSyncPipeControlMgr {
     RGWDataSyncEnv *env;
     rgw_raw_obj& status_obj;
     rgw_bucket_sync_status& bucket_status;
+    bool exclusive;
     RGWObjVersionTracker& objv;
 
   public:
-    WriteStatusCR(RGWSyncPipeControlMgr *_mgr) : RGWCoroutine(_mgr->sc->cct),
-                                                     mgr(_mgr),
-                                                     sc(mgr->sc),
-                                                     env(mgr->sc->env),
-                                                     status_obj(mgr->status_obj),
-                                                     bucket_status(mgr->bucket_status),
-                                                     objv(mgr->objv) {}
+    WriteStatusCR(RGWSyncPipeControlMgr *_mgr,
+                  bool _exclusive) : RGWCoroutine(_mgr->sc->cct),
+                                                  mgr(_mgr),
+                                                  sc(mgr->sc),
+                                                  env(mgr->sc->env),
+                                                  status_obj(mgr->status_obj),
+                                                  bucket_status(mgr->bucket_status),
+                                                  exclusive(_exclusive),
+                                                  objv(mgr->objv) {}
 
     int operate() override {
       reenter(this) {
         objv.generate_new_write_ver(cct);
         using WriteCR = RGWSimpleRadosWriteCR<rgw_bucket_sync_status>;
         yield call(new WriteCR(env->async_rados, env->svc->sysobj,
-                               status_obj, bucket_status, &objv, true));
+                               status_obj, bucket_status, &objv, exclusive));
+        if (retcode < 0) {
+          return set_cr_error(retcode);
+        }
+
+        return set_cr_done();
+      }
+
+      return 0;
+    }
+  };
+
+  class InitGenCR : public RGWCoroutine {
+    RGWSyncPipeControlMgr *mgr;
+
+    uint32_t min_gen;
+
+    rgw_bucket_sync_status& bucket_status;
+
+    rgw_bucket_sync_status new_bucket_status;
+
+    rgw_bucket_index_marker_info info;
+
+  public:
+    InitGenCR(RGWSyncPipeControlMgr *_mgr,
+              uint32_t _min_gen) : RGWCoroutine(_mgr->sc->cct),
+                                   mgr(_mgr),
+                                   min_gen(_min_gen),
+                                   bucket_status(mgr->bucket_status) {}
+    int operate() override {
+      reenter(this) {
+
+        yield call(new RGWReadRemoteBucketIndexLogInfoCR(mgr->sc,
+                                                         mgr->pipe.source.get_bucket(),
+                                                         min_gen,
+                                                         &info));
+        if (retcode < 0) {
+          lderr(cct) << "failed to read remote bilog info: "
+            << cpp_strerror(retcode) << dendl;
+          return set_cr_error(retcode);
+        }
+
+        if (info.layout.gen < min_gen) {
+          lderr(cct) << "ERROR: couldn't fetch bilog layout info for pipe=" << mgr->pipe << ", gen=" << min_gen << ", likely a bug" << dendl;
+          return  set_cr_error(-EIO);
+        }
+
+        bucket_status.inc.init_gen(info.layout.gen, /* maybe remote skipped a gen number */
+                                   log_layout_num_shards(info.layout.layout));
+
+        yield call(mgr->write_status_cr(false));
         if (retcode < 0) {
           return set_cr_error(retcode);
         }
@@ -4806,7 +4922,7 @@ class RGWSyncPipeControlMgr {
 
         if (update_bucket_status) {
           bucket_status = *update_bucket_status;
-          yield call(mgr->write_status_cr());
+          yield call(mgr->write_status_cr(false));
           if (retcode < 0) {
             ldpp_dout(env->dpp, 0) << "ERROR: " << __func__ << " failed to store sync status: retcode=" << retcode << dendl;
             return set_cr_error(retcode);
@@ -5057,12 +5173,20 @@ public:
     return new InitCR(this);
   }
 
+  RGWCoroutine *init_status_cr() {
+    return new InitStatusCR(this);
+  }
+
   RGWCoroutine *read_status_cr() {
     return new ReadStatusCR(this);
   }
 
-  RGWCoroutine *write_status_cr() {
-    return new ReadStatusCR(this);
+  RGWCoroutine *write_status_cr(bool exclusive) {
+    return new WriteStatusCR(this, exclusive);
+  }
+
+  RGWCoroutine *init_gen_cr(uint32_t min_gen) {
+    return new InitGenCR(this, min_gen);
   }
 
   RGWCoroutine *sync_cr() {
