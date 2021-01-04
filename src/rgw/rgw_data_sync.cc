@@ -4354,7 +4354,12 @@ int RGWBucketShardIncrementalSyncCR::operate()
       return set_cr_error(sync_status);
     }
 
-#warning update shard_complete here
+    if (complete) {
+      tn->log(10, SSTR("incremental sync for shard is complete (bs=" << bucket_shard_str{bs} << ")"));
+    }
+
+    *shard_complete = complete;
+
     return set_cr_done();
   }
   return 0;
