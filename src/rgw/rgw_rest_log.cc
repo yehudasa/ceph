@@ -370,6 +370,7 @@ void RGWOp_BILog_List::execute(optional_yield y) {
   RGWBucketInfo bucket_info;
   unsigned max_entries;
 
+
   if (bucket_name.empty() && bucket_instance.empty()) {
     dout(5) << "ERROR: neither bucket nor bucket instance specified" << dendl;
     op_ret = -EINVAL;
@@ -378,7 +379,7 @@ void RGWOp_BILog_List::execute(optional_yield y) {
 
   int shard_id;
   string bn;
-  op_ret = rgw_bucket_parse_bucket_instance(bucket_instance, &bn, &bucket_instance, nullptr, &shard_id);
+  op_ret = rgw_bucket_parse_bucket_instance(bucket_instance, &bn, &bucket_instance, &shard_id);
   if (op_ret < 0) {
     return;
   }
@@ -511,7 +512,7 @@ void RGWOp_BILog_Info::execute(optional_yield y) {
 
   int shard_id;
   string bn;
-  op_ret = rgw_bucket_parse_bucket_instance(bucket_instance, &bn, &bucket_instance, nullptr, &shard_id);
+  op_ret = rgw_bucket_parse_bucket_instance(bucket_instance, &bn, &bucket_instance, &shard_id);
   if (op_ret < 0) {
     return;
   }
@@ -623,7 +624,7 @@ void RGWOp_BILog_Delete::execute(optional_yield y) {
 
   int shard_id;
   string bn;
-  op_ret = rgw_bucket_parse_bucket_instance(bucket_instance, &bn, &bucket_instance, nullptr, &shard_id);
+  op_ret = rgw_bucket_parse_bucket_instance(bucket_instance, &bn, &bucket_instance, &shard_id);
   if (op_ret < 0) {
     return;
   }
