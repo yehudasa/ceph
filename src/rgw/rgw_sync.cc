@@ -1462,7 +1462,7 @@ class RGWMetaSyncShardCR : public RGWCoroutine {
 
   // hold a reference to the cr stack while it's in the map
   using StackRef = boost::intrusive_ptr<RGWCoroutinesStack>;
-  map<StackRef, string> stack_to_pos;
+  map<uint64_t, string> stack_to_pos;
   map<string, string> pos_to_prev;
 
   bool can_adjust_marker = false;
@@ -1525,9 +1525,9 @@ public:
   void collect_children()
   {
     int child_ret;
-    RGWCoroutinesStack *child;
-    while (collect_next(&child_ret, &child)) {
-      auto iter = stack_to_pos.find(child);
+    uint64_t child_id;
+    while (collect_next(&child_ret, &child_id)) {
+      auto iter = stack_to_pos.find(child_id);
       if (iter == stack_to_pos.end()) {
         /* some other stack that we don't care about */
         continue;
@@ -1536,7 +1536,7 @@ public:
       string& pos = iter->second;
 
       if (child_ret < 0) {
-        ldpp_dout(sync_env->dpp, 0) << *this << ": child operation stack=" << child << " entry=" << pos << " returned " << child_ret << dendl;
+        ldpp_dout(sync_env->dpp, 0) << *this << ": child operation stack_id=" << child_id << " entry=" << pos << " returned " << child_ret << dendl;
       }
 
       map<string, string>::iterator prev_iter = pos_to_prev.find(pos);
@@ -1646,7 +1646,7 @@ public:
             yield {
               RGWCoroutinesStack *stack = spawn(new RGWMetaSyncSingleEntryCR(sync_env, marker, marker, MDLOG_STATUS_COMPLETE, marker_tracker, tn), false);
               // stack_to_pos holds a reference to the stack
-              stack_to_pos[stack] = marker;
+              stack_to_pos[stack->get_id()] = marker;
               pos_to_prev[marker] = marker;
             }
           }
@@ -1834,7 +1834,7 @@ public:
                 RGWCoroutinesStack *stack = spawn(new RGWMetaSyncSingleEntryCR(sync_env, raw_key, log_iter->id, mdlog_entry.log_data.status, marker_tracker, tn), false);
                 ceph_assert(stack);
                 // stack_to_pos holds a reference to the stack
-                stack_to_pos[stack] = log_iter->id;
+                stack_to_pos[stack->get_id()] = log_iter->id;
                 pos_to_prev[log_iter->id] = marker;
               }
             }

@@ -300,7 +300,9 @@ public:
   void call(RGWCoroutine *op); /* call at the same stack we're in */
   RGWCoroutinesStack *spawn(RGWCoroutine *op, bool wait); /* execute on a different stack */
   bool collect(int *ret, RGWCoroutinesStack *skip_stack, uint64_t *stack_id = nullptr); /* returns true if needs to be called again */
-  bool collect_next(int *ret, RGWCoroutinesStack **collected_stack = NULL); /* returns true if found a stack to collect */
+  bool collect_next(int *ret,
+                    uint64_t *stack_id = nullptr,
+                    RGWCoroutinesStack *skip_stack = nullptr); /* returns true if found a stack to collect */
 
   RGWCoroutinesStack *prealloc_stack(); /* prepare a stack that will be used in the next spawn operation */
   uint64_t prealloc_stack_id(); /* prepare a stack that will be used in the next spawn operation, return its id */
@@ -465,7 +467,7 @@ protected:
 
   RGWCoroutinesStack *spawn(RGWCoroutine *source_op, RGWCoroutine *next_op, bool wait);
   bool collect(RGWCoroutine *op, int *ret, RGWCoroutinesStack *skip_stack, uint64_t *stack_id); /* returns true if needs to be called again */
-  bool collect_next(RGWCoroutine *op, int *ret, RGWCoroutinesStack **collected_stack); /* returns true if found a stack to collect */
+  bool collect_next(RGWCoroutine *op, int *ret, uint64_t *stack_id, RGWCoroutinesStack *skip_stack); /* returns true if found a stack to collect */
 public:
   RGWCoroutinesStack(CephContext *_cct, RGWCoroutinesManager *_ops_mgr, RGWCoroutine *start = NULL);
   ~RGWCoroutinesStack() override;
