@@ -4163,7 +4163,7 @@ int RGWBucketShardIncrementalSyncCR::operate()
         tn->log(0, "ERROR: lease is not taken, abort");
         return set_cr_error(-ECANCELED);
       }
-      tn->log(20, SSTR("listing bilog for incremental sync; position=" << sync_info.inc_marker.position));
+      tn->log(20, SSTR("listing bilog for incremental sync; bs=" << bucket_shard_str{bs} << "; position=" << sync_info.inc_marker.position));
       set_status() << "listing bilog; position=" << sync_info.inc_marker.position;
       yield call(new RGWListBucketIndexLogCR(sc, bs, sync_info.inc_marker.position,
                                              &list_result, &gen, &complete));
@@ -4652,18 +4652,18 @@ class RGWSyncPipeControlMgr {
     int operate() override {
       reenter(this) {
         // read bucket sync status
-        using ReadCR = RGWSimpleRadosReadCR<rgw_bucket_sync_status>;
+        using DoReadCR = RGWSimpleRadosReadCR<rgw_bucket_sync_status>;
         objv.clear();
-        yield call(new ReadCR(env->async_rados, env->svc->sysobj,
-                              status_obj, &bucket_status, false, &objv));
+        yield call(new DoReadCR(env->async_rados, env->svc->sysobj,
+                                status_obj, &bucket_status, false, &objv));
         if (retcode < 0) {
           return set_cr_error(retcode);
         }
 
+        mgr->handle_config();
+
         return set_cr_done();
       }
-
-      mgr->handle_config();
 
       return 0;
     }
@@ -4804,6 +4804,7 @@ class RGWSyncPipeControlMgr {
       switch (bucket_status.state) {
         case BucketSyncState::Full:
           {
+            ldout(cct, 20) << __func__ << "(): full sync shard complete: pipe=" << mgr->pipe << " shard_id=" << shard_id << dendl;
             auto& new_bucket_status = bucket_status_for_update();
             new_bucket_status.state = BucketSyncState::Incremental;
             again = true;
@@ -4815,6 +4816,7 @@ class RGWSyncPipeControlMgr {
               lderr(cct) << "ERROR: " << __func__ << "(): shard_id >= bucket_status.inc.num_shards for pipe=" << mgr->pipe <<  dendl;
               return;
             }
+            ldout(cct, 20) << __func__ << "(): inc sync shard complete: pipe=" << mgr->pipe << " shard_id=" << shard_id << dendl;
             if ((int)bucket_status.inc.shards_done.size() <= shard_id ||
                 !bucket_status.inc.shards_done[shard_id]) {
               auto& new_bucket_status = bucket_status_for_update();
@@ -4837,6 +4839,7 @@ class RGWSyncPipeControlMgr {
     }
 
     void handle_complete_stack(uint64_t stack_id) {
+      ldout(cct, 20) << __func__ << "(): pipe=" << mgr->pipe << ", complete stack id=" << stack_id << dendl;
       auto iter = shards_sync_info.find(stack_id);
       if (iter == shards_sync_info.end()) {
         lderr(cct) << "ERROR: RGWRunBucketSourcesSyncCR::handle_complete_stack(): stack_id=" << stack_id << " not found! Likely a bug" << dendl;
@@ -5031,35 +5034,33 @@ class RGWSyncPipeControlMgr {
 
     int operate() override {
       reenter(this) {
-        yield {
-          if (bucket_lease_cr) {
-            ldpp_dout(env->dpp, 0) << "ERROR: BUG: TakeLeaseCr: bucket_lease_cr already exists" << dendl;
-            return set_cr_error(-EIO);
-          }
-          bucket_lease_cr.reset(new RGWContinuousLeaseCR(env->async_rados, env->store, status_obj,
-                                                         lock_name, lock_duration, this));
-          yield spawn(bucket_lease_cr.get(), false);
-          while (!bucket_lease_cr->is_locked()) {
-            if (bucket_lease_cr->is_done()) {
-              tn->log(5, "failed to take bucket lease");
-              set_status("lease lock failed, early abort");
-              drain_all();
-              return set_cr_error(bucket_lease_cr->get_ret_status());
-            }
-            tn->log(5, "waiting on bucket lease");
-            yield set_sleeping(true);
-          }
-          // reread the status after acquiring the lock
-          yield call(mgr->read_status_cr());
-          if (retcode < 0) {
-            bucket_lease_cr->go_down();
-            drain_all();
-            bucket_lease_cr.reset();
-            return set_cr_error(retcode);
-          }
-
-          return set_cr_done();
+        if (bucket_lease_cr) {
+          ldpp_dout(env->dpp, 0) << "ERROR: BUG: TakeLeaseCr: bucket_lease_cr already exists" << dendl;
+          return set_cr_error(-EIO);
         }
+        bucket_lease_cr.reset(new RGWContinuousLeaseCR(env->async_rados, env->store, status_obj,
+                                                       lock_name, lock_duration, this));
+        yield spawn(bucket_lease_cr.get(), false);
+        while (!bucket_lease_cr->is_locked()) {
+          if (bucket_lease_cr->is_done()) {
+            tn->log(5, "failed to take bucket lease");
+            set_status("lease lock failed, early abort");
+            drain_all();
+            return set_cr_error(bucket_lease_cr->get_ret_status());
+          }
+          tn->log(5, "waiting on bucket lease");
+          yield set_sleeping(true);
+        }
+        // reread the status after acquiring the lock
+        yield call(mgr->read_status_cr());
+        if (retcode < 0) {
+          bucket_lease_cr->go_down();
+          drain_all();
+          bucket_lease_cr.reset();
+          return set_cr_error(retcode);
+        }
+
+        return set_cr_done();
       }
 
       return 0;
