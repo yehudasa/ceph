@@ -4757,6 +4757,8 @@ class RGWSyncPipeControlMgr {
   };
 
   class SyncStageCR : public RGWCoroutine {
+    friend class FlushBucketStatusCR;
+
     RGWSyncPipeControlMgr *mgr;
     RGWDataSyncCtx *sc;
     RGWDataSyncEnv *env;
@@ -4784,10 +4786,64 @@ class RGWSyncPipeControlMgr {
     std::map<uint64_t, shard_sync_info> shards_sync_info; /*  generation/stage is complete for this shard */
     shard_sync_info *cur_shard_info;
 
-    std::vector<int> complete_shards;
+    std::set<uint64_t> complete_shards;
 
     bool *pagain;
     bool again{false};
+
+    class FlushBucketStatusCR : public RGWCoroutine {
+      RGWSyncPipeControlMgr *mgr;
+      RGWDataSyncEnv *env;
+      SyncStageCR *caller;
+      rgw_bucket_sync_status& bucket_status;
+      std::optional<rgw_bucket_sync_status>& update_bucket_status;
+      int i{0};
+
+      static constexpr int retries = 10;
+
+    public:
+      FlushBucketStatusCR(RGWSyncPipeControlMgr *_mgr,
+                          SyncStageCR *_caller) : RGWCoroutine(_mgr->sc->cct),
+                                                  mgr(_mgr),
+                                                  env(mgr->sc->env),
+                                                  caller(_caller),
+                                                  bucket_status(caller->bucket_status),
+                                                  update_bucket_status(caller->update_bucket_status) {}
+
+      int operate() override {
+        reenter(this) {
+          for (; i < retries; ++i) {
+            if (!update_bucket_status) {
+              ldpp_dout(env->dpp, 0) << "ERROR: " << __func__ << "(): bucket status is not set, likely a bug" << dendl;
+              return set_cr_error(-EIO);
+            }
+            bucket_status = *update_bucket_status;
+            ldpp_dout(env->dpp, 20) << __func__ << "(): flushing bucket status" << dendl;
+            yield call(mgr->write_status_cr(false));
+            if (retcode == -ECANCELED) {
+              ldpp_dout(env->dpp, 0) <<  __func__ << " failed to store sync status, raced with another writer, will retry" << dendl;
+              if (!caller->handle_all_complete_shards()) {
+                ldpp_dout(env->dpp, 0) << "ERROR: " << __func__ << "(): unexpected: handle_all_complete_shards returned false: a bug" << dendl;
+                return set_cr_error(-EIO);
+              }
+              yield call(mgr->read_status_cr());
+              if (retcode < 0) {
+                ldpp_dout(env->dpp, 0) << "ERROR: " << __func__ << " failed to read sync status: retcode=" << retcode << dendl;
+                return set_cr_error(retcode);
+              }
+            }
+            continue;
+          }
+          if (retcode < 0) {
+            ldpp_dout(env->dpp, 0) << "ERROR: " << __func__ << " failed to store sync status: retcode=" << retcode << dendl;
+            return set_cr_error(retcode);
+          }
+
+          return set_cr_done();
+        }
+        return 0;
+      }
+    };
 
     rgw_bucket_sync_status& bucket_status_for_update() {
       if (!update_bucket_status) {
@@ -4856,9 +4912,26 @@ class RGWSyncPipeControlMgr {
         }
       }
       if (info.complete) {
-        handle_shard_complete(info.shard_id);
+        complete_shards.insert(info.shard_id);
       }
       shards_sync_info.erase(stack_id);
+    }
+
+    bool handle_all_complete_shards() {
+      update_bucket_status.reset();
+      for (auto& shard_id : complete_shards) {
+        handle_shard_complete(shard_id);
+      }
+
+      return (!!update_bucket_status);
+    }
+
+    RGWCoroutine *flush_status_cb() {
+      if (!handle_all_complete_shards()) {
+        return nullptr;
+      }
+
+      return new FlushBucketStatusCR(mgr, this);
     }
 
   public:
@@ -4910,6 +4983,11 @@ class RGWSyncPipeControlMgr {
                              }
                              return ret;
                              });
+
+          yield call(flush_status_cb());
+          if (retcode < 0) {
+            return set_cr_error(retcode);
+          }
         }
         drain_all_cb([&](uint64_t stack_id, int ret) {
                    handle_complete_stack(stack_id);
@@ -4919,17 +4997,13 @@ class RGWSyncPipeControlMgr {
                    return ret;
                  });
 
-        if (progress && min_progress) {
-          *progress = *min_progress;
+        yield call(flush_status_cb());
+        if (retcode < 0) {
+          return set_cr_error(retcode);
         }
 
-        if (update_bucket_status) {
-          bucket_status = *update_bucket_status;
-          yield call(mgr->write_status_cr(false));
-          if (retcode < 0) {
-            ldpp_dout(env->dpp, 0) << "ERROR: " << __func__ << " failed to store sync status: retcode=" << retcode << dendl;
-            return set_cr_error(retcode);
-          }
+        if (progress && min_progress) {
+          *progress = *min_progress;
         }
 
         *pagain = again;
