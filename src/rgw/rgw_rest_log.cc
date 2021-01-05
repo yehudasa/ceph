@@ -412,13 +412,13 @@ void RGWOp_BILog_List::execute(optional_yield y) {
 
   if (!bucket_instance.empty()) {
     rgw_bucket b(rgw_bucket_key(tenant_name, bn, bucket_instance));
-    op_ret = store->getRados()->get_bucket_instance_info(*s->sysobj_ctx, b, bucket_info, NULL, NULL, s->yield);
+    op_ret = store->getRados()->get_bucket_instance_info(*s->sysobj_ctx, b, bucket_info, NULL, NULL, y);
     if (op_ret < 0) {
       ldpp_dout(s, 5) << "could not get bucket instance info for bucket instance id=" << bucket_instance << dendl;
       return;
     }
   } else { /* !bucket_name.empty() */
-    op_ret = store->getRados()->get_bucket_info(store->svc(), tenant_name, bucket_name, bucket_info, NULL, s->yield, NULL);
+    op_ret = store->getRados()->get_bucket_info(store->svc(), tenant_name, bucket_name, bucket_info, NULL, y, NULL);
     if (op_ret < 0) {
       ldpp_dout(s, 5) << "could not get bucket info for bucket=" << bucket_name << dendl;
       return;
@@ -527,13 +527,13 @@ void RGWOp_BILog_Info::execute(optional_yield y) {
 
   if (!bucket_instance.empty()) {
     rgw_bucket b(rgw_bucket_key(tenant_name, bn, bucket_instance));
-    op_ret = store->getRados()->get_bucket_instance_info(*s->sysobj_ctx, b, bucket_info, NULL, NULL, s->yield);
+    op_ret = store->getRados()->get_bucket_instance_info(*s->sysobj_ctx, b, bucket_info, NULL, NULL, y);
     if (op_ret < 0) {
       ldpp_dout(s, 5) << "could not get bucket instance info for bucket instance id=" << bucket_instance << dendl;
       return;
     }
   } else { /* !bucket_name.empty() */
-    op_ret = store->getRados()->get_bucket_info(store->svc(), tenant_name, bucket_name, bucket_info, NULL, s->yield, NULL);
+    op_ret = store->getRados()->get_bucket_info(store->svc(), tenant_name, bucket_name, bucket_info, NULL, y, NULL);
     if (op_ret < 0) {
       ldpp_dout(s, 5) << "could not get bucket info for bucket=" << bucket_name << dendl;
       return;
@@ -630,13 +630,13 @@ void RGWOp_BILog_Delete::execute(optional_yield y) {
 
   if (!bucket_instance.empty()) {
     rgw_bucket b(rgw_bucket_key(tenant_name, bn, bucket_instance));
-    op_ret = store->getRados()->get_bucket_instance_info(*s->sysobj_ctx, b, bucket_info, NULL, NULL, s->yield);
+    op_ret = store->getRados()->get_bucket_instance_info(*s->sysobj_ctx, b, bucket_info, NULL, NULL, y);
     if (op_ret < 0) {
       ldpp_dout(s, 5) << "could not get bucket instance info for bucket instance id=" << bucket_instance << dendl;
       return;
     }
   } else { /* !bucket_name.empty() */
-    op_ret = store->getRados()->get_bucket_info(store->svc(), tenant_name, bucket_name, bucket_info, NULL, s->yield, NULL);
+    op_ret = store->getRados()->get_bucket_info(store->svc(), tenant_name, bucket_name, bucket_info, NULL, y, NULL);
     if (op_ret < 0) {
       ldpp_dout(s, 5) << "could not get bucket info for bucket=" << bucket_name << dendl;
       return;
@@ -929,7 +929,7 @@ void RGWOp_BILog_Status::execute(optional_yield y)
   // read the bucket instance info for num_shards
   auto ctx = store->svc()->sysobj->init_obj_ctx();
   RGWBucketInfo info;
-  op_ret = store->getRados()->get_bucket_instance_info(ctx, bucket, info, nullptr, nullptr, s->yield);
+  op_ret = store->getRados()->get_bucket_instance_info(ctx, bucket, info, nullptr, nullptr, y);
   if (op_ret < 0) {
     ldpp_dout(s, 4) << "failed to read bucket info: " << cpp_strerror(op_ret) << dendl;
     return;
@@ -1001,7 +1001,7 @@ void RGWOp_BILog_Status::execute(optional_yield y)
       /* dest bucket might not have a bucket id */
       op_ret = store->ctl()->bucket->read_bucket_info(*pipe.dest.bucket,
                                                         pinfo,
-                                                        s->yield,
+                                                        y,
                                                         RGWBucketCtl::BucketInstance::GetParams(),
                                                         nullptr);
       if (op_ret < 0) {
