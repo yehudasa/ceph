@@ -262,13 +262,61 @@ public:
 };
 
 class RGWDataChangesFIFO final : public RGWDataChangesBE {
+  librados::IoCtx ioctx;
+
   using centries = std::vector<ceph::buffer::list>;
   std::vector<std::unique_ptr<rgw::cls::fifo::FIFO>> fifos;
+
+  ceph::containers::tiny_vector<ceph::shared_mutex> locks;
+
+
+  rgw::cls::fifo::FIFO *get_fifo(int i) {
+    std::shared_lock l{locks[i]};
+
+    auto& fifo = fifos[i];
+    if (!fifo) {
+      return nullptr;
+    }
+
+    return fifo.get();
+  }
+
+  int use_fifo(int i, std::function<int(rgw::cls::fifo::FIFO *)> cb) {
+    if (i >= (int)fifos.size()) {
+      return -EIO;
+    }
+    
+    auto fifo = get_fifo(i);
+    if (!fifo) {
+      {
+        std::unique_lock l{locks[i]};
+        int r = rgw::cls::fifo::FIFO::create(ioctx, get_oid(i),
+                                             &fifos[i], null_yield);
+        if (r < 0) {
+          lderr(cct) << __PRETTY_FUNCTION__ << ": ERROR: failed to create fifo(" << i << "): r=" << r << dendl;
+          return r;
+        }
+      }
+
+      fifo = get_fifo(i);
+      if (!fifo) {
+        lderr(cct) << __PRETTY_FUNCTION__ << ": ERROR: fifo(" << i << ") is null" << dendl;
+        return -EIO;
+      }
+    }
+
+    return cb(fifo);
+  }
+
 public:
   RGWDataChangesFIFO(CephContext* cct, librados::Rados* rados,
 		     const rgw_pool& log_pool)
-    : RGWDataChangesBE(cct) {
-    librados::IoCtx ioctx;
+    : RGWDataChangesBE(cct),
+      locks{ceph::make_lock_container<ceph::shared_mutex>(
+        cct->_conf->rgw_data_log_num_shards,
+        [](const size_t i) {
+          return ceph::make_shared_mutex("RGWDataChangesFIFO::lock::" + std::to_string(i));
+        })} {
     auto shards = cct->_conf->rgw_data_log_num_shards;
     auto r = rgw_init_ioctx(rados, log_pool.name, ioctx,
 			    true, false);
@@ -276,19 +324,8 @@ public:
       throw bs::system_error(ceph::to_error_code(r));
     }
     fifos.resize(shards);
-    for (auto i = 0; i < shards; ++i) {
-      r = rgw::cls::fifo::FIFO::create(ioctx, get_oid(i),
-				       &fifos[i], null_yield);
-      if (r < 0) {
-	throw bs::system_error(ceph::to_error_code(r));
-      }
-    }
-    ceph_assert(fifos.size() == unsigned(shards));
-    ceph_assert(std::none_of(fifos.cbegin(), fifos.cend(),
-			     [](const auto& p) {
-			       return p == nullptr;
-			     }));
   }
+
   ~RGWDataChangesFIFO() override = default;
   static int exists(CephContext* cct, librados::Rados* rados,
 		    const rgw_pool& log_pool, bool* exists, bool* has_entries) {
@@ -347,7 +384,9 @@ public:
     std::get<centries>(out).push_back(std::move(entry));
   }
   int push(int index, entries&& items) override {
-    auto r = fifos[index]->push(std::get<centries>(items), null_yield);
+    auto r = use_fifo(index, [&](rgw::cls::fifo::FIFO *fifo) {
+      return fifo->push(std::get<centries>(items), null_yield);
+    });
     if (r < 0) {
       lderr(cct) << __PRETTY_FUNCTION__
 		 << ": unable to push to FIFO: " << get_oid(index)
@@ -358,7 +397,9 @@ public:
   int push(int index, ceph::real_time,
 	   const std::string&,
 	   ceph::buffer::list&& bl) override {
-    auto r = fifos[index]->push(std::move(bl), null_yield);
+    auto r = use_fifo(index, [&](rgw::cls::fifo::FIFO *fifo) {
+      return fifo->push(std::move(bl), null_yield);
+    });
     if (r < 0) {
       lderr(cct) << __PRETTY_FUNCTION__
 		 << ": unable to push to FIFO: " << get_oid(index)
@@ -372,8 +413,10 @@ public:
 	   std::string* out_marker, bool* truncated) override {
     std::vector<rgw::cls::fifo::list_entry> log_entries;
     bool more = false;
-    auto r = fifos[index]->list(max_entries, marker, &log_entries, &more,
+    auto r = use_fifo(index, [&](rgw::cls::fifo::FIFO *fifo) {
+      return fifo->list(max_entries, marker, &log_entries, &more,
 				null_yield);
+    });
     if (r < 0) {
       lderr(cct) << __PRETTY_FUNCTION__
 		 << ": unable to list FIFO: " << get_oid(index)
@@ -403,7 +446,12 @@ public:
     return 0;
   }
   int get_info(int index, RGWDataChangesLogInfo *info) override {
-    auto& fifo = fifos[index];
+    auto fifo = get_fifo(index);
+    if (!fifo) {
+      lderr(cct) << __PRETTY_FUNCTION__
+		 << ": ERROR: fifo(" << index << ")" << dendl;
+      return -EIO;
+    }
     auto r = fifo->read_meta(null_yield);
     if (r < 0) {
       lderr(cct) << __PRETTY_FUNCTION__
@@ -431,7 +479,9 @@ public:
     return 0;
   }
   int trim(int index, std::string_view marker) override {
-    auto r = fifos[index]->trim(marker, false, null_yield);
+    auto r = use_fifo(index, [&](rgw::cls::fifo::FIFO *fifo) {
+      return fifo->trim(marker, false, null_yield);
+    });
     if (r < 0) {
       lderr(cct) << __PRETTY_FUNCTION__
 		 << ": unable to trim FIFO: " << get_oid(index)
@@ -465,7 +515,9 @@ public:
       pc->cond.notify_all();
       pc->put_unlock();
     } else {
-      r = fifos[index]->trim(marker, false, c);
+      r = use_fifo(index, [&](rgw::cls::fifo::FIFO *fifo) {
+        return fifo->trim(marker, false, c);
+      });
       if (r < 0) {
 	lderr(cct) << __PRETTY_FUNCTION__
 		   << ": unable to trim FIFO: " << get_oid(index)
@@ -504,12 +556,15 @@ int RGWDataChangesLog::start(const RGWZone* _zone,
 	       << cpp_strerror(-r) << dendl;
   }
   bool fifoexists = false, fifohasentries = false;
-  r = RGWDataChangesFIFO::exists(cct, lr, log_pool, &fifoexists, &fifohasentries);
-  if (r < 0) {
-    lderr(cct) << __PRETTY_FUNCTION__
-	       << ": Error when checking for existing FIFO datalog backend: "
-	       << cpp_strerror(-r) << dendl;
+  if (omapexists || backing == "omap") {
+    r = RGWDataChangesFIFO::exists(cct, lr, log_pool, &fifoexists, &fifohasentries);
+    if (r < 0) {
+      lderr(cct) << __PRETTY_FUNCTION__
+        << ": Error when checking for existing FIFO datalog backend: "
+        << cpp_strerror(-r) << dendl;
+    }
   }
+
   bool has_entries = omaphasentries || fifohasentries;
   bool remove = false;
 
