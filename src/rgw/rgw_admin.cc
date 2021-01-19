@@ -231,6 +231,8 @@ void usage()
   cout << "  lc list                    list all bucket lifecycle progress\n";
   cout << "  lc get                     get a lifecycle bucket configuration\n";
   cout << "  lc process                 manually process lifecycle\n";
+  cout << "  lc reset                   resets all buckets' lc status\n";
+  cout << "  lc prune                   removes lc statuses for deleted buckets\n";
   cout << "  lc reshard fix             fix LC for a resharded bucket\n";
   cout << "  metadata get               get metadata info\n";
   cout << "  metadata put               put metadata info\n";
@@ -653,6 +655,8 @@ enum class OPT {
   LC_LIST,
   LC_GET,
   LC_PROCESS,
+  LC_RESET,
+  LC_PRUNE,
   LC_RESHARD_FIX,
   ORPHANS_FIND,
   ORPHANS_FINISH,
@@ -862,6 +866,8 @@ static SimpleCmd::Commands all_cmds = {
   { "lc list", OPT::LC_LIST },
   { "lc get", OPT::LC_GET },
   { "lc process", OPT::LC_PROCESS },
+  { "lc reset", OPT::LC_RESET },
+  { "lc prune", OPT::LC_PRUNE },
   { "lc reshard fix", OPT::LC_RESHARD_FIX },
   { "orphans find", OPT::ORPHANS_FIND },
   { "orphans finish", OPT::ORPHANS_FINISH },
@@ -7458,6 +7464,21 @@ next:
     }
   }
 
+  if (opt_cmd == OPT::LC_RESET) {
+    int ret = store->getRados()->reset_lc();
+    if (ret < 0) {
+      cerr << "ERROR: lc status reset returned error: " << cpp_strerror(-ret) << std::endl;
+      return 1;
+    }
+  }
+
+  if (opt_cmd == OPT::LC_PRUNE) {
+    int ret = store->getRados()->prune_lc();
+    if (ret < 0) {
+      cerr << "ERROR: lc record prune returned error: " << cpp_strerror(-ret) << std::endl;
+      return 1;
+    }
+  }
 
   if (opt_cmd == OPT::LC_RESHARD_FIX) {
     ret = RGWBucketAdminOp::fix_lc_shards(store, bucket_op, f, dpp());

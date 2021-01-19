@@ -514,6 +514,11 @@ public:
   int process(LCWorker* worker, bool once, rgw_bucket* bucket = nullptr);
   int process(const string& shard_oid, int max_secs, LCWorker* worker, bool once,
               rgw_bucket* bucket = nullptr);
+  int reset_status(LCWorker* worker);
+  int reset_shard_status(string shard_oid, LCWorker* worker);
+  int prune_entries(LCWorker* worker);
+  int prune_shard_entries(string shard_oid, LCWorker* worker);
+  int prune_set(string shard_oid, vector<rgw::sal::Lifecycle::LCEntry> &entries, LCWorker* worker);
   bool if_already_run_today(time_t start_date);
   bool expired_session(time_t started);
   time_t thread_stop_at();

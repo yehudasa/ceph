@@ -1677,6 +1677,181 @@ static inline vector<int> random_sequence(uint32_t n)
   return v;
 }
 
+int RGWLC::reset_status(LCWorker* worker) {
+  for (int i = 0; i < max_objs; i++) {
+    string shard_oid = obj_names[i];
+    int ret = reset_shard_status(shard_oid, worker);
+    if (ret < 0) {
+      ldpp_dout(this, 0) << "RGWLC::reset_status() failed reset status for shard" << shard_oid << dendl;
+      return ret;
+    }
+  }
+  return 0;
+}
+
+int RGWLC::reset_shard_status(string shard_oid, LCWorker* worker) {
+  int ret;
+  utime_t now = ceph_clock_now();
+
+  rgw::sal::LCSerializer* lock = sal_lc->get_serializer(lc_index_lock_name,
+							shard_oid,
+							std::string());
+
+  int max_lock_secs = cct->_conf->rgw_lc_lock_max_time;
+  if (max_lock_secs <= 0)
+    return -EAGAIN;
+
+  do {
+    utime_t time(max_lock_secs, 0);
+
+    int ret = lock->try_lock(this, time, null_yield);
+    if (ret == -EBUSY || ret == -EEXIST) { /* already locked by another lc processor */
+      ldpp_dout(this, 0) << "RGWLC::reset_shard_status() failed to acquire lock on "
+          << shard_oid << ", sleep 5, try again" << dendl;
+      sleep(5);
+      continue;
+    }
+    if (ret < 0) {
+      ldpp_dout(this, 0) << "RGWLC::reset_shard_status() failed to acquire lock" << shard_oid << dendl;
+      return 0;
+    }
+    break;
+  } while(true);
+
+  do {
+    rgw::sal::Lifecycle::LCHead head;
+    ret = sal_lc->get_head(shard_oid, head);
+    if (ret < 0) {
+      ldpp_dout(this, 0) << "RGWLC::reset_shard_status() failed to get obj head "
+          << shard_oid << ", ret=" << ret << dendl;
+      break;
+    }
+
+    ldpp_dout(this, 20) << "RGWLC::reset_shard_status() initialize lc processing" << dendl;
+    head.start_date = now;
+    head.marker.clear();
+    ret = bucket_lc_prepare(shard_oid, worker);
+    if (ret < 0) {
+      ldpp_dout(this, 0) << "RGWLC::reset_shard_status() failed to update lc shard "
+          << shard_oid << ", ret=" << ret << dendl;
+      break;
+    }
+    ret = sal_lc->put_head(shard_oid, head);
+    if (ret < 0) {
+      ldpp_dout(this, 0) << "RGWLC::reset_shard_status() failed to put head " << shard_oid << dendl;
+      break;
+    }
+    break;
+  } while (true);
+
+  lock->unlock();
+  return ret;
+}
+
+int RGWLC::prune_entries(LCWorker* worker)
+{
+  for (int i = 0; i < max_objs; i++) {
+    string shard_oid = obj_names[i];
+    int ret = prune_shard_entries(shard_oid, worker);
+    if (ret < 0) {
+      ldpp_dout(this, 0) << "RGWLC::prune_entries() failed to prune shard " << shard_oid << dendl;
+      return ret;
+    }
+  }
+  return 0;
+}
+
+int RGWLC::prune_shard_entries(string shard_oid, LCWorker* worker) {
+  int ret;
+  rgw::sal::LCSerializer* lock = sal_lc->get_serializer(lc_index_lock_name,
+							shard_oid,
+							std::string());
+
+  int max_lock_secs = cct->_conf->rgw_lc_lock_max_time;
+  if (max_lock_secs <= 0)
+    return -EAGAIN;
+
+  do {
+    utime_t time(max_lock_secs, 0);
+
+    int ret = lock->try_lock(this, time, null_yield);
+    if (ret == -EBUSY || ret == -EEXIST) { /* already locked by another lc processor */
+      ldpp_dout(this, 0) << "RGWLC::prune_shard_entries() failed to acquire lock on "
+          << shard_oid << ", sleep 5, try again" << dendl;
+      sleep(5);
+      continue;
+    }
+    if (ret < 0) {
+      ldpp_dout(this, 0) << "RGWLC::prune_shard_entries() failed to acquire lock " << shard_oid << dendl;
+      return ret;
+    }
+    break;
+  } while (true);
+
+  string marker;
+  do {
+    vector<rgw::sal::Lifecycle::LCEntry> entries;
+    ret = sal_lc->list_entries(shard_oid, marker, MAX_LC_LIST_ENTRIES, entries);
+    if (ret < 0) {
+      ldpp_dout(this, 0) << "RGWLC::prune_shard_entries() failed to list entries " << shard_oid << dendl;
+      break;
+    }
+
+    if (entries.empty()) {
+      break;
+    }
+
+    ret = prune_set(shard_oid, entries, worker);
+    if (ret < 0) {
+      ldpp_dout(this, 0) << "RGWLC::prune_shard_entries() failed to prune entries" << dendl;
+      break;
+    }
+
+    marker = std::move(entries.rbegin()->bucket);
+  } while (true);
+
+  lock->unlock();
+  return ret;
+}
+
+int RGWLC::prune_set(string shard_oid, vector<rgw::sal::Lifecycle::LCEntry> &entries, LCWorker* worker) {
+  int ret;
+  string shard_id;
+  vector<std::string> result;
+  map<string, bufferlist> bucket_attrs;
+  RGWBucketInfo bucket_info;
+  string bucket_tenant;
+  string bucket_name;
+  string bucket_marker;
+
+  auto obj_ctx = store->svc()->sysobj->init_obj_ctx();
+
+  for (auto iter = entries.begin(); iter != entries.end(); ++iter) {
+    std::unique_ptr<rgw::sal::RGWBucket> bucket;
+
+    shard_id = iter->bucket;
+    boost::split(result, shard_id, boost::is_any_of(":"));
+    bucket_tenant = result[0];
+    bucket_name = result[1];
+    bucket_marker = result[2];
+    ret = store->get_bucket(this, nullptr, bucket_tenant, bucket_name, &bucket, null_yield);
+    if (ret < 0 && ret != -ENOENT) {
+      ldpp_dout(this, 0) << "LC:get_bucket_info for " << bucket_name << " failed" << dendl;
+      return ret;
+    }
+
+    if (bucket->get_marker() != bucket_marker) {
+      ret = sal_lc->rm_entry(shard_oid, *iter);
+      if (ret < 0) {
+        ldpp_dout(this, 0) << "RGWLC::prune_shard_entries() failed to remove entry "
+            << shard_oid << dendl;
+        return ret;
+      }
+    }
+  }
+  return ret;
+}
+
 int RGWLC::process(LCWorker* worker, bool once = false, rgw_bucket* bucket)
 {
   string shard_oid;

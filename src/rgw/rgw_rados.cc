@@ -8228,6 +8228,26 @@ int RGWRados::list_lc_progress(string& marker, uint32_t max_entries,
   return lc->list_lc_progress(marker, max_entries, progress_map, index);
 }
 
+int RGWRados::reset_lc()
+{
+  RGWLC lc;
+  lc.initialize(cct, this->store);
+  RGWLC::LCWorker worker(&lc, cct, &lc, 0);
+  auto ret = lc.reset_status(&worker);
+  lc.stop_processor(); // sets down_flag, but returns immediately
+  return ret;
+}
+
+int RGWRados::prune_lc()
+{
+  RGWLC lc;
+  lc.initialize(cct, this->store);
+  RGWLC::LCWorker worker(&lc, cct, &lc, 0);
+  auto ret = lc.prune_entries(&worker);
+  lc.stop_processor(); // sets down_flag, but returns immediately
+  return ret;
+}
+
 int RGWRados::process_lc(rgw_bucket* bucket)
 {
   RGWLC lc;
