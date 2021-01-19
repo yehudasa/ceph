@@ -374,10 +374,11 @@ int rgw_remove_bucket_bypass_gc(rgw::sal::RGWRadosStore *store, rgw_bucket& buck
   RGWBucketInfo info;
   RGWObjectCtx obj_ctx(store);
   CephContext *cct = store->ctx();
+  map<string, bufferlist> attrs;
 
   string bucket_ver, master_ver;
 
-  ret = store->getRados()->get_bucket_info(store->svc(), bucket.tenant, bucket.name, info, NULL, null_yield, dpp);
+  ret = store->getRados()->get_bucket_info(store->svc(), bucket.tenant, bucket.name, info, NULL, null_yield, dpp, &attrs);
   if (ret < 0)
     return ret;
 
@@ -386,6 +387,11 @@ int rgw_remove_bucket_bypass_gc(rgw::sal::RGWRadosStore *store, rgw_bucket& buck
     return ret;
 
   ret = abort_bucket_multiparts(dpp, store, cct, info);
+  if (ret < 0) {
+    return ret;
+  }
+
+  ret = store->get_rgwlc()->remove_bucket_config(info, attrs);
   if (ret < 0) {
     return ret;
   }

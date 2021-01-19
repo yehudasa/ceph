@@ -27,6 +27,7 @@
 #include "rgw_bucket.h"
 #include "rgw_multi.h"
 #include "rgw_acl_s3.h"
+#include "rgw_lc.h"
 
 #include "rgw_zone.h"
 #include "rgw_rest_conn.h"
@@ -137,6 +138,11 @@ int RGWRadosBucket::remove_bucket(const DoutPrefixProvider *dpp,
   // remove lifecycle config, if any (XXX note could be made generic)
   (void) store->getRados()->get_lc()->remove_bucket_config(
     this->info, get_attrs());
+
+  ret = store->get_rgwlc()->remove_bucket_config(info, attrs);
+  if (ret < 0) {
+    return ret;
+  }
 
   ret = store->ctl()->bucket->sync_user_stats(dpp, info.owner, info, y);
   if (ret < 0) {
