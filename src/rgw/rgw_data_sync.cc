@@ -492,6 +492,11 @@ class RGWSyncInfoCRHandler {
 public:
   virtual ~RGWSyncInfoCRHandler() {}
 
+
+  virtual string sip_id() const {
+    return get_sip_name();
+  }
+
   virtual string get_sip_name() const = 0;
 
   virtual int num_shards() const = 0;
@@ -1180,7 +1185,7 @@ protected:
     dest->stage_info = stage_info;
   }
 
-  string sip_id() const {
+  string sip_id() const override {
     return data_type + ":" + SIProvider::stage_type_to_str(stage_type);
   }
 
@@ -4023,6 +4028,10 @@ public:
   RGWCoroutine *update_marker_cr(int shard_id, const RGWSI_SIP_Marker::SetParams& params) {
     return handler->update_marker_cr(shard_id, params);
   }
+
+  string sip_id() const {
+    return handler->sip_id();
+  }
 };
 
 class RGWBucketShardSIPCRWrapper
@@ -4046,6 +4055,10 @@ public:
 
   RGWCoroutine *update_marker_cr(const RGWSI_SIP_Marker::SetParams& params) {
     return wrapper_core->update_marker_cr(shard_id, params);
+  }
+
+  string sip_id() const {
+    return wrapper_core->sip_id();
   }
 };
 
@@ -4071,6 +4084,7 @@ public:
     reenter(this) {
       /* fetch current position in logs */
       yield call(bsc->hsi.inc->get_pos_cr(&info, &syncstopped));
+      ldout(cct, 20) << __func__ << ": hsi.inc sip_id=" << bsc->hsi.inc->sip_id() << ", syncstopped=" << syncstopped << dendl;
       if (retcode < 0 && retcode != -ENOENT) {
         ldout(cct, 0) << "ERROR: failed to fetch bucket index status" << dendl;
         return set_cr_error(retcode);
