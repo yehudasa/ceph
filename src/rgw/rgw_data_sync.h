@@ -343,6 +343,7 @@ struct RGWDataSyncInfoCRHandlerPair {
 };
 
 struct RGWDataSyncCtx {
+  const DoutPrefixProvider *dpp{nullptr};
   CephContext *cct{nullptr};
   RGWDataSyncEnv *env{nullptr};
 

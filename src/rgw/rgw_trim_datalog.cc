@@ -102,6 +102,8 @@ void take_min_markers(IterIn first, IterIn last, IterOut dest)
 
 
 class DataLogTrimCR : public RGWCoroutine {
+  const DoutPrefixProvider *dpp;
+
   using TrimCR = DatalogTrimImplCR;
   rgw::sal::RGWRadosStore *store;
   RGWHTTPManager *http;
@@ -118,9 +120,10 @@ class DataLogTrimCR : public RGWCoroutine {
   std::set<string> sip_targets;
 
  public:
-  DataLogTrimCR(rgw::sal::RGWRadosStore *store, RGWHTTPManager *http,
+  DataLogTrimCR(const DoutPrefixProvider *dpp,
+                rgw::sal::RGWRadosStore *store, RGWHTTPManager *http,
                 int num_shards)
-    : RGWCoroutine(store->ctx()), store(store), http(http),
+    : RGWCoroutine(store->ctx()), dpp(dpp), store(store), http(http),
       num_shards(num_shards),
       zone_id(store->svc()->zone->get_zone().id),
       min_shard_markers(num_shards),
@@ -142,7 +145,7 @@ int DataLogTrimCR::operate()
                                                  SIProvider::StageType::INC,
                                                  nullopt));
 
-    yield call(sip_mgr->init_cr());
+    yield call(sip_mgr->init_cr(dpp));
     if (retcode < 0) {
       ldout(cct, 0) << "ERROR: failed to initialize trim sip manager for data.inc: retcode=" << retcode << dendl;
       return set_cr_error(retcode);
@@ -226,14 +229,16 @@ int DataLogTrimCR::operate()
   return 0;
 }
 
-RGWCoroutine* create_admin_data_log_trim_cr(rgw::sal::RGWRadosStore *store,
+RGWCoroutine* create_admin_data_log_trim_cr(const DoutPrefixProvider *dpp,
+                                            rgw::sal::RGWRadosStore *store,
                                             RGWHTTPManager *http,
                                             int num_shards)
 {
-  return new DataLogTrimCR(store, http, num_shards);
+  return new DataLogTrimCR(dpp, store, http, num_shards);
 }
 
 class DataLogTrimPollCR : public RGWCoroutine {
+  const DoutPrefixProvider *dpp;
   rgw::sal::RGWRadosStore *store;
   RGWHTTPManager *http;
   const int num_shards;
@@ -242,9 +247,11 @@ class DataLogTrimPollCR : public RGWCoroutine {
   const std::string lock_cookie;
 
  public:
-  DataLogTrimPollCR(rgw::sal::RGWRadosStore *store, RGWHTTPManager *http,
+  DataLogTrimPollCR(const DoutPrefixProvider *dpp,
+                    rgw::sal::RGWRadosStore *store, RGWHTTPManager *http,
                     int num_shards, utime_t interval)
-    : RGWCoroutine(store->ctx()), store(store), http(http),
+    : RGWCoroutine(store->ctx()), dpp(dpp),
+      store(store), http(http),
       num_shards(num_shards), interval(interval),
       lock_oid(store->svc()->datalog_rados->get_oid(0)),
       lock_cookie(RGWSimpleRadosLockCR::gen_random_cookie(cct))
@@ -275,7 +282,7 @@ int DataLogTrimPollCR::operate()
       }
 
       set_status("trimming");
-      yield call(new DataLogTrimCR(store, http, num_shards));
+      yield call(new DataLogTrimCR(dpp, store, http, num_shards));
 
       // note that the lock is not released. this is intentional, as it avoids
       // duplicating this work in other gateways
@@ -284,9 +291,10 @@ int DataLogTrimPollCR::operate()
   return 0;
 }
 
-RGWCoroutine* create_data_log_trim_cr(rgw::sal::RGWRadosStore *store,
+RGWCoroutine* create_data_log_trim_cr(const DoutPrefixProvider *dpp,
+                                      rgw::sal::RGWRadosStore *store,
                                       RGWHTTPManager *http,
                                       int num_shards, utime_t interval)
 {
-  return new DataLogTrimPollCR(store, http, num_shards, interval);
+  return new DataLogTrimPollCR(dpp, store, http, num_shards, interval);
 }

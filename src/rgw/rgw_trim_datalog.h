@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+class DoutPrefixProvider;
 class RGWCoroutine;
 class RGWRados;
 class RGWHTTPManager;
@@ -15,11 +16,13 @@ namespace rgw { namespace sal {
 } }
 
 // DataLogTrimCR factory function
-extern RGWCoroutine* create_data_log_trim_cr(rgw::sal::RGWRadosStore *store,
+extern RGWCoroutine* create_data_log_trim_cr(const DoutPrefixProvider *dpp,
+                                             rgw::sal::RGWRadosStore *store,
                                              RGWHTTPManager *http,
                                              int num_shards, utime_t interval);
 
 // factory function for datalog trim via radosgw-admin
-RGWCoroutine* create_admin_data_log_trim_cr(rgw::sal::RGWRadosStore *store,
+RGWCoroutine* create_admin_data_log_trim_cr(const DoutPrefixProvider *dpp,
+                                            rgw::sal::RGWRadosStore *store,
                                             RGWHTTPManager *http,
                                             int num_shards);
