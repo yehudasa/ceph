@@ -507,7 +507,7 @@ int BucketTrimInstanceCR::operate()
                                                  SIProvider::StageType::INC,
                                                  bucket_instance));
 
-    yield call(sip_mgr->init_cr());
+    yield call(sip_mgr->init_cr(dpp));
     if (retcode < 0) {
       ldout(cct, 0) << "ERROR: failed to initialize trim sip manager for data.inc: retcode=" << retcode << dendl;
       return set_cr_error(retcode);

@@ -22,7 +22,8 @@ void rgw_http_client_cleanup();
 struct rgw_http_req_data;
 class RGWHTTPManager;
 
-class RGWHTTPClient : public RGWIOProvider
+class RGWHTTPClient : public RGWIOProvider,
+                      public NoDoutPrefix
 {
   friend class RGWHTTPManager;
 
@@ -109,16 +110,10 @@ public:
   virtual ~RGWHTTPClient();
   explicit RGWHTTPClient(CephContext *cct,
                          const string& _method,
-                         const string& _url)
-    : has_send_len(false),
-      http_status(HTTP_STATUS_NOSTATUS),
-      req_data(nullptr),
-      verify_ssl(cct->_conf->rgw_verify_ssl),
-      cct(cct),
-      method(_method),
-      url(_url) {
-    init();
-  }
+                         const string& _url);
+
+  std::ostream& gen_prefix(std::ostream& out) const override;
+
 
   void append_header(const string& name, const string& val) {
     headers.push_back(pair<string, string>(name, val));

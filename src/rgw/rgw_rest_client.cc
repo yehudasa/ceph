@@ -233,23 +233,25 @@ void RGWHTTPSimpleRequest::get_out_headers(map<string, string> *pheaders)
   out_headers.clear();
 }
 
-static int sign_request(CephContext *cct, RGWAccessKey& key, const string& region, RGWEnv& env, req_info& info)
+static int sign_request(const DoutPrefixProvider *dpp, RGWAccessKey& key, const string& region, RGWEnv& env, req_info& info)
 {
   /* don't sign if no key is provided */
   if (key.key.empty()) {
     return 0;
   }
 
+  auto cct = dpp->get_cct();
+
   if (cct->_conf->subsys.should_gather<ceph_subsys_rgw, 20>()) {
     for (const auto& i: env.get_map()) {
-      ldout(cct, 20) << "> " << i.first << " -> " << rgw::crypt_sanitize::x_meta_map{i.first, i.second} << dendl;
+      ldpp_dout(dpp, 20) << __func__ << "():> " << i.first << " -> " << rgw::crypt_sanitize::x_meta_map{i.first, i.second} << dendl;
     }
   }
 
-  rgw::auth::s3::AWSSignerV4 signer(cct);
+  rgw::auth::s3::AWSSignerV4 signer(dpp);
 
   auto sigv4_data = signer.prepare(key.id, region, info, true);
-  auto sigv4_headers = sigv4_data.signature_factory(cct, key.key, sigv4_data);
+  auto sigv4_headers = sigv4_data.signature_factory(dpp, key.key, sigv4_data);
 
   for (auto& entry : sigv4_headers) {
     ldout(cct, 20) << __func__ << "(): sigv4 header: " << entry.first << ": " << entry.second << dendl;
@@ -349,7 +351,7 @@ int RGWRESTSimpleRequest::forward_request(RGWAccessKey& key, req_info& info, siz
     new_env.set("HTTP_X_AMZ_CONTENT_SHA256", maybe_payload_hash);
   }
 
-  int ret = sign_request(cct, key, region, new_env, new_info);
+  int ret = sign_request(this, key, region, new_env, new_info);
   if (ret < 0) {
     ldout(cct, 0) << "ERROR: failed to sign request" << dendl;
     return ret;
@@ -506,6 +508,13 @@ static void add_grants_headers(map<int, string>& grants, RGWEnv& env, meta_map_t
   }
 }
 
+RGWRESTGenerateHTTPHeaders::RGWRESTGenerateHTTPHeaders(CephContext *_cct, RGWEnv *_env, req_info *_info) :
+                                                DoutPrefix(_cct, dout_subsys, "rest gen http headers"),
+                                                cct(_cct),
+                                                new_env(_env),
+                                                new_info(_info) {
+}
+
 void RGWRESTGenerateHTTPHeaders::init(const string& _method, const string& host,
                                       const string& resource_prefix, const string& _url,
                                       const string& resource, const param_vec_t& params,
@@ -623,7 +632,7 @@ void RGWRESTGenerateHTTPHeaders::set_policy(RGWAccessControlPolicy& policy)
 
 int RGWRESTGenerateHTTPHeaders::sign(RGWAccessKey& key)
 {
-  int ret = sign_request(cct, key, region, *new_env, *new_info);
+  int ret = sign_request(this, key, region, *new_env, *new_info);
   if (ret < 0) {
     ldout(cct, 0) << "ERROR: failed to sign request" << dendl;
     return ret;

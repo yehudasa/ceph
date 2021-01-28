@@ -3115,13 +3115,13 @@ public:
     SIProvider_REST *sip = nullptr;
 
     if (remote_provider_name) {
-      sip = new SIProvider_REST_SingleType(cct, this,
+      sip = new SIProvider_REST_SingleType(dpp(), this,
                                             c->sip, &http_manager,
                                             *remote_provider_name,
                                             instance,
                                             type_provider);
     } else {
-      sip = new SIProvider_REST_SingleType(cct, this,
+      sip = new SIProvider_REST_SingleType(dpp(), this,
                                            c->sip, &http_manager,
                                            *data_type,
                                            *stage_type,
@@ -3130,7 +3130,7 @@ public:
     }
 
     if (sip) {
-      int r = sip->init();
+      int r = sip->init(dpp());
       if (r < 0) {
         cerr << "ERROR: failed to initialize sip" << std::endl;
         delete sip;
@@ -3169,7 +3169,7 @@ RGWRESTConn *get_source_conn(CephContext *cct,
 
   auto remote_id = *endpoint;
 
-  return remote_ctl->create_conn(remote_id, endpoints, k, opt_region);
+  return remote_ctl->create_conn(dpp(), remote_id, endpoints, k, opt_region);
 }
 
 static std::shared_ptr<SIProvider::TypeHandlerProvider> get_sip_type_handler(std::optional<string> opt_sip_type,
@@ -3232,9 +3232,10 @@ int find_sip_provider(std::optional<string> opt_sip,
                                          sip_type_handler));
   } else {
     if (opt_sip) {
-      *provider = store->ctl()->si.mgr->find_sip(*opt_sip, opt_sip_instance);
+      *provider = store->ctl()->si.mgr->find_sip(dpp(), *opt_sip, opt_sip_instance);
     } else {
-      *provider = store->ctl()->si.mgr->find_sip_by_type(*opt_sip_data_type,
+      *provider = store->ctl()->si.mgr->find_sip_by_type(dpp(),
+                                                         *opt_sip_data_type,
                                                          *opt_sip_stage_type,
                                                          opt_sip_instance);
     }
@@ -3245,7 +3246,7 @@ int find_sip_provider(std::optional<string> opt_sip,
     return -ENOENT;
   }
 
-  const auto& stages = (*provider)->get_info().stages;
+  const auto& stages = (*provider)->get_info(dpp()).stages;
   if (stages.empty()) {
     cerr << "ERROR: provider has no stages" << std::endl;
     return -EIO;
@@ -9312,7 +9313,7 @@ next:
     }
 
     auto num_shards = g_conf()->rgw_data_log_num_shards;
-    ret = crs.run(create_admin_data_log_trim_cr(store, &http, num_shards));
+    ret = crs.run(create_admin_data_log_trim_cr(dpp(), store, &http, num_shards));
     if (ret < 0) {
       cerr << "automated datalog trim failed with " << cpp_strerror(ret) << std::endl;
       return -ret;
@@ -9968,7 +9969,7 @@ next:
 
    {
      Formatter::ObjectSection top_section(*formatter, "result");
-     encode_json("info", provider->get_info(), formatter.get());
+     encode_json("info", provider->get_info(dpp()), formatter.get());
    }
    formatter->flush(cout);
  }
@@ -9995,7 +9996,7 @@ next:
    auto stage_id = opt_stage_id.value_or(found_sid);
 
    SIProvider::StageInfo stage_info;
-   r = provider->get_stage_info(stage_id, &stage_info);
+   r = provider->get_stage_info(dpp(), stage_id, &stage_info);
    if (r < 0) {
      cerr << "ERROR: could not get stage info for sid=" << stage_id << ": " << cpp_strerror(-r) << std::endl;
      return -r;
@@ -10016,7 +10017,7 @@ next:
    }
 
    SIProvider::fetch_result result;
-   r = provider->fetch(stage_id, shard_id, marker,  max_entries, &result);
+   r = provider->fetch(dpp(), stage_id, shard_id, marker,  max_entries, &result);
    if (r < 0) {
      cerr << "ERROR: failed to fetch entries: " << cpp_strerror(-r) << std::endl;
      return -r;
@@ -10070,7 +10071,7 @@ next:
    }
 
    auto stage_id = opt_stage_id.value_or(found_sid);
-   r = provider->trim(stage_id, shard_id, marker);
+   r = provider->trim(dpp(), stage_id, shard_id, marker);
    if (r < 0) {
      cerr << "ERROR: failed to trim sync info provider: " << cpp_strerror(-r) << std::endl;
      return -r;
@@ -10102,7 +10103,7 @@ next:
    auto stage_id = opt_stage_id.value_or(found_sid);
 
    SIProvider::StageInfo stage_info;
-   r = provider->get_stage_info(stage_id, &stage_info);
+   r = provider->get_stage_info(dpp(), stage_id, &stage_info);
    if (r < 0) {
      cerr << "ERROR: could not get stage info for sid=" << stage_id << ": " << cpp_strerror(-r) << std::endl;
      return -r;
@@ -10116,7 +10117,7 @@ next:
        return EINVAL;
      }
    }
-   r = provider->get_cur_state(stage_id, shard_id, &marker, &timestamp, &disabled, null_yield);
+   r = provider->get_cur_state(dpp(), stage_id, shard_id, &marker, &timestamp, &disabled, null_yield);
    if (r < 0) {
      cerr << "ERROR: failed to trim sync info provider: " << cpp_strerror(-r) << std::endl;
      return -r;
@@ -10166,7 +10167,7 @@ next:
    auto stage_id = opt_stage_id.value_or(found_sid);
 
    SIProvider::StageInfo stage_info;
-   r = provider->get_stage_info(stage_id, &stage_info);
+   r = provider->get_stage_info(dpp(), stage_id, &stage_info);
    if (r < 0) {
      cerr << "ERROR: could not get stage info for sid=" << stage_id << ": " << cpp_strerror(-r) << std::endl;
      return -r;
@@ -10240,7 +10241,7 @@ next:
    auto stage_id = opt_stage_id.value_or(found_sid);
 
    SIProvider::StageInfo stage_info;
-   r = provider->get_stage_info(stage_id, &stage_info);
+   r = provider->get_stage_info(dpp(), stage_id, &stage_info);
    if (r < 0) {
      cerr << "ERROR: could not get stage info for sid=" << stage_id << ": " << cpp_strerror(-r) << std::endl;
      return -r;
@@ -10307,7 +10308,7 @@ next:
    auto stage_id = opt_stage_id.value_or(found_sid);
 
    SIProvider::StageInfo stage_info;
-   r = provider->get_stage_info(stage_id, &stage_info);
+   r = provider->get_stage_info(dpp(), stage_id, &stage_info);
    if (r < 0) {
      cerr << "ERROR: could not get stage info for sid=" << stage_id << ": " << cpp_strerror(-r) << std::endl;
      return -r;

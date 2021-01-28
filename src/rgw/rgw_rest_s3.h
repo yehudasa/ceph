@@ -1080,10 +1080,12 @@ public:
 };
 
 class AWSSignerV4 {
+  const DoutPrefixProvider *dpp;
   CephContext *cct;
 
 public:
-  AWSSignerV4(CephContext *_cct) : cct(_cct) {}
+  AWSSignerV4(const DoutPrefixProvider *_dpp) : dpp(_dpp),
+                                                cct(_dpp->get_cct()) {}
 
   using access_key_id_t = std::string_view;
   using string_to_sign_t = AWSEngine::VersionAbstractor::string_to_sign_t;
@@ -1092,7 +1094,7 @@ public:
   struct prepare_result_t;
 
   using signature_factory_t = \
-      std::function<signature_headers_t(CephContext* cct,
+      std::function<signature_headers_t(const DoutPrefixProvider* dpp,
                                         const std::string& secret_key,
                                         const prepare_result_t&)>;
 
@@ -1114,7 +1116,7 @@ public:
 
 
 extern AWSSignerV4::signature_headers_t
-gen_v4_signature(CephContext* const cct,
+gen_v4_signature(const DoutPrefixProvider *dpp,
                  const std::string_view& secret_key,
                  const AWSSignerV4::prepare_result_t& sig_info);
 

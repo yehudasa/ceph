@@ -294,6 +294,26 @@ void RGWIOProvider::assign_io(RGWIOIDProvider& io_id_provider, int io_type)
   }
 }
 
+RGWHTTPClient::RGWHTTPClient(CephContext *cct,
+                             const string& _method,
+                             const string& _url)
+    : NoDoutPrefix(cct, dout_subsys),
+      has_send_len(false),
+      http_status(HTTP_STATUS_NOSTATUS),
+      req_data(nullptr),
+      verify_ssl(cct->_conf->rgw_verify_ssl),
+      cct(cct),
+      method(_method),
+      url(_url) {
+  init();
+}
+
+std::ostream& RGWHTTPClient::gen_prefix(std::ostream& out) const
+{
+  out << "http_client[" << method << "/" << url << "]";
+  return out;
+}
+
 void RGWHTTPClient::init()
 {
   auto pos = url.find("://");

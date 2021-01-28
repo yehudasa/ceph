@@ -5261,14 +5261,16 @@ AWSSignerV4::prepare(const std::string& access_key_id,
                                          std::move(canonical_qs),
                                          std::move(canonical_headers),
                                          signed_hdrs,
-                                         exp_payload_hash);
+                                         exp_payload_hash,
+                                         dpp);
 
   auto string_to_sign = \
     rgw::auth::s3::get_v4_string_to_sign(cct,
                                          AWS4_HMAC_SHA256_STR,
                                          date,
                                          credential_scope,
-                                         std::move(canonical_req_hash));
+                                         std::move(canonical_req_hash),
+                                         dpp);
 
   const auto sig_factory = gen_v4_signature;
 
@@ -5298,14 +5300,15 @@ AWSSignerV4::prepare(const std::string& access_key_id,
 }
 
 AWSSignerV4::signature_headers_t
-gen_v4_signature(CephContext* const cct,
+gen_v4_signature(const DoutPrefixProvider *dpp,
                  const std::string_view& secret_key,
                  const AWSSignerV4::prepare_result_t& sig_info)
 {
   auto signature = rgw::auth::s3::get_v4_signature(sig_info.scope,
-                                                   cct,
+                                                   dpp->get_cct(),
                                                    secret_key,
-                                                   sig_info.string_to_sign);
+                                                   sig_info.string_to_sign,
+                                                   dpp);
   AWSSignerV4::signature_headers_t result;
 
   for (auto& entry : sig_info.extra_headers) {
