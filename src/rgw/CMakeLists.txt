@@ -362,7 +362,8 @@ install(TARGETS radosgwd DESTINATION bin)
 set(radosgw_admin_srcs
   rgw_admin.cc
   rgw_sync_checkpoint.cc
-  rgw_orphan.cc)
+  rgw_orphan.cc
+  rgw_admin_copy.cc)
 add_executable(radosgw-admin ${radosgw_admin_srcs})
 target_link_libraries(radosgw-admin ${rgw_libs} librados
   cls_rgw_client cls_otp_client cls_lock_client cls_refcount_client

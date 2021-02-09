@@ -60,6 +60,7 @@ extern "C" {
 #include "rgw_bucket_sync.h"
 #include "rgw_sync_checkpoint.h"
 #include "rgw_lua.h"
+#include "rgw_admin_copy.h"
 
 #include "services/svc_sync_modules.h"
 #include "services/svc_cls.h"
@@ -619,6 +620,7 @@ enum class OPT {
   BUCKET_RESHARD,
   BUCKET_CHOWN,
   BUCKET_RADOS_LIST,
+  BUCKET_COPY,
   POLICY,
   POOL_ADD,
   POOL_RM,
@@ -826,6 +828,7 @@ static SimpleCmd::Commands all_cmds = {
   { "bucket chown", OPT::BUCKET_CHOWN },
   { "bucket radoslist", OPT::BUCKET_RADOS_LIST },
   { "bucket rados list", OPT::BUCKET_RADOS_LIST },
+  { "bucket copy", OPT::BUCKET_COPY },
   { "policy", OPT::POLICY },
   { "pool add", OPT::POOL_ADD },
   { "pool rm", OPT::POOL_RM },
@@ -5586,9 +5589,12 @@ int main(int argc, const char **argv)
   }
 
   // RGWUser to use for user operations
+  // When BUCKET_COPY, the access_key is provided in order to fetch objects from the remote zone,
+  // and it is not related to local user.
   RGWUser user;
   int ret = 0;
-  if (!(user_id.empty() && access_key.empty()) || !subuser.empty()) {
+  if ((opt_cmd != OPT::BUCKET_COPY) && \
+      (!(user_id.empty() && access_key.empty()) || !subuser.empty())) {
     ret = user.init(dpp(), store, user_op, null_yield);
     if (ret < 0) {
       cerr << "user.init failed: " << cpp_strerror(-ret) << std::endl;
@@ -6225,6 +6231,49 @@ int main(int argc, const char **argv)
     if (r < 0) {
       cerr << "failure: " << cpp_strerror(-r) << ": " << err << std::endl;
       return -r;
+    }
+  }
+
+  if (opt_cmd == OPT::BUCKET_COPY) {
+    if (bucket_name.empty()) {
+      cerr << "ERROR: bucket not specified" << std::endl;
+      return EINVAL;
+    }
+    if (endpoints.empty()) {
+      cerr << "ERROR: --endpoints must be provided." << std::endl;
+      return EINVAL;
+    }
+    if (access_key.empty() || secret_key.empty()) {
+      cerr << "ERROR: --access-key and --secret must be provided." << std::endl;
+      return -EINVAL;
+    }
+
+    RGWAccessKey key;
+    key.id = access_key;
+    key.key = secret_key;
+
+    string tenant;
+    string bucket_id;
+    RGWBucketInfo bucket_info;
+    rgw_bucket bucket;
+
+    int ret = init_bucket(tenant, bucket_name, bucket_id, bucket_info, bucket);
+    if (ret < 0) {
+      cerr << "ERROR: could not init bucket: " << cpp_strerror(-ret) << std::endl;
+      return -ret;
+    }
+
+    ret = copy_remote_bucket(store,
+			     bucket_info,
+			     bucket,
+			     tenant,
+			     bucket_name,
+			     endpoints,
+			     key);
+
+    if (ret < 0) {
+      cerr << "ERROR: could not copy bucket: " << cpp_strerror(-ret) << std::endl;
+      return -ret;
     }
   }
 
