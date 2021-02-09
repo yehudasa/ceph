@@ -22,7 +22,9 @@ void ObjEntry::decode_xml(XMLObj *obj)
   RGWXMLDecoder::decode_xml("Key", key, obj, true);
   RGWXMLDecoder::decode_xml("ETag", etag, obj, true);
   RGWXMLDecoder::decode_xml("Size", size, obj, true);
-  RGWXMLDecoder::decode_xml("Owner", owner, obj, true);
+
+  // The owner field is not present in listV2 by default.
+  RGWXMLDecoder::decode_xml("Owner", owner, obj, false);
 
   string mtime_str;
   RGWXMLDecoder::decode_xml("LastModified", mtime_str, obj, true);
@@ -38,59 +40,75 @@ void ObjEntry::dump_xml(Formatter *f) const
   f->dump_string("Key", key);
   f->dump_string("ETag", etag);
   f->dump_int("Size", size);
-  f->open_array_section("Owner");
-  owner.dump_xml(f);
-  f->close_section();
+  if (!owner.id.empty()) {
+    f->open_array_section("Owner");
+    owner.dump_xml(f);
+    f->close_section();
+  }
 
   string mtime_str;
   rgw_to_iso8601(mtime, &mtime_str);
   f->dump_string("LastModified", mtime_str);
 }
 
-void S3ListObjectsResp::decode_xml(XMLObj *obj)
+void S3ListObjectsV2Resp::decode_xml(XMLObj *obj)
 {
-  name.clear();
-  prefix.clear();
-  delimiter.clear();
-  marker.clear();
-  next_marker.clear();
-  max_keys = 0;
-  is_truncated = false;
   common_prefixes.clear();
   contents.clear();
+  continuation_token.clear();
+  delimiter.clear();
+  is_truncated = false;
+  key_count = 0;
+  max_keys = 0;
+  name.clear();
+  next_continuation_token.clear();
+  prefix.clear();
+  start_after.clear();
 
   // mandatory
   RGWXMLDecoder::decode_xml("Name", name, obj, true);
-  RGWXMLDecoder::decode_xml("Prefix", prefix, obj, true);
+  RGWXMLDecoder::decode_xml("KeyCount", key_count, obj, true);
   RGWXMLDecoder::decode_xml("MaxKeys", max_keys, obj, true);
   RGWXMLDecoder::decode_xml("IsTruncated", is_truncated, obj, true);
-  RGWXMLDecoder::decode_xml("Contents", contents, obj, true);
 
   // optional
-  RGWXMLDecoder::decode_xml("Marker", marker, obj, false);
-  RGWXMLDecoder::decode_xml("NextMarker", next_marker, obj, false);
+  RGWXMLDecoder::decode_xml("ContinuationToken", continuation_token, obj, false);
+  RGWXMLDecoder::decode_xml("NextContinuationToken", next_continuation_token, obj, false);
   RGWXMLDecoder::decode_xml("Delimiter", delimiter, obj, false);
+  RGWXMLDecoder::decode_xml("StartAfter", start_after, obj, false);
+  RGWXMLDecoder::decode_xml("Prefix", prefix, obj, false);
   RGWXMLDecoder::decode_xml("CommonPrefixes", common_prefixes, obj, false);
+  // Contents node may not exist when listing with prefix and delimiter.
+  RGWXMLDecoder::decode_xml("Contents", contents, obj, false);
 }
 
-void S3ListObjectsResp::dump_xml(Formatter *f) const
+void S3ListObjectsV2Resp::dump_xml(Formatter *f) const
 {
   f->open_object_section_in_ns("ListBucketResult", XMLNS_AWS_S3);
   f->dump_string("Name", name);
   f->dump_string("Prefix", prefix);
+  f->dump_int("KeyCount", key_count);
   f->dump_int("MaxKeys", max_keys);
-  f->dump_string("Marker", marker);
-  if (is_truncated && !next_marker.empty()) {
-    f->dump_string("NextMarker", next_marker);
+  f->dump_string("IsTruncated", (is_truncated ? "true" : "false"));
+
+  if (!continuation_token.empty()) {
+    f->dump_string("ContinuationToken", continuation_token);
+  }
+  if (!next_continuation_token.empty()) {
+    f->dump_string("NextContinuationToken", next_continuation_token);
   }
   if (!delimiter.empty()) {
     f->dump_string("Delimiter", delimiter);
   }
-  f->dump_string("IsTruncated", (is_truncated ? "true" : "false"));
+  if (!start_after.empty()) {
+    f->dump_string("StartAfter", start_after);
+  }
 
-  for (const auto &c : common_prefixes) {
+  if (!common_prefixes.empty()) {
     f->open_array_section("CommonPrefixes");
-    c.dump_xml(f);
+    for (const auto &c : common_prefixes) {
+      c.dump_xml(f);
+    }
     f->close_section();
   }
 
@@ -103,31 +121,28 @@ void S3ListObjectsResp::dump_xml(Formatter *f) const
   f->close_section();
 }
 
-string S3ListObjectsResp::get_next_marker() const {
-  if (!is_truncated) {
-    return "";
-  }
-
-  if (next_marker.empty()) {
-    return contents.back().key;
-  }
-  return next_marker;
-}
-
-int BucketObjectsLister::get_next(unique_ptr<S3ListObjectsResp> *resp)
+int BucketObjectsLister::get_next(unique_ptr<S3ListObjectsV2Resp> *resp)
 {
   string resource("/" + bucket_name);
   param_vec_t params;
+  params.push_back(param_pair_t("list-type", "2"));
   params.push_back(param_pair_t("max-keys", to_string(max_keys)));
-  if (!marker.empty()) {
-    params.push_back(param_pair_t("marker", marker));
+  params.push_back(param_pair_t("fetch-owner", (fetch_owner ? "true" : "false")));
+  if (!prefix.empty()) {
+    params.push_back(param_pair_t("prefix", prefix));
+  }
+  if (!delimiter.empty()) {
+    params.push_back(param_pair_t("delimiter", delimiter));
+  }
+  if (!continuation_token.empty()) {
+    params.push_back(param_pair_t("continuation-token", continuation_token));
   }
   map<string, string> extra_headers;
   bufferlist in, out;
 
   int ret = conn->get_resource(resource, &params, &extra_headers, out, &in);
   if (ret < 0) {
-    cerr << "ERROR: could not list bucket: " << cpp_strerror(-ret) << std::endl;
+    cerr << "ERROR: could not list objects: " << cpp_strerror(-ret) << std::endl;
     return -ret;
   }
 
@@ -138,16 +153,20 @@ int BucketObjectsLister::get_next(unique_ptr<S3ListObjectsResp> *resp)
   }
 
   if (!parser.parse(out.c_str(), out.length(), 1)) {
-    cerr << "ERROR: could not parse list objects response" << std::endl;
+    cerr << "ERROR: could not parse list-objects-v2 XML response" << std::endl;
     return -ERR_MALFORMED_XML;
   }
 
-  resp->reset(new S3ListObjectsResp);
+  resp->reset(new S3ListObjectsV2Resp);
   try {
     RGWXMLDecoder::decode_xml("ListBucketResult", **resp, &parser);
   } catch (RGWXMLDecoder::err &err) {
-    cerr << "ERROR: could not decode list objects XML response: " << err << std::endl;
+    cerr << "ERROR: could not decode list-objects-v2 XML response: " << err << std::endl;
     return -ERR_MALFORMED_XML;
+  }
+
+  if (!(*resp)->next_continuation_token.empty()) {
+    continuation_token = (*resp)->next_continuation_token;
   }
 
   return 0;
@@ -161,45 +180,41 @@ int copy_remote_bucket(RGWRados *store,
                        const list<string> &endpoints,
                        const RGWAccessKey &key)
 {
-  // Create RGWRESTConn for remote bucket fetching.
-  RGWRESTConn *conn = new RGWRESTConn(store->ctx(),
-                                      nullptr, // RGWSI_Zone *zone_svc
-                                      "", // const string& _remote_id
-                                      endpoints,
-                                      key);
+  // RGWRESTConn for remote bucket fetching.
+  RGWRESTConn *conn = nullptr;
 
   // We need to inject the RGWRESTConn for the remote cluster into the
   // RGWSI_Zone::zone_conn_map, so that RGWRados::fetch_remote_obj can be
   // reused, where it looks for the RGWRESTConn by source_zone when fetching
   // remote objects.
   map<string, RGWRESTConn *> &zone_conn_map = store->svc.zone->get_zone_conn_map();
-  map<string, RGWRESTConn *>::const_iterator it = zone_conn_map.find(SOURCE_ZONE_ID);
-  if (it == zone_conn_map.cend()) {
+  map<string, RGWRESTConn *>::iterator it = zone_conn_map.find(SOURCE_ZONE_ID);
+  if (it != zone_conn_map.cend()) {
+    conn = it->second;
+  } else {
+    conn = new RGWRESTConn(store->ctx(),
+                           nullptr, // RGWSI_Zone *zone_svc
+                           "", // const string& _remote_id
+                           endpoints,
+                           key);
     zone_conn_map[SOURCE_ZONE_ID] = conn;
   }
 
   BucketObjectsLister objLister(conn, bucket_name);
 
   while (true) {
-    unique_ptr<S3ListObjectsResp> listResp;
+    unique_ptr<S3ListObjectsV2Resp> listResp;
     int r = objLister.get_next(&listResp);
     if (r < 0) {
       return r;
     }
 
-    const string &marker = listResp->get_next_marker();
-    if (marker.empty()) {
-      cerr << "INFO: no more objects" << std::endl;
-      return 0;
-    }
-    objLister.set_marker(marker);
-
-    // XMLFormatter formatter(true);
-    // RGWStreamFlusher f(&formatter, cout);
-    // formatter.output_header();
-    // listResp->dump_xml(&formatter);
-    // formatter.output_footer();
-    // f.flush();
+    XMLFormatter formatter(true);
+    RGWStreamFlusher f(&formatter, cout);
+    formatter.output_header();
+    listResp->dump_xml(&formatter);
+    formatter.output_footer();
+    f.flush();
 
     rgw_bucket src_bucket;
     src_bucket.tenant = tenant;
@@ -251,6 +266,10 @@ int copy_remote_bucket(RGWRados *store,
         cerr << "ERROR: could not copy remote object " << k.key << std::endl;
         return r;
       }
+    }
+
+    if (!listResp->is_truncated) {
+      return 0;
     }
   }
 

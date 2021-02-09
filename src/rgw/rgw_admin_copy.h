@@ -17,11 +17,6 @@ public:
   ObjEntry() {}
   ~ObjEntry() {}
 
-  string key;
-  string etag;
-  uint64_t size; // rgw_bucket_dir_entry_meta::accounted_size
-  ceph::real_time mtime;
-
   struct Owner
   {
     string id;
@@ -38,26 +33,21 @@ public:
     } 
   };
 
+  string key;
+  string etag;
+  uint64_t size; // rgw_bucket_dir_entry_meta::accounted_size
+  ceph::real_time mtime;
   Owner owner;
 
   void decode_xml(XMLObj *obj);
   void dump_xml(Formatter *f) const;
 };
 
-class S3ListObjectsResp
+class S3ListObjectsV2Resp
 {
 public:
-  S3ListObjectsResp() {}
-  ~S3ListObjectsResp() {}
-
-  string name;
-  string prefix;
-  string delimiter;
-  string marker;
-  string next_marker;
-  uint64 max_keys;
-  bool is_truncated;
-  vector<ObjEntry> contents;
+  S3ListObjectsV2Resp() {}
+  ~S3ListObjectsV2Resp() {}
 
   struct CommonPrefix
   {
@@ -73,39 +63,55 @@ public:
   };
 
   vector<CommonPrefix> common_prefixes;
+  vector<ObjEntry> contents;
+  string continuation_token;
+  string delimiter;
+  bool is_truncated;
+  uint32_t key_count;
+  uint32_t max_keys;
+  string name;
+  string next_continuation_token;
+  string prefix;
+  string start_after;
 
   void decode_xml(XMLObj *obj);
   void dump_xml(Formatter *f) const;
-
-  string get_next_marker() const;
 };
 
 class BucketObjectsLister
 {
 protected:
-  RGWRESTConn *conn;
+  RGWRESTConn *conn{nullptr};
 
   string bucket_name;
-  uint64_t max_keys;
+  string prefix;
+  string delimiter;
+  string start_after;
+  uint32_t max_keys;
+  bool fetch_owner;
 
 private:
-  string marker;
+  string continuation_token;
 
 public:
   BucketObjectsLister(RGWRESTConn *_conn,
 		      const string &_bucket_name,
-		      uint64_t _max_keys = LIST_OBJECTS_MAX_KEYS):
+		      const string &_prefix = "",
+		      const string &_delimiter = "",
+		      const string &_start_after = "",
+		      uint32_t _max_keys = LIST_OBJECTS_MAX_KEYS,
+		      bool _fetch_owner = false):
     conn(_conn),
     bucket_name(_bucket_name),
-    max_keys(_max_keys) {}
+    prefix(_prefix),
+    delimiter(_delimiter),
+    start_after(_start_after),
+    max_keys(_max_keys),
+    fetch_owner(_fetch_owner) {}
 
   ~BucketObjectsLister() {}
 
-  void set_marker(const string &_marker) {
-    marker = _marker;
-  }
-
-  int get_next(unique_ptr<S3ListObjectsResp> *resp);
+  int get_next(unique_ptr<S3ListObjectsV2Resp> *resp);
 };
 
 int copy_remote_bucket(RGWRados *store,
