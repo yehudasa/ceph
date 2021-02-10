@@ -9,7 +9,11 @@
 #include "common/Formatter.h"
 #include "common/errno.h"
 
-#define LIST_OBJECTS_MAX_KEYS 100
+// It can be any non-existing zone ID.
+#define DO_SOURCE_ZONE_ID "do_source_zone"
+#define DO_LIST_OBJECTS_MAX_KEYS 100
+
+namespace DO {
 
 class ObjEntry
 {
@@ -99,7 +103,7 @@ public:
                       const string &_start_after = "",
                       const string &_prefix = "",
                       const string &_delimiter = "",
-                      uint32_t _max_keys = LIST_OBJECTS_MAX_KEYS,
+                      uint32_t _max_keys = DO_LIST_OBJECTS_MAX_KEYS,
                       bool _fetch_owner = false):
     conn(_conn),
     bucket_name(_bucket_name),
@@ -123,5 +127,7 @@ int copy_remote_bucket(RGWRados *store,
                        const string &object_prefix,
                        const list<string> &endpoints,
                        const RGWAccessKey &key);
+
+}
 
 #endif /*RGW_ADMIN_COPY_H */

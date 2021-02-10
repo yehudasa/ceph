@@ -6269,15 +6269,15 @@ int main(int argc, const char **argv)
       return -ret;
     }
 
-    ret = copy_remote_bucket(store,
-			     bucket_info,
-			     bucket,
-			     tenant,
-			     bucket_name,
-			     start_after,
-			     object_prefix,
-			     endpoints,
-			     key);
+    ret = DO::copy_remote_bucket(store,
+				 bucket_info,
+				 bucket,
+				 tenant,
+				 bucket_name,
+				 start_after,
+				 object_prefix,
+				 endpoints,
+				 key);
 
     if (ret < 0) {
       cerr << "ERROR: could not copy bucket: " << cpp_strerror(-ret) << std::endl;

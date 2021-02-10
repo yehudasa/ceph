@@ -8,10 +8,7 @@
 #include "rgw_rest_conn.h"
 #include "rgw_admin_copy.h"
 
-// It can be any non-existing zone ID.
-#define SOURCE_ZONE_ID "dummy_source_zone"
-
-void ObjEntry::decode_xml(XMLObj *obj)
+void DO::ObjEntry::decode_xml(XMLObj *obj)
 {
   key.clear();
   etag.clear();
@@ -35,7 +32,7 @@ void ObjEntry::decode_xml(XMLObj *obj)
   mtime = *date;
 }
 
-void ObjEntry::dump_xml(Formatter *f) const
+void DO::ObjEntry::dump_xml(Formatter *f) const
 {
   f->dump_string("Key", key);
   f->dump_string("ETag", etag);
@@ -51,7 +48,7 @@ void ObjEntry::dump_xml(Formatter *f) const
   f->dump_string("LastModified", mtime_str);
 }
 
-void S3ListObjectsV2Resp::decode_xml(XMLObj *obj)
+void DO::S3ListObjectsV2Resp::decode_xml(XMLObj *obj)
 {
   common_prefixes.clear();
   contents.clear();
@@ -82,7 +79,7 @@ void S3ListObjectsV2Resp::decode_xml(XMLObj *obj)
   RGWXMLDecoder::decode_xml("Contents", contents, obj, false);
 }
 
-void S3ListObjectsV2Resp::dump_xml(Formatter *f) const
+void DO::S3ListObjectsV2Resp::dump_xml(Formatter *f) const
 {
   f->open_object_section_in_ns("ListBucketResult", XMLNS_AWS_S3);
   f->dump_string("Name", name);
@@ -121,7 +118,7 @@ void S3ListObjectsV2Resp::dump_xml(Formatter *f) const
   f->close_section();
 }
 
-int BucketObjectsLister::get_next(unique_ptr<S3ListObjectsV2Resp> *resp)
+int DO::BucketObjectsLister::get_next(unique_ptr<S3ListObjectsV2Resp> *resp)
 {
   string resource("/" + bucket_name);
   param_vec_t params;
@@ -175,15 +172,15 @@ int BucketObjectsLister::get_next(unique_ptr<S3ListObjectsV2Resp> *resp)
   return 0;
 }
 
-int copy_remote_bucket(RGWRados *store,
-                       RGWBucketInfo &dest_bucket_info,
-                       rgw_bucket &dest_bucket,
-                       const string &tenant,
-                       const string &bucket_name,
-                       const string &start_after,
-                       const string &object_prefix,
-                       const list<string> &endpoints,
-                       const RGWAccessKey &key)
+int DO::copy_remote_bucket(RGWRados *store,
+                           RGWBucketInfo &dest_bucket_info,
+                           rgw_bucket &dest_bucket,
+                           const string &tenant,
+                           const string &bucket_name,
+                           const string &start_after,
+                           const string &object_prefix,
+                           const list<string> &endpoints,
+                           const RGWAccessKey &key)
 {
   // RGWRESTConn for remote bucket fetching.
   RGWRESTConn *conn = nullptr;
@@ -193,7 +190,7 @@ int copy_remote_bucket(RGWRados *store,
   // reused, where it looks for the RGWRESTConn by source_zone when fetching
   // remote objects.
   map<string, RGWRESTConn *> &zone_conn_map = store->svc.zone->get_zone_conn_map();
-  map<string, RGWRESTConn *>::iterator it = zone_conn_map.find(SOURCE_ZONE_ID);
+  map<string, RGWRESTConn *>::iterator it = zone_conn_map.find(DO_SOURCE_ZONE_ID);
   if (it != zone_conn_map.cend()) {
     conn = it->second;
   } else {
@@ -202,15 +199,15 @@ int copy_remote_bucket(RGWRados *store,
                            "", // const string& _remote_id
                            endpoints,
                            key);
-    zone_conn_map[SOURCE_ZONE_ID] = conn;
+    zone_conn_map[DO_SOURCE_ZONE_ID] = conn;
   }
 
-  BucketObjectsLister lister(conn, bucket_name, start_after, object_prefix);
+  DO::BucketObjectsLister lister(conn, bucket_name, start_after, object_prefix);
 
   uint64_t count = 0;
   int r = 0;
   while (true) {
-    unique_ptr<S3ListObjectsV2Resp> listResp;
+    unique_ptr<DO::S3ListObjectsV2Resp> listResp;
     r = lister.get_next(&listResp);
     if (r < 0) {
       return r;
@@ -244,7 +241,7 @@ int copy_remote_bucket(RGWRados *store,
       r = store->fetch_remote_obj(obj_ctx,
                                   user_id,
                                   NULL,
-                                  SOURCE_ZONE_ID,
+                                  DO_SOURCE_ZONE_ID,
                                   dest_obj,
                                   src_obj,
                                   dest_bucket_info,
