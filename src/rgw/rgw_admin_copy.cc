@@ -134,6 +134,9 @@ int BucketObjectsLister::get_next(unique_ptr<S3ListObjectsV2Resp> *resp)
   if (!delimiter.empty()) {
     params.push_back(param_pair_t("delimiter", delimiter));
   }
+  if (!start_after.empty()) {
+    params.push_back(param_pair_t("start-after", start_after));
+  }
   if (!continuation_token.empty()) {
     params.push_back(param_pair_t("continuation-token", continuation_token));
   }
@@ -177,6 +180,8 @@ int copy_remote_bucket(RGWRados *store,
                        rgw_bucket &dest_bucket,
                        const string &tenant,
                        const string &bucket_name,
+                       const string &start_after,
+                       const string &object_prefix,
                        const list<string> &endpoints,
                        const RGWAccessKey &key)
 {
@@ -200,11 +205,13 @@ int copy_remote_bucket(RGWRados *store,
     zone_conn_map[SOURCE_ZONE_ID] = conn;
   }
 
-  BucketObjectsLister objLister(conn, bucket_name);
+  BucketObjectsLister lister(conn, bucket_name, start_after, object_prefix);
 
+  uint64_t count = 0;
+  int r = 0;
   while (true) {
     unique_ptr<S3ListObjectsV2Resp> listResp;
-    int r = objLister.get_next(&listResp);
+    r = lister.get_next(&listResp);
     if (r < 0) {
       return r;
     }
@@ -220,11 +227,11 @@ int copy_remote_bucket(RGWRados *store,
     src_bucket.tenant = tenant;
     src_bucket.name = bucket_name;
 
-    for (const auto &k : listResp->contents) {
-      cerr << "INFO: copy remote object " << k.key << std::endl;
+    for (const auto &obj : listResp->contents) {
+      cerr << "INFO: copy remote object " << obj.key << std::endl;
 
-      rgw_obj src_obj(src_bucket, k.key);
-      rgw_obj dest_obj(dest_bucket, k.key);
+      rgw_obj src_obj(src_bucket, obj.key);
+      rgw_obj dest_obj(dest_bucket, obj.key);
 
       RGWObjectCtx obj_ctx(store);
       string user_id;
@@ -263,15 +270,19 @@ int copy_remote_bucket(RGWRados *store,
                                   NULL, /* rgw_zone_set *zones_trace */
                                   &bytes_transferred);
       if (r < 0) {
-        cerr << "ERROR: could not copy remote object " << k.key << std::endl;
+        cerr << "ERROR: could not copy remote object " << obj.key << std::endl;
         return r;
       }
+
+      count++;
     }
 
     if (!listResp->is_truncated) {
-      return 0;
+      break;
     }
   }
+
+  cerr << "INFO: successfully copied " << count << " objects" << std::endl;
 
   return 0;
 }

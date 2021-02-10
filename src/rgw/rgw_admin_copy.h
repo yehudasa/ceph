@@ -30,7 +30,7 @@ public:
     void dump_xml(Formatter *f) const {
       f->dump_string("ID", id);
       f->dump_string("DisplayName", display_name);
-    } 
+    }
   };
 
   string key;
@@ -84,9 +84,9 @@ protected:
   RGWRESTConn *conn{nullptr};
 
   string bucket_name;
+  string start_after;
   string prefix;
   string delimiter;
-  string start_after;
   uint32_t max_keys;
   bool fetch_owner;
 
@@ -95,17 +95,17 @@ private:
 
 public:
   BucketObjectsLister(RGWRESTConn *_conn,
-		      const string &_bucket_name,
-		      const string &_prefix = "",
-		      const string &_delimiter = "",
-		      const string &_start_after = "",
-		      uint32_t _max_keys = LIST_OBJECTS_MAX_KEYS,
-		      bool _fetch_owner = false):
+                      const string &_bucket_name,
+                      const string &_start_after = "",
+                      const string &_prefix = "",
+                      const string &_delimiter = "",
+                      uint32_t _max_keys = LIST_OBJECTS_MAX_KEYS,
+                      bool _fetch_owner = false):
     conn(_conn),
     bucket_name(_bucket_name),
+    start_after(_start_after),
     prefix(_prefix),
     delimiter(_delimiter),
-    start_after(_start_after),
     max_keys(_max_keys),
     fetch_owner(_fetch_owner) {}
 
@@ -119,6 +119,8 @@ int copy_remote_bucket(RGWRados *store,
                        rgw_bucket &dest_bucket,
                        const string &tenant,
                        const string &bucket_name,
+                       const string &start_after,
+                       const string &object_prefix,
                        const list<string> &endpoints,
                        const RGWAccessKey &key);
 
