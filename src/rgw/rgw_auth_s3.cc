@@ -508,10 +508,11 @@ static string to_scope_date(const real_time& t)
 }
 
 string gen_v4_scope(const ceph::real_time& timestamp,
-                    const string& region)
+                    const string& region,
+                    const string& service)
 {
 
-  return to_scope_date(timestamp) + "/" + region + "/s3/aws4_request";
+  return to_scope_date(timestamp) + "/" + region + "/" + service + "/aws4_request";
 }
 
 std::string get_v4_canonical_qs(const req_info& info, const bool using_qs)
