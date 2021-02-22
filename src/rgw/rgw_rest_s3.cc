@@ -5023,6 +5023,7 @@ int RGWHandler_REST_S3Website::serve_errordoc(const DoutPrefixProvider *dpp, int
     return -1; // Trigger double error handler
   }
   getop->init(store, s, this);
+  getop->is_errordoc_request = true;
   getop->range_str = NULL;
   getop->if_mod = NULL;
   getop->if_unmod = NULL;
