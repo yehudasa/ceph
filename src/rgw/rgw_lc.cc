@@ -1690,7 +1690,7 @@ int RGWLC::reset_status(LCWorker* worker) {
 }
 
 int RGWLC::reset_shard_status(string shard_oid, LCWorker* worker) {
-  int ret;
+  int ret = 0;
   utime_t now = ceph_clock_now();
 
   rgw::sal::LCSerializer* lock = sal_lc->get_serializer(lc_index_lock_name,
@@ -1762,7 +1762,7 @@ int RGWLC::prune_entries(LCWorker* worker)
 }
 
 int RGWLC::prune_shard_entries(string shard_oid, LCWorker* worker) {
-  int ret;
+  int ret = 0;
   rgw::sal::LCSerializer* lock = sal_lc->get_serializer(lc_index_lock_name,
 							shard_oid,
 							std::string());
@@ -1815,7 +1815,7 @@ int RGWLC::prune_shard_entries(string shard_oid, LCWorker* worker) {
 }
 
 int RGWLC::prune_set(string shard_oid, vector<rgw::sal::Lifecycle::LCEntry> &entries, LCWorker* worker) {
-  int ret;
+  int ret = 0;
   string shard_id;
   vector<std::string> result;
   map<string, bufferlist> bucket_attrs;
