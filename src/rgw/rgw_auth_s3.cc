@@ -605,7 +605,7 @@ std::string gen_v4_canonical_qs(const req_info& info)
     return string();
   }
 
-  /* Thanks to the early exist we have the guarantee that canonical_qs_map has
+  /* Thanks to the early exit we have the guarantee that canonical_qs_map has
    * at least one element. */
   auto iter = std::begin(canonical_qs_map);
   std::string canonical_qs;
