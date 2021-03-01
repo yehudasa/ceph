@@ -1809,7 +1809,6 @@ void RGWPeriodMap::decode(bufferlist::const_iterator& bl) {
   DECODE_FINISH(bl);
 
   zonegroups_by_api.clear();
-  zonegroups_by_zone.clear();
   for (map<string, RGWZoneGroup>::iterator iter = zonegroups.begin();
        iter != zonegroups.end(); ++iter) {
     RGWZoneGroup& zonegroup = iter->second;
@@ -1819,10 +1818,6 @@ void RGWPeriodMap::decode(bufferlist::const_iterator& bl) {
 
     if (zonegroup.is_master_zonegroup()) {
       master_zonegroup = zonegroup.get_id();
-    }
-
-    for (auto& entry : zonegroup.zones) {
-      zonegroups_by_zone[entry.first].reset(new RGWZoneGroup(zonegroup));
     }
   }
 }
