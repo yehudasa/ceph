@@ -5303,17 +5303,15 @@ AWSSignerV4::prepare(const DoutPrefixProvider *dpp,
    * This means we have absolutely no business in spawning completer. Both
    * aws4_auth_needs_complete and aws4_auth_streaming_mode are set to false
    * by default. We don't need to change that. */
-  if (true /* is_v4_payload_unsigned(exp_payload_hash) || is_v4_payload_empty(s) || is_non_s3_op */) {
-    return {
-      access_key_id,
-      date,
-      credential_scope,
-      std::move(signed_hdrs),
-      std::move(string_to_sign),
-      std::move(extra_headers),
-      sig_factory,
-    };
-  }
+  return {
+    access_key_id,
+    date,
+    credential_scope,
+    std::move(signed_hdrs),
+    std::move(string_to_sign),
+    std::move(extra_headers),
+    sig_factory,
+  };
 }
 
 AWSSignerV4::signature_headers_t
