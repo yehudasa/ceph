@@ -11,7 +11,6 @@
 
 // It can be any non-existing zone ID.
 #define DO_SOURCE_ZONE_ID "do_source_zone"
-#define DO_LIST_OBJECTS_MAX_KEYS 100
 
 namespace DO {
 
@@ -91,7 +90,6 @@ protected:
   string start_after;
   string prefix;
   string delimiter;
-  uint32_t max_keys;
   bool fetch_owner;
 
 private:
@@ -103,19 +101,17 @@ public:
                       const string &_start_after = "",
                       const string &_prefix = "",
                       const string &_delimiter = "",
-                      uint32_t _max_keys = DO_LIST_OBJECTS_MAX_KEYS,
                       bool _fetch_owner = false):
     conn(_conn),
     bucket_name(_bucket_name),
     start_after(_start_after),
     prefix(_prefix),
     delimiter(_delimiter),
-    max_keys(_max_keys),
     fetch_owner(_fetch_owner) {}
 
   ~BucketObjectsLister() {}
 
-  int get_next(unique_ptr<S3ListObjectsV2Resp> *resp);
+  int get_next(unique_ptr<S3ListObjectsV2Resp> *resp, uint64_t max_keys);
 };
 
 int copy_remote_bucket(RGWRados *store,

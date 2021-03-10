@@ -7578,6 +7578,17 @@ std::vector<Option> get_rgw_options() {
     Option("rgw_interpret_storage_class_header", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(false)
     .set_description("interpret the x-amz-storage-class header"),
+
+    Option("rgw_bucket_copy_batch_num", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(100)
+    .set_min_max(1, 10000)
+    .set_description("maximum number of objects that can be listed "
+		     "from the remote bucket on each batch"),
+
+    Option("rgw_bucket_copy_obj_sleep", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
+    .set_default(0.1)
+    .set_description("sleep seconds before copying the next object "
+		     "from the remote bucket"),
   });
 }
 

@@ -118,7 +118,7 @@ void DO::S3ListObjectsV2Resp::dump_xml(Formatter *f) const
   f->close_section();
 }
 
-int DO::BucketObjectsLister::get_next(unique_ptr<S3ListObjectsV2Resp> *resp)
+int DO::BucketObjectsLister::get_next(unique_ptr<S3ListObjectsV2Resp> *resp, uint64_t max_keys)
 {
   string resource("/" + bucket_name);
   param_vec_t params;
@@ -208,7 +208,8 @@ int DO::copy_remote_bucket(RGWRados *store,
   int r = 0;
   while (true) {
     unique_ptr<DO::S3ListObjectsV2Resp> listResp;
-    r = lister.get_next(&listResp);
+    auto copy_batch_num = g_conf().get_val<uint64_t>("rgw_bucket_copy_batch_num");
+    r = lister.get_next(&listResp, copy_batch_num);
     if (r < 0) {
       return r;
     }
@@ -272,6 +273,13 @@ int DO::copy_remote_bucket(RGWRados *store,
       }
 
       count++;
+
+      utime_t obj_sleep;
+      obj_sleep.set_from_double(g_conf().get_val<double>("rgw_bucket_copy_obj_sleep"));
+      if (obj_sleep != utime_t()) {
+	cerr << "INFO: sleeping for " << obj_sleep << std::endl;
+	obj_sleep.sleep();
+      }
     }
 
     if (!listResp->is_truncated) {
