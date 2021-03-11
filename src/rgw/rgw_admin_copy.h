@@ -1,4 +1,4 @@
-// -*- mode:C++; tab-width:8; c-basic-offset:2; indent-tabs-mode:t -*-
+// -*- mode:C++; tab-width:8; c-basic-offset:2; indent-tabs-mode:nil -*-
 // vim: ts=8 sw=2 smarttab
 
 #ifndef RGW_ADMIN_COPY_H
@@ -10,15 +10,15 @@
 #include "common/errno.h"
 
 // It can be any non-existing zone ID.
-#define DO_SOURCE_ZONE_ID "do_source_zone"
+#define DO_BUCKET_COPY_SOURCE_ZONE_ID "do_bucket_copy_source_zone"
 
 namespace DO {
 
-class ObjEntry
+class S3ListObjectsV2Entry
 {
 public:
-  ObjEntry() {}
-  ~ObjEntry() {}
+  S3ListObjectsV2Entry() {}
+  ~S3ListObjectsV2Entry() {}
 
   struct Owner
   {
@@ -38,7 +38,7 @@ public:
 
   string key;
   string etag;
-  uint64_t size; // rgw_bucket_dir_entry_meta::accounted_size
+  uint64_t size{0}; // rgw_bucket_dir_entry_meta::accounted_size
   ceph::real_time mtime;
   Owner owner;
 
@@ -66,12 +66,12 @@ public:
   };
 
   vector<CommonPrefix> common_prefixes;
-  vector<ObjEntry> contents;
+  vector<S3ListObjectsV2Entry> contents;
   string continuation_token;
   string delimiter;
   bool is_truncated;
-  uint32_t key_count;
-  uint32_t max_keys;
+  uint32_t key_count{0};
+  uint32_t max_keys{0};
   string name;
   string next_continuation_token;
   string prefix;
@@ -92,6 +92,8 @@ protected:
   string delimiter;
   bool fetch_owner;
 
+  bool allow_unordered;
+
 private:
   string continuation_token;
 
@@ -101,17 +103,47 @@ public:
                       const string &_start_after = "",
                       const string &_prefix = "",
                       const string &_delimiter = "",
-                      bool _fetch_owner = false):
+                      bool _fetch_owner = false,
+                      bool _allow_unordered = false):
     conn(_conn),
     bucket_name(_bucket_name),
     start_after(_start_after),
     prefix(_prefix),
     delimiter(_delimiter),
-    fetch_owner(_fetch_owner) {}
+    fetch_owner(_fetch_owner),
+    allow_unordered(_allow_unordered) {}
 
   ~BucketObjectsLister() {}
 
-  int get_next(unique_ptr<S3ListObjectsV2Resp> *resp, uint64_t max_keys);
+  string get_continuation_token() const {
+    return continuation_token;
+  }
+
+  int fetch_next(unique_ptr<S3ListObjectsV2Resp> *resp, uint64_t max_keys);
+};
+
+class BucketCopyStats
+{
+public:
+  string bucket;
+
+  uint64_t ok{0};
+  uint64_t not_found{0};
+  uint64_t error{0};
+
+  BucketCopyStats(const string &_bucket):
+    bucket(_bucket) {}
+
+  ~BucketCopyStats() {}
+
+  void dump(Formatter *f) const {
+    f->dump_string("bucket", bucket);
+    f->open_object_section("stats");
+    f->dump_unsigned("ok", ok);
+    f->dump_unsigned("not_found", not_found);
+    f->dump_unsigned("error", error);
+    f->close_section();
+  }
 };
 
 int copy_remote_bucket(RGWRados *store,

@@ -1,14 +1,20 @@
-// -*- mode:C++; tab-width:8; c-basic-offset:2; indent-tabs-mode:t -*-
+// -*- mode:C++; tab-width:8; c-basic-offset:2; indent-tabs-mode:nil -*-
 // vim: ts=8 sw=2 smarttab
 #include <iostream>
 
 #include <boost/optional.hpp>
 
+#include "common/dout.h"
+
 #include "rgw_user.h"
 #include "rgw_rest_conn.h"
 #include "rgw_admin_copy.h"
 
-void DO::ObjEntry::decode_xml(XMLObj *obj)
+#define dout_subsys ceph_subsys_rgw
+#define list_objects_attempts 5
+#define list_objects_retry_sleep_seconds 5
+
+void DO::S3ListObjectsV2Entry::decode_xml(XMLObj *obj)
 {
   key.clear();
   etag.clear();
@@ -32,7 +38,7 @@ void DO::ObjEntry::decode_xml(XMLObj *obj)
   mtime = *date;
 }
 
-void DO::ObjEntry::dump_xml(Formatter *f) const
+void DO::S3ListObjectsV2Entry::dump_xml(Formatter *f) const
 {
   f->dump_string("Key", key);
   f->dump_string("ETag", etag);
@@ -118,7 +124,7 @@ void DO::S3ListObjectsV2Resp::dump_xml(Formatter *f) const
   f->close_section();
 }
 
-int DO::BucketObjectsLister::get_next(unique_ptr<S3ListObjectsV2Resp> *resp, uint64_t max_keys)
+int DO::BucketObjectsLister::fetch_next(unique_ptr<S3ListObjectsV2Resp> *resp, uint64_t max_keys)
 {
   string resource("/" + bucket_name);
   param_vec_t params;
@@ -137,18 +143,20 @@ int DO::BucketObjectsLister::get_next(unique_ptr<S3ListObjectsV2Resp> *resp, uin
   if (!continuation_token.empty()) {
     params.push_back(param_pair_t("continuation-token", continuation_token));
   }
+
+  // RGW internal parameters
+  params.push_back(param_pair_t("allow-unordered", (allow_unordered ? "true" : "false")));
+
   map<string, string> extra_headers;
   bufferlist in, out;
 
   int ret = conn->get_resource(resource, &params, &extra_headers, out, &in);
   if (ret < 0) {
-    cerr << "ERROR: could not list objects: " << cpp_strerror(-ret) << std::endl;
-    return -ret;
+    return ret;
   }
 
   RGWXMLParser parser;
   if (!parser.init()) {
-    cerr << "ERROR: could not init XML parser" << std::endl;
     return -EINVAL;
   }
 
@@ -161,7 +169,7 @@ int DO::BucketObjectsLister::get_next(unique_ptr<S3ListObjectsV2Resp> *resp, uin
   try {
     RGWXMLDecoder::decode_xml("ListBucketResult", **resp, &parser);
   } catch (RGWXMLDecoder::err &err) {
-    cerr << "ERROR: could not decode list-objects-v2 XML response: " << err << std::endl;
+    cerr << "ERROR: could not decode ListBucketResult: " << err << std::endl;
     return -ERR_MALFORMED_XML;
   }
 
@@ -190,43 +198,71 @@ int DO::copy_remote_bucket(RGWRados *store,
   // reused, where it looks for the RGWRESTConn by source_zone when fetching
   // remote objects.
   map<string, RGWRESTConn *> &zone_conn_map = store->svc.zone->get_zone_conn_map();
-  map<string, RGWRESTConn *>::iterator it = zone_conn_map.find(DO_SOURCE_ZONE_ID);
+  map<string, RGWRESTConn *>::iterator it = zone_conn_map.find(DO_BUCKET_COPY_SOURCE_ZONE_ID);
+
+  // Though this should never happen, we ensure it does not already exist.
   if (it != zone_conn_map.cend()) {
-    conn = it->second;
-  } else {
-    conn = new RGWRESTConn(store->ctx(),
-                           nullptr, // RGWSI_Zone *zone_svc
-                           "", // const string& _remote_id
-                           endpoints,
-                           key);
-    zone_conn_map[DO_SOURCE_ZONE_ID] = conn;
+    cerr << "ERROR: source zone " << DO_BUCKET_COPY_SOURCE_ZONE_ID << "already exists" << std::endl;
+    return -EEXIST;
   }
 
-  DO::BucketObjectsLister lister(conn, bucket_name, start_after, object_prefix);
+  conn = new RGWRESTConn(store->ctx(),
+                         nullptr, // RGWSI_Zone *zone_svc
+                         "", // const string& _remote_id
+                         endpoints,
+                         key);
+  zone_conn_map[DO_BUCKET_COPY_SOURCE_ZONE_ID] = conn;
 
-  uint64_t count = 0;
-  int r = 0;
+
+  DO::BucketObjectsLister lister(conn, bucket_name, start_after, object_prefix);
+  DO::BucketCopyStats stats(bucket_name);
+
   while (true) {
-    unique_ptr<DO::S3ListObjectsV2Resp> listResp;
     auto copy_batch_num = g_conf().get_val<uint64_t>("rgw_bucket_copy_batch_num");
-    r = lister.get_next(&listResp, copy_batch_num);
-    if (r < 0) {
-      return r;
+
+    ldout(store->ctx(), 10) << "list remote bucket=" << bucket_name
+                            << ", max_keys=" << copy_batch_num
+                            << ", continuation_token=" << lister.get_continuation_token()
+                            << dendl;
+
+    unique_ptr<DO::S3ListObjectsV2Resp> listResp;
+
+    for (int i = 1; i <= list_objects_attempts; i++) {
+      int ret = lister.fetch_next(&listResp, copy_batch_num);
+      if (ret < 0) {
+        cerr << "ERROR: could not list bucket: " << bucket_name
+             << ", max_keys=" << copy_batch_num
+             << ", continuation_token=" << lister.get_continuation_token()
+             << ", err=" << cpp_strerror(-ret)
+             << ", attempt=" << i;
+
+        if (ret == -ENOENT || ret == -EACCES || i == list_objects_attempts) {
+          cerr << std::endl;
+          return ret;
+        }
+
+        cerr << ", retry in " << list_objects_retry_sleep_seconds << " seconds" << std::endl;
+        utime_t retry(list_objects_retry_sleep_seconds, 0);
+        retry.sleep();
+      }
     }
 
+    /*
     XMLFormatter formatter(true);
     RGWStreamFlusher f(&formatter, cout);
     formatter.output_header();
     listResp->dump_xml(&formatter);
     formatter.output_footer();
     f.flush();
-
+    */
     rgw_bucket src_bucket;
     src_bucket.tenant = tenant;
     src_bucket.name = bucket_name;
 
     for (const auto &obj : listResp->contents) {
-      cerr << "INFO: copy remote object " << obj.key << std::endl;
+      ldout(store->ctx(), 10) << "copy object=" << obj.key
+                              << ", size=" << obj.size
+                              << ", bucket=" << bucket_name << dendl;
 
       rgw_obj src_obj(src_bucket, obj.key);
       rgw_obj dest_obj(dest_bucket, obj.key);
@@ -239,46 +275,53 @@ int DO::copy_remote_bucket(RGWRados *store,
       map<string, bufferlist> attrs;
       std::optional<uint64_t> bytes_transferred;
 
-      r = store->fetch_remote_obj(obj_ctx,
-                                  user_id,
-                                  NULL,
-                                  DO_SOURCE_ZONE_ID,
-                                  dest_obj,
-                                  src_obj,
-                                  dest_bucket_info,
-                                  src_bucket_info,
-                                  dest_placement_rule,
-                                  NULL, /* real_time* src_mtime, */
-                                  NULL, /* real_time* mtime, */
-                                  NULL, /* const real_time* mod_ptr, */
-                                  NULL, /* const real_time* unmod_ptr, */
-                                  false, /* high precision time */
-                                  NULL, /* const char *if_match, */
-                                  NULL, /* const char *if_nomatch, */
-                                  RGWRados::ATTRSMOD_NONE,
-                                  true, /* copy_if_newer*/
-                                  attrs,
-                                  RGWObjCategory::Main,
-                                  versioned_epoch,
-                                  real_time(), /* delete_at */
-                                  NULL, /* string *ptag, */
-                                  NULL, /* string *petag, */
-                                  NULL, /* void (*progress_cb)(off_t, void *), */
-                                  NULL, /* void *progress_data*); */
-                                  NULL, /* rgw_zone_set *zones_trace */
-                                  &bytes_transferred);
+      int r = store->fetch_remote_obj(obj_ctx,
+                                      user_id,
+                                      NULL,
+                                      DO_BUCKET_COPY_SOURCE_ZONE_ID,
+                                      dest_obj,
+                                      src_obj,
+                                      dest_bucket_info,
+                                      src_bucket_info,
+                                      dest_placement_rule,
+                                      NULL, /* real_time* src_mtime, */
+                                      NULL, /* real_time* mtime, */
+                                      NULL, /* const real_time* mod_ptr, */
+                                      NULL, /* const real_time* unmod_ptr, */
+                                      false, /* high precision time */
+                                      NULL, /* const char *if_match, */
+                                      NULL, /* const char *if_nomatch, */
+                                      RGWRados::ATTRSMOD_NONE,
+                                      true, /* copy_if_newer*/
+                                      attrs,
+                                      RGWObjCategory::Main,
+                                      versioned_epoch,
+                                      real_time(), /* delete_at */
+                                      NULL, /* string *ptag, */
+                                      NULL, /* string *petag, */
+                                      NULL, /* void (*progress_cb)(off_t, void *), */
+                                      NULL, /* void *progress_data*); */
+                                      NULL, /* rgw_zone_set *zones_trace */
+                                      &bytes_transferred);
       if (r < 0) {
-        cerr << "ERROR: could not copy remote object " << obj.key << std::endl;
-        return r;
+        cerr << "ERROR: could not copy object " << obj.key << ", bucket=" << bucket_name
+             << ", ret_val=" << r << std::endl;
+        if (r == -ENOENT) {
+          // possibly due to stale index on the remote bucket
+          stats.not_found++;
+        } else {
+          stats.error++;
+        }
+      } else {
+        stats.ok++;
       }
 
-      count++;
-
-      utime_t obj_sleep;
-      obj_sleep.set_from_double(g_conf().get_val<double>("rgw_bucket_copy_obj_sleep"));
-      if (obj_sleep != utime_t()) {
-	cerr << "INFO: sleeping for " << obj_sleep << std::endl;
-	obj_sleep.sleep();
+      utime_t obj_copy;
+      obj_copy.set_from_double(g_conf().get_val<double>("rgw_bucket_copy_obj_sleep"));
+      if (obj_copy != utime_t()) {
+        ldout(store->ctx(), 20) << "copy object sleeping for " << obj_copy << " secconds"
+                                << dendl;
+        obj_copy.sleep();
       }
     }
 
@@ -287,7 +330,12 @@ int DO::copy_remote_bucket(RGWRados *store,
     }
   }
 
-  cerr << "INFO: successfully copied " << count << " objects" << std::endl;
+  // Dump bucket copy stats in the end
+  JSONFormatter formatter(true);
+  formatter.open_object_section("stats");
+  stats.dump(&formatter);
+  formatter.close_section();
+  formatter.flush(cout);
 
   return 0;
 }
