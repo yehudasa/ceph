@@ -160,6 +160,8 @@ int DataLogTrimCR::operate()
       return set_cr_error(retcode);
     }
 
+    ldout(cct, 20) << "sip targets: " << sip_targets << dendl;
+
     yield {
       // query data sync status from each sync peer
       rgw_http_param_pair params[] = {
