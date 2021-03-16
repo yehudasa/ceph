@@ -8,11 +8,12 @@
 
 #include "common/Formatter.h"
 #include "common/errno.h"
+#include "common/perf_counters_collection.h"
 
 // It can be any non-existing zone ID.
-#define DO_BUCKET_COPY_SOURCE_ZONE_ID "do_bucket_copy_source_zone"
+#define BUCKET_COPY_SOURCE_ZONE_ID "bucket-copy-source-zone"
 
-namespace DO {
+namespace bucket_copy {
 
 class S3ListObjectsV2Entry
 {
@@ -115,35 +116,43 @@ public:
 
   ~BucketObjectsLister() {}
 
-  string get_continuation_token() const {
-    return continuation_token;
-  }
-
+  const std::string& get_continuation_token() const;
   int fetch_next(unique_ptr<S3ListObjectsV2Resp> *resp, uint64_t max_keys);
 };
 
-class BucketCopyStats
+class Stats
 {
+private:
+  Stats(const Stats &rhs);
+  Stats& operator=(const Stats &rhs);
+
+  std::unique_ptr<PerfCounters> logger;
+
 public:
-  string bucket;
 
-  uint64_t ok{0};
-  uint64_t not_found{0};
-  uint64_t error{0};
+  enum {
+    l_first = 101010,
 
-  BucketCopyStats(const string &_bucket):
-    bucket(_bucket) {}
+    l_copy_ok,
+    l_copy_not_found,
+    l_copy_err,
 
-  ~BucketCopyStats() {}
+    l_bytes_transferred,
+
+    l_last,
+  };
+
+  Stats();
+  ~Stats();
 
   void dump(Formatter *f) const {
-    f->dump_string("bucket", bucket);
-    f->open_object_section("stats");
-    f->dump_unsigned("ok", ok);
-    f->dump_unsigned("not_found", not_found);
-    f->dump_unsigned("error", error);
-    f->close_section();
+    if (logger) {
+      logger->dump_formatted(f, false);
+    }
   }
+
+  void count(int r, uint64_t bytes_transferred);
+  void reset();
 };
 
 int copy_remote_bucket(RGWRados *store,
@@ -156,6 +165,6 @@ int copy_remote_bucket(RGWRados *store,
                        const list<string> &endpoints,
                        const RGWAccessKey &key);
 
-}
+} // namespace bucket_copy
 
 #endif /*RGW_ADMIN_COPY_H */
