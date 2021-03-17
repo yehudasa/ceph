@@ -1235,6 +1235,7 @@ int RocksDBStore::do_open(ostream &out,
   ceph_assert(default_cf != nullptr);
   
   PerfCountersBuilder plb(cct, "rocksdb", l_rocksdb_first, l_rocksdb_last);
+  plb.add_u64_counter(l_rocksdb_user_key_comparison_count, "user_key_comparison_count", "Number of rocksdb comparisons in btree");
   plb.add_u64_counter(l_rocksdb_gets, "get", "Gets");
   plb.add_time_avg(l_rocksdb_get_latency, "get_latency", "Get latency");
   plb.add_time_avg(l_rocksdb_submit_latency, "submit_latency", "Submit Latency");
@@ -1577,6 +1578,7 @@ int RocksDBStore::submit_common(rocksdb::WriteOptions& woptions, KeyValueDB::Tra
     logger->tinc(l_rocksdb_write_delay_time, write_delay_time);
     logger->tinc(l_rocksdb_write_wal_time, write_wal_time);
     logger->tinc(l_rocksdb_write_pre_and_post_process_time, write_pre_and_post_process_time);
+    logger->inc(l_rocksdb_user_key_comparison_count, rocksdb::get_perf_context()->user_key_comparison_count);
   }
 
   return s.ok() ? 0 : -1;
@@ -1833,6 +1835,11 @@ int RocksDBStore::get(
     const std::set<string> &keys,
     std::map<string, bufferlist> *out)
 {
+  if (cct->_conf->rocksdb_perf) {
+    rocksdb::SetPerfLevel(rocksdb::PerfLevel::kEnableTimeExceptForMutex);
+    rocksdb::get_perf_context()->Reset();
+  }
+
   rocksdb::PinnableSlice value;
   utime_t start = ceph_clock_now();
   if (cf_handles.count(prefix) > 0) {
@@ -1867,6 +1874,10 @@ int RocksDBStore::get(
   utime_t lat = ceph_clock_now() - start;
   logger->inc(l_rocksdb_gets);
   logger->tinc(l_rocksdb_get_latency, lat);
+
+  if (cct->_conf->rocksdb_perf) {
+    logger->inc(l_rocksdb_user_key_comparison_count, rocksdb::get_perf_context()->user_key_comparison_count);
+  }
   return 0;
 }
 
@@ -1875,6 +1886,11 @@ int RocksDBStore::get(
     const string &key,
     bufferlist *out)
 {
+  if (cct->_conf->rocksdb_perf) {
+    rocksdb::SetPerfLevel(rocksdb::PerfLevel::kEnableTimeExceptForMutex);
+    rocksdb::get_perf_context()->Reset();
+  }
+
   ceph_assert(out && (out->length() == 0));
   utime_t start = ceph_clock_now();
   int r = 0;
@@ -1903,6 +1919,10 @@ int RocksDBStore::get(
   utime_t lat = ceph_clock_now() - start;
   logger->inc(l_rocksdb_gets);
   logger->tinc(l_rocksdb_get_latency, lat);
+
+  if (cct->_conf->rocksdb_perf) {
+    logger->inc(l_rocksdb_user_key_comparison_count, rocksdb::get_perf_context()->user_key_comparison_count);
+  }
   return r;
 }
 
@@ -1912,6 +1932,11 @@ int RocksDBStore::get(
   size_t keylen,
   bufferlist *out)
 {
+  if (cct->_conf->rocksdb_perf) {
+    rocksdb::SetPerfLevel(rocksdb::PerfLevel::kEnableTimeExceptForMutex);
+    rocksdb::get_perf_context()->Reset();
+  }
+
   ceph_assert(out && (out->length() == 0));
   utime_t start = ceph_clock_now();
   int r = 0;
@@ -1941,6 +1966,10 @@ int RocksDBStore::get(
   utime_t lat = ceph_clock_now() - start;
   logger->inc(l_rocksdb_gets);
   logger->tinc(l_rocksdb_get_latency, lat);
+
+  if (cct->_conf->rocksdb_perf) {
+    logger->inc(l_rocksdb_user_key_comparison_count, rocksdb::get_perf_context()->user_key_comparison_count);
+  }
   return r;
 }
 
