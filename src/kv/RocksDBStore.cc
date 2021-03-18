@@ -1235,7 +1235,67 @@ int RocksDBStore::do_open(ostream &out,
   ceph_assert(default_cf != nullptr);
   
   PerfCountersBuilder plb(cct, "rocksdb", l_rocksdb_first, l_rocksdb_last);
+  // DO changes here
   plb.add_u64_counter(l_rocksdb_user_key_comparison_count, "user_key_comparison_count", "Number of rocksdb comparisons in btree");
+  plb.add_u64_counter(l_rocksdb_block_cache_hit_count, "block_cache_hit_count", "total number of block cache hits");
+  plb.add_u64_counter(l_rocksdb_block_read_count, "block_read_count", "total number of block reads (with IO)");
+  plb.add_u64_counter(l_rocksdb_block_read_byte, "block_read_byte", "total number of bytes from block reads");
+  plb.add_time_avg(l_rocksdb_block_read_time, "block_read_time", "total nanos spent on block reads");
+  plb.add_u64_counter(l_rocksdb_block_cache_index_hit_count, "block_cache_index_hit_count", "total number of index block hits");
+  plb.add_u64_counter(l_rocksdb_index_block_read_count, "index_block_read_count", "total number of index block reads");
+  plb.add_u64_counter(l_rocksdb_block_cache_filter_hit_count, "block_cache_filter_hit_count", "total number of filter block hits");
+  plb.add_u64_counter(l_rocksdb_filter_block_read_count, "filter_block_read_count", "total number of filter block reads");
+  plb.add_u64_counter(l_rocksdb_compression_dict_block_read_count, "compression_dict_block_read_count", "total number of compression dictionary block reads");
+  plb.add_time_avg(l_rocksdb_block_checksum_time, "block_checksum_time", "total nanos spent on block checksum");
+  plb.add_time_avg(l_rocksdb_block_decompress_time, "block_decompress_time", "total nanos spent on block decompression");
+
+  plb.add_u64_counter(l_rocksdb_get_read_bytes, "get_read_bytes", "bytes for vals returned by Get");
+  plb.add_u64_counter(l_rocksdb_multiget_read_bytes, "multiget_read_bytes", "bytes for vals returned by MultiGet");
+  plb.add_u64_counter(l_rocksdb_iter_read_bytes, "iter_read_bytes", "bytes for keys/vals decoded by iterator");
+
+  plb.add_u64_counter(l_rocksdb_internal_key_skipped_count, "internal_key_skipped_count", "internal_key_skipped_count");
+  plb.add_u64_counter(l_rocksdb_internal_delete_skipped_count, "internal_delete_skipped_count", "internal_delete_skipped_count");
+  plb.add_u64_counter(l_rocksdb_internal_recent_skipped_count, "internal_recent_skipped_count", "internal_recent_skipped_count");
+  plb.add_u64_counter(l_rocksdb_internal_merge_count, "internal_merge_count", "internal_merge_count");
+
+  plb.add_time_avg(l_rocksdb_get_snapshot_time, "get_snapshot_time", "total nanos spent on getting snapshot");
+  plb.add_time_avg(l_rocksdb_get_from_memtable_time, "get_from_memtable_time", "total nanos spent on querying memtables");
+  plb.add_u64_counter(l_rocksdb_get_from_memtable_count, "get_from_memtable_count", "number of mem tables queried");
+  plb.add_time_avg(l_rocksdb_get_post_process_time, "get_post_process_time", "total nanos spent after Get() finds a key");
+  plb.add_time_avg(l_rocksdb_get_from_output_files_time, "get_from_output_files_time", "total nanos reading from output files");
+  plb.add_time_avg(l_rocksdb_seek_on_memtable_time, "seek_on_memtable_time", "total nanos spent on seeking memtable");
+  plb.add_u64_counter(l_rocksdb_seek_on_memtable_count, "seek_on_memtable_count", "number of seeks issued on memtable");
+  plb.add_u64_counter(l_rocksdb_next_on_memtable_count, "next_on_memtable_count", "number of Next()s issued on memtable");
+  plb.add_u64_counter(l_rocksdb_prev_on_memtable_count, "prev_on_memtable_count", "number of Prev()s issued on memtable");
+  plb.add_time_avg(l_rocksdb_seek_child_seek_time, "seek_child_seek_time", "total nanos spent on seeking child iters");
+  plb.add_u64_counter(l_rocksdb_seek_child_seek_count, "seek_child_seek_count", "number of seek issued in child iterators");
+  plb.add_time_avg(l_rocksdb_seek_min_heap_time, "seek_min_heap_time", "total nanos spent on the merge min heap");
+  plb.add_time_avg(l_rocksdb_seek_max_heap_time, "seek_max_heap_time", "total nanos spent on the merge max heap");
+  plb.add_time_avg(l_rocksdb_seek_internal_seek_time, "seek_internal_seek_time", "total nanos spent on seeking the internal entries");
+  plb.add_time_avg(l_rocksdb_find_next_user_entry_time, "find_next_user_entry_time", "total nanos spent on iterating internal entries to find the next user entry");
+
+  plb.add_time_avg(l_rocksdb_write_scheduling_flushes_compactions_time, "write_scheduling_flushes_compactions_time", "total nanos spent on switching memtable/wal and scheduling, flushes/compactions");
+
+  plb.add_time_avg(l_rocksdb_write_thread_wait_nanos, "write_thread_wait_nanos", "time spent waiting for other threads of the batch group");
+  plb.add_time_avg(l_rocksdb_db_mutex_lock_nanos, "db_mutex_lock_nanos", "time spent on acquiring DB mutex");
+  plb.add_time_avg(l_rocksdb_db_condition_wait_nanos, "db_condition_wait_nanos", "Time spent on waiting with a condition variable created with DB mutex");
+  plb.add_time_avg(l_rocksdb_merge_operator_time_nanos, "merge_operator_time_nanos", "Time spent on merge operator");
+
+  plb.add_time_avg(l_rocksdb_read_index_block_nanos, "read_index_block_nanos", "Time spent on reading index block from block cache or SST file");
+  plb.add_time_avg(l_rocksdb_read_filter_block_nanos, "read_filter_block_nanos", "Time spent on reading filter block from block cache or SST file");
+  plb.add_time_avg(l_rocksdb_new_table_block_iter_nanos, "new_table_block_iter_nanos", "Time spent on creating data block iterator");
+  plb.add_time_avg(l_rocksdb_new_table_iterator_nanos, "new_table_iterator_nanos", "Time spent on creating a iterator of an SST file");
+  plb.add_time_avg(l_rocksdb_block_seek_nanos, "block_seek_nanos", "Time spent on seeking a key in data/index blocks");
+  plb.add_time_avg(l_rocksdb_find_table_nanos, "find_table_nanos", "Time spent on finding or creating a table reader");
+  plb.add_u64_counter(l_rocksdb_bloom_memtable_hit_count, "bloom_memtable_hit_count", "total number of mem table bloom hits");
+  plb.add_u64_counter(l_rocksdb_bloom_memtable_miss_count, "bloom_memtable_miss_count", "total number of mem table bloom misses");
+  plb.add_u64_counter(l_rocksdb_bloom_sst_hit_count, "bloom_sst_hit_count", "total number of SST table bloom hits");
+  plb.add_u64_counter(l_rocksdb_bloom_sst_miss_count, "bloom_sst_miss_count", "total number of SST table bloom misses");
+
+  plb.add_time_avg(l_rocksdb_key_lock_wait_time, "key_lock_wait_time", "Time spent waiting on key locks in transaction lock manager");
+  plb.add_u64_counter(l_rocksdb_key_lock_wait_count, "key_lock_wait_count", "number of times acquiring a lock was blocked by another transaction");
+
+  // Stock ceph below
   plb.add_u64_counter(l_rocksdb_gets, "get", "Gets");
   plb.add_time_avg(l_rocksdb_get_latency, "get_latency", "Get latency");
   plb.add_time_avg(l_rocksdb_submit_latency, "submit_latency", "Submit Latency");
@@ -1562,6 +1622,74 @@ int RocksDBStore::submit_common(rocksdb::WriteOptions& woptions, KeyValueDB::Tra
   }
 
   if (cct->_conf->rocksdb_perf) {
+    // DO changes
+    utime_t block_read_time, block_checksum_time, block_decompress_time;
+    utime_t get_snapshot_time, get_from_memtable_time, get_post_process_time, get_from_output_files_time,
+	    seek_on_memtable_time, seek_child_seek_time, seek_min_heap_time, seek_max_heap_time,
+	    seek_internal_seek_time, find_next_user_entry_time;
+    utime_t write_scheduling_flushes_compactions_time;
+    utime_t write_thread_wait_nanos, db_mutex_lock_nanos, db_condition_wait_nanos, merge_operator_time_nanos;
+    utime_t read_index_block_nanos, read_filter_block_nanos, new_table_block_iter_nanos, new_table_iterator_nanos,
+	    block_seek_nanos, find_table_nanos;
+    utime_t key_lock_wait_time;
+
+    block_read_time.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->block_read_time)/1000000000);
+    block_checksum_time.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->block_checksum_time)/1000000000);
+    block_decompress_time.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->block_decompress_time)/1000000000);
+
+    get_snapshot_time.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->get_snapshot_time)/1000000000);
+    get_from_memtable_time.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->get_from_memtable_time)/1000000000);
+    get_post_process_time.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->get_post_process_time)/1000000000);
+    get_from_output_files_time.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->get_from_output_files_time)/1000000000);
+    seek_on_memtable_time.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->seek_on_memtable_time)/1000000000);
+    seek_child_seek_time.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->seek_child_seek_time)/1000000000);
+    seek_min_heap_time.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->seek_min_heap_time)/1000000000);
+    seek_max_heap_time.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->seek_max_heap_time)/1000000000);
+    seek_internal_seek_time.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->seek_internal_seek_time)/1000000000);
+    find_next_user_entry_time.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->find_next_user_entry_time)/1000000000);
+
+    write_scheduling_flushes_compactions_time.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->write_scheduling_flushes_compactions_time)/1000000000);
+
+    write_thread_wait_nanos.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->write_thread_wait_nanos)/1000000000);
+    db_mutex_lock_nanos.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->db_mutex_lock_nanos)/1000000000);
+    db_condition_wait_nanos.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->db_condition_wait_nanos)/1000000000);
+    merge_operator_time_nanos.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->merge_operator_time_nanos)/1000000000);
+
+    read_index_block_nanos.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->read_index_block_nanos)/1000000000);
+    read_filter_block_nanos.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->read_filter_block_nanos)/1000000000);
+    new_table_block_iter_nanos.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->new_table_block_iter_nanos)/1000000000);
+    new_table_iterator_nanos.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->new_table_iterator_nanos)/1000000000);
+    block_seek_nanos.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->block_seek_nanos)/1000000000);
+    find_table_nanos.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->find_table_nanos)/1000000000);
+
+    key_lock_wait_time.set_from_double(
+	static_cast<double>(rocksdb::get_perf_context()->key_lock_wait_time)/1000000000);
+
+    // Stock ceph
     utime_t write_memtable_time;
     utime_t write_delay_time;
     utime_t write_wal_time;
@@ -1578,7 +1706,60 @@ int RocksDBStore::submit_common(rocksdb::WriteOptions& woptions, KeyValueDB::Tra
     logger->tinc(l_rocksdb_write_delay_time, write_delay_time);
     logger->tinc(l_rocksdb_write_wal_time, write_wal_time);
     logger->tinc(l_rocksdb_write_pre_and_post_process_time, write_pre_and_post_process_time);
+
+    // DO additions
+    logger->inc(l_rocksdb_block_read_time, block_read_time);
+    logger->inc(l_rocksdb_block_checksum_time, block_checksum_time);
+    logger->inc(l_rocksdb_block_decompress_time, block_decompress_time);
+    logger->inc(l_rocksdb_get_snapshot_time, get_snapshot_time);
+    logger->inc(l_rocksdb_get_from_memtable_time, get_from_memtable_time);
+    logger->inc(l_rocksdb_get_post_process_time, get_post_process_time);
+    logger->inc(l_rocksdb_get_from_output_files_time, get_from_output_files_time);
+    logger->inc(l_rocksdb_seek_on_memtable_time, seek_on_memtable_time);
+    logger->inc(l_rocksdb_seek_child_seek_time, seek_child_seek_time);
+    logger->inc(l_rocksdb_seek_min_heap_time, seek_min_heap_time);
+    logger->inc(l_rocksdb_seek_max_heap_time, seek_max_heap_time);
+    logger->inc(l_rocksdb_seek_internal_seek_time, seek_internal_seek_time);
+    logger->inc(l_rocksdb_find_next_user_entry_time, find_next_user_entry_time);
+    logger->inc(l_rocksdb_write_scheduling_flushes_compactions_time, write_scheduling_flushes_compactions_time);
+    logger->inc(l_rocksdb_write_thread_wait_nanos, write_thread_wait_nanos);
+    logger->inc(l_rocksdb_db_mutex_lock_nanos, db_mutex_lock_nanos);
+    logger->inc(l_rocksdb_db_condition_wait_nanos, db_condition_wait_nanos);
+    logger->inc(l_rocksdb_merge_operator_time_nanos, merge_operator_time_nanos);
+    logger->inc(l_rocksdb_read_index_block_nanos, read_index_block_nanos);
+    logger->inc(l_rocksdb_read_filter_block_nanos, read_filter_block_nanos);
+    logger->inc(l_rocksdb_new_table_block_iter_nanos, new_table_block_iter_nanos);
+    logger->inc(l_rocksdb_new_table_iterator_nanos, new_table_iterator_nanos);
+    logger->inc(l_rocksdb_block_seek_nanos, block_seek_nanos);
+    logger->inc(l_rocksdb_find_table_nanos, find_table_nanos);
+    logger->inc(l_rocksdb_key_lock_wait_time, key_lock_wait_time);
+
     logger->inc(l_rocksdb_user_key_comparison_count, rocksdb::get_perf_context()->user_key_comparison_count);
+    logger->inc(l_rocksdb_block_cache_hit_count, rocksdb::get_perf_context()->block_cache_hit_count);
+    logger->inc(l_rocksdb_block_read_count, rocksdb::get_perf_context()->block_read_count);
+    logger->inc(l_rocksdb_block_read_byte, rocksdb::get_perf_context()->block_read_byte);
+    logger->inc(l_rocksdb_block_cache_index_hit_count, rocksdb::get_perf_context()->block_cache_index_hit_count);
+    logger->inc(l_rocksdb_index_block_read_count, rocksdb::get_perf_context()->index_block_read_count);
+    logger->inc(l_rocksdb_block_cache_filter_hit_count, rocksdb::get_perf_context()->block_cache_filter_hit_count);
+    logger->inc(l_rocksdb_filter_block_read_count, rocksdb::get_perf_context()->filter_block_read_count);
+    logger->inc(l_rocksdb_compression_dict_block_read_count, rocksdb::get_perf_context()->compression_dict_block_read_count);
+    logger->inc(l_rocksdb_get_read_bytes, rocksdb::get_perf_context()->get_read_bytes);
+    logger->inc(l_rocksdb_multiget_read_bytes, rocksdb::get_perf_context()->multiget_read_bytes);
+    logger->inc(l_rocksdb_iter_read_bytes, rocksdb::get_perf_context()->iter_read_bytes);
+    logger->inc(l_rocksdb_internal_key_skipped_count, rocksdb::get_perf_context()->internal_key_skipped_count);
+    logger->inc(l_rocksdb_internal_delete_skipped_count, rocksdb::get_perf_context()->internal_delete_skipped_count);
+    logger->inc(l_rocksdb_internal_recent_skipped_count, rocksdb::get_perf_context()->internal_recent_skipped_count);
+    logger->inc(l_rocksdb_internal_merge_count, rocksdb::get_perf_context()->internal_merge_count);
+    logger->inc(l_rocksdb_get_from_memtable_count, rocksdb::get_perf_context()->get_from_memtable_count);
+    logger->inc(l_rocksdb_seek_on_memtable_count, rocksdb::get_perf_context()->seek_on_memtable_count);
+    logger->inc(l_rocksdb_next_on_memtable_count, rocksdb::get_perf_context()->next_on_memtable_count);
+    logger->inc(l_rocksdb_prev_on_memtable_count, rocksdb::get_perf_context()->prev_on_memtable_count);
+    logger->inc(l_rocksdb_seek_child_seek_count, rocksdb::get_perf_context()->seek_child_seek_count);
+    logger->inc(l_rocksdb_bloom_memtable_hit_count, rocksdb::get_perf_context()->bloom_memtable_hit_count);
+    logger->inc(l_rocksdb_bloom_memtable_miss_count, rocksdb::get_perf_context()->bloom_memtable_miss_count);
+    logger->inc(l_rocksdb_bloom_sst_hit_count, rocksdb::get_perf_context()->bloom_sst_hit_count);
+    logger->inc(l_rocksdb_bloom_sst_miss_count, rocksdb::get_perf_context()->bloom_sst_miss_count);
+    logger->inc(l_rocksdb_key_lock_wait_count, rocksdb::get_perf_context()->key_lock_wait_count);
   }
 
   return s.ok() ? 0 : -1;
@@ -1877,6 +2058,31 @@ int RocksDBStore::get(
 
   if (cct->_conf->rocksdb_perf) {
     logger->inc(l_rocksdb_user_key_comparison_count, rocksdb::get_perf_context()->user_key_comparison_count);
+    logger->inc(l_rocksdb_block_cache_hit_count, rocksdb::get_perf_context()->block_cache_hit_count);
+    logger->inc(l_rocksdb_block_read_count, rocksdb::get_perf_context()->block_read_count);
+    logger->inc(l_rocksdb_block_read_byte, rocksdb::get_perf_context()->block_read_byte);
+    logger->inc(l_rocksdb_block_cache_index_hit_count, rocksdb::get_perf_context()->block_cache_index_hit_count);
+    logger->inc(l_rocksdb_index_block_read_count, rocksdb::get_perf_context()->index_block_read_count);
+    logger->inc(l_rocksdb_block_cache_filter_hit_count, rocksdb::get_perf_context()->block_cache_filter_hit_count);
+    logger->inc(l_rocksdb_filter_block_read_count, rocksdb::get_perf_context()->filter_block_read_count);
+    logger->inc(l_rocksdb_compression_dict_block_read_count, rocksdb::get_perf_context()->compression_dict_block_read_count);
+    logger->inc(l_rocksdb_get_read_bytes, rocksdb::get_perf_context()->get_read_bytes);
+    logger->inc(l_rocksdb_multiget_read_bytes, rocksdb::get_perf_context()->multiget_read_bytes);
+    logger->inc(l_rocksdb_iter_read_bytes, rocksdb::get_perf_context()->iter_read_bytes);
+    logger->inc(l_rocksdb_internal_key_skipped_count, rocksdb::get_perf_context()->internal_key_skipped_count);
+    logger->inc(l_rocksdb_internal_delete_skipped_count, rocksdb::get_perf_context()->internal_delete_skipped_count);
+    logger->inc(l_rocksdb_internal_recent_skipped_count, rocksdb::get_perf_context()->internal_recent_skipped_count);
+    logger->inc(l_rocksdb_internal_merge_count, rocksdb::get_perf_context()->internal_merge_count);
+    logger->inc(l_rocksdb_get_from_memtable_count, rocksdb::get_perf_context()->get_from_memtable_count);
+    logger->inc(l_rocksdb_seek_on_memtable_count, rocksdb::get_perf_context()->seek_on_memtable_count);
+    logger->inc(l_rocksdb_next_on_memtable_count, rocksdb::get_perf_context()->next_on_memtable_count);
+    logger->inc(l_rocksdb_prev_on_memtable_count, rocksdb::get_perf_context()->prev_on_memtable_count);
+    logger->inc(l_rocksdb_seek_child_seek_count, rocksdb::get_perf_context()->seek_child_seek_count);
+    logger->inc(l_rocksdb_bloom_memtable_hit_count, rocksdb::get_perf_context()->bloom_memtable_hit_count);
+    logger->inc(l_rocksdb_bloom_memtable_miss_count, rocksdb::get_perf_context()->bloom_memtable_miss_count);
+    logger->inc(l_rocksdb_bloom_sst_hit_count, rocksdb::get_perf_context()->bloom_sst_hit_count);
+    logger->inc(l_rocksdb_bloom_sst_miss_count, rocksdb::get_perf_context()->bloom_sst_miss_count);
+    logger->inc(l_rocksdb_key_lock_wait_count, rocksdb::get_perf_context()->key_lock_wait_count);
   }
   return 0;
 }
@@ -1922,6 +2128,31 @@ int RocksDBStore::get(
 
   if (cct->_conf->rocksdb_perf) {
     logger->inc(l_rocksdb_user_key_comparison_count, rocksdb::get_perf_context()->user_key_comparison_count);
+    logger->inc(l_rocksdb_block_cache_hit_count, rocksdb::get_perf_context()->block_cache_hit_count);
+    logger->inc(l_rocksdb_block_read_count, rocksdb::get_perf_context()->block_read_count);
+    logger->inc(l_rocksdb_block_read_byte, rocksdb::get_perf_context()->block_read_byte);
+    logger->inc(l_rocksdb_block_cache_index_hit_count, rocksdb::get_perf_context()->block_cache_index_hit_count);
+    logger->inc(l_rocksdb_index_block_read_count, rocksdb::get_perf_context()->index_block_read_count);
+    logger->inc(l_rocksdb_block_cache_filter_hit_count, rocksdb::get_perf_context()->block_cache_filter_hit_count);
+    logger->inc(l_rocksdb_filter_block_read_count, rocksdb::get_perf_context()->filter_block_read_count);
+    logger->inc(l_rocksdb_compression_dict_block_read_count, rocksdb::get_perf_context()->compression_dict_block_read_count);
+    logger->inc(l_rocksdb_get_read_bytes, rocksdb::get_perf_context()->get_read_bytes);
+    logger->inc(l_rocksdb_multiget_read_bytes, rocksdb::get_perf_context()->multiget_read_bytes);
+    logger->inc(l_rocksdb_iter_read_bytes, rocksdb::get_perf_context()->iter_read_bytes);
+    logger->inc(l_rocksdb_internal_key_skipped_count, rocksdb::get_perf_context()->internal_key_skipped_count);
+    logger->inc(l_rocksdb_internal_delete_skipped_count, rocksdb::get_perf_context()->internal_delete_skipped_count);
+    logger->inc(l_rocksdb_internal_recent_skipped_count, rocksdb::get_perf_context()->internal_recent_skipped_count);
+    logger->inc(l_rocksdb_internal_merge_count, rocksdb::get_perf_context()->internal_merge_count);
+    logger->inc(l_rocksdb_get_from_memtable_count, rocksdb::get_perf_context()->get_from_memtable_count);
+    logger->inc(l_rocksdb_seek_on_memtable_count, rocksdb::get_perf_context()->seek_on_memtable_count);
+    logger->inc(l_rocksdb_next_on_memtable_count, rocksdb::get_perf_context()->next_on_memtable_count);
+    logger->inc(l_rocksdb_prev_on_memtable_count, rocksdb::get_perf_context()->prev_on_memtable_count);
+    logger->inc(l_rocksdb_seek_child_seek_count, rocksdb::get_perf_context()->seek_child_seek_count);
+    logger->inc(l_rocksdb_bloom_memtable_hit_count, rocksdb::get_perf_context()->bloom_memtable_hit_count);
+    logger->inc(l_rocksdb_bloom_memtable_miss_count, rocksdb::get_perf_context()->bloom_memtable_miss_count);
+    logger->inc(l_rocksdb_bloom_sst_hit_count, rocksdb::get_perf_context()->bloom_sst_hit_count);
+    logger->inc(l_rocksdb_bloom_sst_miss_count, rocksdb::get_perf_context()->bloom_sst_miss_count);
+    logger->inc(l_rocksdb_key_lock_wait_count, rocksdb::get_perf_context()->key_lock_wait_count);
   }
   return r;
 }
@@ -1969,6 +2200,31 @@ int RocksDBStore::get(
 
   if (cct->_conf->rocksdb_perf) {
     logger->inc(l_rocksdb_user_key_comparison_count, rocksdb::get_perf_context()->user_key_comparison_count);
+    logger->inc(l_rocksdb_block_cache_hit_count, rocksdb::get_perf_context()->block_cache_hit_count);
+    logger->inc(l_rocksdb_block_read_count, rocksdb::get_perf_context()->block_read_count);
+    logger->inc(l_rocksdb_block_read_byte, rocksdb::get_perf_context()->block_read_byte);
+    logger->inc(l_rocksdb_block_cache_index_hit_count, rocksdb::get_perf_context()->block_cache_index_hit_count);
+    logger->inc(l_rocksdb_index_block_read_count, rocksdb::get_perf_context()->index_block_read_count);
+    logger->inc(l_rocksdb_block_cache_filter_hit_count, rocksdb::get_perf_context()->block_cache_filter_hit_count);
+    logger->inc(l_rocksdb_filter_block_read_count, rocksdb::get_perf_context()->filter_block_read_count);
+    logger->inc(l_rocksdb_compression_dict_block_read_count, rocksdb::get_perf_context()->compression_dict_block_read_count);
+    logger->inc(l_rocksdb_get_read_bytes, rocksdb::get_perf_context()->get_read_bytes);
+    logger->inc(l_rocksdb_multiget_read_bytes, rocksdb::get_perf_context()->multiget_read_bytes);
+    logger->inc(l_rocksdb_iter_read_bytes, rocksdb::get_perf_context()->iter_read_bytes);
+    logger->inc(l_rocksdb_internal_key_skipped_count, rocksdb::get_perf_context()->internal_key_skipped_count);
+    logger->inc(l_rocksdb_internal_delete_skipped_count, rocksdb::get_perf_context()->internal_delete_skipped_count);
+    logger->inc(l_rocksdb_internal_recent_skipped_count, rocksdb::get_perf_context()->internal_recent_skipped_count);
+    logger->inc(l_rocksdb_internal_merge_count, rocksdb::get_perf_context()->internal_merge_count);
+    logger->inc(l_rocksdb_get_from_memtable_count, rocksdb::get_perf_context()->get_from_memtable_count);
+    logger->inc(l_rocksdb_seek_on_memtable_count, rocksdb::get_perf_context()->seek_on_memtable_count);
+    logger->inc(l_rocksdb_next_on_memtable_count, rocksdb::get_perf_context()->next_on_memtable_count);
+    logger->inc(l_rocksdb_prev_on_memtable_count, rocksdb::get_perf_context()->prev_on_memtable_count);
+    logger->inc(l_rocksdb_seek_child_seek_count, rocksdb::get_perf_context()->seek_child_seek_count);
+    logger->inc(l_rocksdb_bloom_memtable_hit_count, rocksdb::get_perf_context()->bloom_memtable_hit_count);
+    logger->inc(l_rocksdb_bloom_memtable_miss_count, rocksdb::get_perf_context()->bloom_memtable_miss_count);
+    logger->inc(l_rocksdb_bloom_sst_hit_count, rocksdb::get_perf_context()->bloom_sst_hit_count);
+    logger->inc(l_rocksdb_bloom_sst_miss_count, rocksdb::get_perf_context()->bloom_sst_miss_count);
+    logger->inc(l_rocksdb_key_lock_wait_count, rocksdb::get_perf_context()->key_lock_wait_count);
   }
   return r;
 }

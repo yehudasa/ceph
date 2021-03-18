@@ -31,7 +31,70 @@
 
 enum {
   l_rocksdb_first = 34300,
+  // DO changes here
+  // https://github.com/facebook/rocksdb/blob/master/include/rocksdb/perf_context.h#L66
   l_rocksdb_user_key_comparison_count,
+  l_rocksdb_block_cache_hit_count,
+  l_rocksdb_block_read_count,
+  l_rocksdb_block_read_byte,
+  l_rocksdb_block_read_time,
+  l_rocksdb_block_cache_index_hit_count,
+  l_rocksdb_index_block_read_count,
+  l_rocksdb_block_cache_filter_hit_count,
+  l_rocksdb_filter_block_read_count,
+  l_rocksdb_compression_dict_block_read_count,
+
+  l_rocksdb_block_checksum_time,
+  l_rocksdb_block_decompress_time,
+
+  l_rocksdb_get_read_bytes,
+  l_rocksdb_multiget_read_bytes,
+  l_rocksdb_iter_read_bytes,
+
+  l_rocksdb_internal_key_skipped_count,
+  l_rocksdb_internal_delete_skipped_count,
+  l_rocksdb_internal_recent_skipped_count,
+  l_rocksdb_internal_merge_count,
+
+  l_rocksdb_get_snapshot_time,
+  l_rocksdb_get_from_memtable_time,
+  l_rocksdb_get_from_memtable_count,
+  l_rocksdb_get_post_process_time,
+  l_rocksdb_get_from_output_files_time,
+  l_rocksdb_seek_on_memtable_time,
+  l_rocksdb_seek_on_memtable_count,
+  l_rocksdb_next_on_memtable_count,
+  l_rocksdb_prev_on_memtable_count,
+  l_rocksdb_seek_child_seek_time,
+  l_rocksdb_seek_child_seek_count,
+  l_rocksdb_seek_min_heap_time,
+  l_rocksdb_seek_max_heap_time,
+  l_rocksdb_seek_internal_seek_time,
+  l_rocksdb_find_next_user_entry_time,
+
+  // Others here are captured by stock ceph
+  l_rocksdb_write_scheduling_flushes_compactions_time,
+
+  l_rocksdb_write_thread_wait_nanos,
+  l_rocksdb_db_mutex_lock_nanos,
+  l_rocksdb_db_condition_wait_nanos,
+  l_rocksdb_merge_operator_time_nanos,
+
+  l_rocksdb_read_index_block_nanos,
+  l_rocksdb_read_filter_block_nanos,
+  l_rocksdb_new_table_block_iter_nanos,
+  l_rocksdb_new_table_iterator_nanos,
+  l_rocksdb_block_seek_nanos,
+  l_rocksdb_find_table_nanos,
+  l_rocksdb_bloom_memtable_hit_count,
+  l_rocksdb_bloom_memtable_miss_count,
+  l_rocksdb_bloom_sst_hit_count,
+  l_rocksdb_bloom_sst_miss_count,
+
+  l_rocksdb_key_lock_wait_time,
+  l_rocksdb_key_lock_wait_count,
+
+  // Stock ceph below
   l_rocksdb_gets,
   l_rocksdb_get_latency,
   l_rocksdb_submit_latency,
