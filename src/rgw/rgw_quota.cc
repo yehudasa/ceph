@@ -958,6 +958,26 @@ public:
       need_resharding = false;
     }
   }
+
+  int check_bucket_shards_static(uint64_t min_bucket_objs, uint64_t max_bucket_objs, uint64_t num_shards,
+			  const rgw_user& user, const rgw_bucket& bucket, RGWQuotaInfo& bucket_quota,
+			  bool& need_resharding, uint64_t configured_shards) override
+  {
+    RGWStorageStats bucket_stats;
+    int ret = bucket_stats_cache.get_stats(user, bucket, bucket_stats,
+                                           bucket_quota);
+    if (ret < 0) {
+      return ret;
+    }
+
+    if (bucket_stats.num_objects  >= min_bucket_objs && bucket_stats.num_objects <= max_bucket_objs) {
+      need_resharding = num_shards != configured_shards;
+    } else {
+      need_resharding = false;
+    }
+
+    return 0;
+  }
 };
 
 
