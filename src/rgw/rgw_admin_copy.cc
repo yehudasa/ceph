@@ -264,15 +264,16 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
   while (true) {
     auto copy_batch_num = g_conf().get_val<uint64_t>("rgw_bucket_copy_batch_num");
 
-    ldout(store->ctx(), 10) << "list remote bucket=" << bucket_name
-                            << ", max_keys=" << copy_batch_num
-                            << ", continuation_token=" << lister.get_continuation_token()
-                            << dendl;
+    ldout(store->ctx(), 5) << "list remote bucket=" << bucket_name
+                           << ", max_keys=" << copy_batch_num
+                           << ", continuation_token=" << lister.get_continuation_token()
+                           << dendl;
 
     unique_ptr<bucket_copy::S3ListObjectsV2Resp> listResp;
 
     for (int i = 1; i <= list_objects_attempts; i++) {
       int ret = lister.fetch_next(&listResp, copy_batch_num);
+
       if (ret < 0) {
         cerr << "ERROR: could not list bucket: " << bucket_name
              << ", max_keys=" << copy_batch_num
@@ -288,6 +289,8 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
         cerr << ", retry in " << list_objects_retry_sleep_seconds << " seconds" << std::endl;
         utime_t retry(list_objects_retry_sleep_seconds, 0);
         retry.sleep();
+      } else {
+        break;
       }
     }
 
@@ -304,9 +307,9 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
     src_bucket.name = bucket_name;
 
     for (const auto &obj : listResp->contents) {
-      ldout(store->ctx(), 10) << "copy object=" << obj.key
-                              << ", size=" << obj.size
-                              << ", bucket=" << bucket_name << dendl;
+      ldout(store->ctx(), 5) << "copy object=" << obj.key
+                             << ", size=" << obj.size
+                             << ", bucket=" << bucket_name << dendl;
 
       rgw_obj src_obj(src_bucket, obj.key);
       rgw_obj dest_obj(dest_bucket, obj.key);
