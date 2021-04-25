@@ -3137,7 +3137,6 @@ int main(int argc, const char **argv)
   string quota_scope;
   string object_version;
   string object_prefix;
-  string start_after;
   string placement_id;
   std::optional<string> opt_storage_class;
   list<string> tags;
@@ -3295,8 +3294,6 @@ int main(int argc, const char **argv)
       object_version = val;
     } else if (ceph_argparse_witharg(args, i, &val, "--object-prefix", (char*)NULL)) {
       object_prefix = val;
-    } else if (ceph_argparse_witharg(args, i, &val, "--start-after", (char*)NULL)) {
-      start_after = val;
     } else if (ceph_argparse_witharg(args, i, &val, "--client-id", (char*)NULL)) {
       client_id = val;
     } else if (ceph_argparse_witharg(args, i, &val, "--op-id", (char*)NULL)) {
@@ -6274,7 +6271,6 @@ int main(int argc, const char **argv)
 					  bucket,
 					  tenant,
 					  bucket_name,
-					  start_after,
 					  object_prefix,
 					  endpoints,
 					  key);

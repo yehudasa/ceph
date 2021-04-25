@@ -15,11 +15,11 @@
 
 namespace bucket_copy {
 
-class S3ListObjectsV2Entry
+class S3ListObjectsEntry
 {
 public:
-  S3ListObjectsV2Entry() {}
-  ~S3ListObjectsV2Entry() {}
+  S3ListObjectsEntry() {}
+  ~S3ListObjectsEntry() {}
 
   struct Owner
   {
@@ -47,11 +47,11 @@ public:
   void dump_xml(Formatter *f) const;
 };
 
-class S3ListObjectsV2Resp
+class S3ListObjectsResp
 {
 public:
-  S3ListObjectsV2Resp() {}
-  ~S3ListObjectsV2Resp() {}
+  S3ListObjectsResp() {}
+  ~S3ListObjectsResp() {}
 
   struct CommonPrefix
   {
@@ -67,16 +67,14 @@ public:
   };
 
   vector<CommonPrefix> common_prefixes;
-  vector<S3ListObjectsV2Entry> contents;
-  string continuation_token;
+  vector<S3ListObjectsEntry> contents;
   string delimiter;
   bool is_truncated;
-  uint32_t key_count{0};
   uint32_t max_keys{0};
   string name;
-  string next_continuation_token;
   string prefix;
-  string start_after;
+  string marker;
+  string next_marker;
 
   void decode_xml(XMLObj *obj);
   void dump_xml(Formatter *f) const;
@@ -85,10 +83,10 @@ public:
 class BucketObjectsLister
 {
 protected:
+  CephContext *cct{nullptr};
   RGWRESTConn *conn{nullptr};
 
   string bucket_name;
-  string start_after;
   string prefix;
   string delimiter;
   bool fetch_owner;
@@ -96,15 +94,14 @@ protected:
   bool allow_unordered;
 
 private:
-  string continuation_token;
-
-  CephContext *cct;
+  bool is_truncated;
+  string next_marker;
+  string last_obj_key;
 
 public:
   BucketObjectsLister(CephContext *_cct,
                       RGWRESTConn *_conn,
                       const string &_bucket_name,
-                      const string &_start_after = "",
                       const string &_prefix = "",
                       const string &_delimiter = "",
                       bool _fetch_owner = false,
@@ -112,7 +109,6 @@ public:
     cct(_cct),
     conn(_conn),
     bucket_name(_bucket_name),
-    start_after(_start_after),
     prefix(_prefix),
     delimiter(_delimiter),
     fetch_owner(_fetch_owner),
@@ -120,8 +116,8 @@ public:
 
   ~BucketObjectsLister() {}
 
-  const std::string& get_continuation_token() const;
-  int fetch_next(unique_ptr<S3ListObjectsV2Resp> *resp, uint64_t max_keys);
+  const std::string& get_next_token() const;
+  int fetch_next(unique_ptr<S3ListObjectsResp> *resp, uint64_t max_keys);
 };
 
 class Stats
@@ -164,7 +160,6 @@ int copy_remote_bucket(RGWRados *store,
                        rgw_bucket &dest_bucket,
                        const string &tenant,
                        const string &bucket_name,
-                       const string &start_after,
                        const string &object_prefix,
                        const list<string> &endpoints,
                        const RGWAccessKey &key);
