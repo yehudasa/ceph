@@ -70,11 +70,11 @@ void bucket_copy::S3ListObjectsV2Resp::decode_xml(XMLObj *obj)
 
   // mandatory
   RGWXMLDecoder::decode_xml("Name", name, obj, true);
-  RGWXMLDecoder::decode_xml("KeyCount", key_count, obj, true);
   RGWXMLDecoder::decode_xml("MaxKeys", max_keys, obj, true);
   RGWXMLDecoder::decode_xml("IsTruncated", is_truncated, obj, true);
 
   // optional
+  RGWXMLDecoder::decode_xml("KeyCount", key_count, obj, false);
   RGWXMLDecoder::decode_xml("ContinuationToken", continuation_token, obj, false);
   RGWXMLDecoder::decode_xml("NextContinuationToken", next_continuation_token, obj, false);
   RGWXMLDecoder::decode_xml("Delimiter", delimiter, obj, false);
