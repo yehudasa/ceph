@@ -11,8 +11,10 @@
 #include "rgw_admin_copy.h"
 
 #define dout_subsys ceph_subsys_rgw
-#define list_objects_attempts 5
-#define list_objects_retry_sleep_seconds 5
+#define copy_object_attempts 5
+#define copy_object_retry_sleep_seconds 5
+#define list_bucket_attempts 5
+#define list_bucket_retry_sleep_seconds 5
 
 void bucket_copy::S3ListObjectsEntry::decode_xml(XMLObj *obj)
 {
@@ -275,7 +277,7 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
 
     unique_ptr<bucket_copy::S3ListObjectsResp> listResp;
 
-    for (int i = 1; i <= list_objects_attempts; i++) {
+    for (int i = 1; i <= list_bucket_attempts; i++) {
       int r = lister.fetch_next(&listResp, copy_batch_num);
 
       if (r < 0) {
@@ -286,13 +288,13 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
                                << ", attempt=" << i
                                << dendl;
 
-        if (r == -ENOENT || r == -EACCES || i == list_objects_attempts) {
+        if (r == -ENOENT || r == -EACCES || i == list_bucket_attempts) {
           return r;
         }
 
-        ldout(store->ctx(), 20) << "retry list remote bucket in " << list_objects_retry_sleep_seconds << " seconds"
-                                << dendl;
-        utime_t retry(list_objects_retry_sleep_seconds, 0);
+        ldout(store->ctx(), 5) << "retry list remote bucket in " << list_bucket_retry_sleep_seconds << " seconds"
+                               << dendl;
+        utime_t retry(list_bucket_retry_sleep_seconds, 0);
         retry.sleep();
       } else {
         break;
@@ -330,42 +332,61 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
       map<string, bufferlist> attrs;
       std::optional<uint64_t> bytes_transferred;
 
-      int r = store->fetch_remote_obj(obj_ctx,
-                                      user_id,
-                                      NULL,
-                                      BUCKET_COPY_SOURCE_ZONE_ID,
-                                      dest_obj,
-                                      src_obj,
-                                      dest_bucket_info,
-                                      src_bucket_info,
-                                      dest_placement_rule,
-                                      NULL, /* real_time* src_mtime, */
-                                      NULL, /* real_time* mtime, */
-                                      NULL, /* const real_time* mod_ptr, */
-                                      NULL, /* const real_time* unmod_ptr, */
-                                      false, /* high precision time */
-                                      NULL, /* const char *if_match, */
-                                      NULL, /* const char *if_nomatch, */
-                                      RGWRados::ATTRSMOD_NONE,
-                                      true, /* copy_if_newer*/
-                                      attrs,
-                                      RGWObjCategory::Main,
-                                      versioned_epoch,
-                                      real_time(), /* delete_at */
-                                      NULL, /* string *ptag, */
-                                      NULL, /* string *petag, */
-                                      NULL, /* void (*progress_cb)(off_t, void *), */
-                                      NULL, /* void *progress_data*); */
-                                      NULL, /* rgw_zone_set *zones_trace */
-                                      &bytes_transferred);
-      if (r < 0) {
-        ldout(store->ctx(), 0) << "ERROR: could not copy remote object " << obj.key
-                               << ", bucket=" << bucket_name
-                               << ", err=" << cpp_strerror(-r)
-                               << dendl;
+      int r;
+      for (int i = 1; i <= copy_object_attempts; i++) {
+        r = store->fetch_remote_obj(obj_ctx,
+                                    user_id,
+                                    NULL,
+                                    BUCKET_COPY_SOURCE_ZONE_ID,
+                                    dest_obj,
+                                    src_obj,
+                                    dest_bucket_info,
+                                    src_bucket_info,
+                                    dest_placement_rule,
+                                    NULL, /* real_time* src_mtime, */
+                                    NULL, /* real_time* mtime, */
+                                    NULL, /* const real_time* mod_ptr, */
+                                    NULL, /* const real_time* unmod_ptr, */
+                                    false, /* high precision time */
+                                    NULL, /* const char *if_match, */
+                                    NULL, /* const char *if_nomatch, */
+                                    RGWRados::ATTRSMOD_NONE,
+                                    true, /* copy_if_newer*/
+                                    attrs,
+                                    RGWObjCategory::Main,
+                                    versioned_epoch,
+                                    real_time(), /* delete_at */
+                                    NULL, /* string *ptag, */
+                                    NULL, /* string *petag, */
+                                    NULL, /* void (*progress_cb)(off_t, void *), */
+                                    NULL, /* void *progress_data*); */
+                                    NULL, /* rgw_zone_set *zones_trace */
+                                    &bytes_transferred);
+        if (r < 0) {
+          ldout(store->ctx(), 0) << "ERROR: could not copy remote object " << obj.key
+                                 << ", bucket=" << bucket_name
+                                 << ", err=" << cpp_strerror(-r)
+                                 << ", attempt=" << i
+                                 << dendl;
+
+          if (r == -ENOENT || r == -EACCES || i == copy_object_attempts) {
+            break;
+          }
+
+          ldout(store->ctx(), 5) << "retry copy remote object in " << copy_object_retry_sleep_seconds << " seconds"
+                                 << dendl;
+          utime_t retry(copy_object_retry_sleep_seconds, 0);
+          retry.sleep();
+        } else {
+          break;
+        }
       }
 
       stats.count(r, *bytes_transferred);
+
+      if (r < 0) {
+        return r;
+      }
 
       utime_t obj_copy;
       obj_copy.set_from_double(g_conf().get_val<double>("rgw_bucket_copy_obj_sleep"));
