@@ -165,7 +165,7 @@ int bucket_copy::BucketObjectsLister::fetch_next(unique_ptr<S3ListObjectsV2Resp>
   }
 
   if (!parser.parse(out.c_str(), out.length(), 1)) {
-    cerr << "ERROR: could not parse list-objects-v2 XML response" << std::endl;
+    ldout(cct, 0) << "ERROR: could not parse list-objects-v2 XML response" << dendl;
     return -ERR_MALFORMED_XML;
   }
 
@@ -173,7 +173,7 @@ int bucket_copy::BucketObjectsLister::fetch_next(unique_ptr<S3ListObjectsV2Resp>
   try {
     RGWXMLDecoder::decode_xml("ListBucketResult", **resp, &parser);
   } catch (RGWXMLDecoder::err &err) {
-    cerr << "ERROR: could not decode ListBucketResult: " << err << std::endl;
+    ldout(cct, 0) << "ERROR: could not decode ListBucketResult: " << err << dendl;
     return -ERR_MALFORMED_XML;
   }
 
@@ -246,7 +246,8 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
   // Though this should never happen, we need to ensure it does not exist in
   // the zone_conn_map before injecting the new RGWRESTConn.
   if (it != zone_conn_map.cend()) {
-    cerr << "ERROR: source zone " << BUCKET_COPY_SOURCE_ZONE_ID << "already exists" << std::endl;
+    ldout(store->ctx(), 0) << "ERROR: source zone " << BUCKET_COPY_SOURCE_ZONE_ID << " already exists"
+                           << dendl;
     return -EEXIST;
   }
 
@@ -258,7 +259,11 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
 
   zone_conn_map[BUCKET_COPY_SOURCE_ZONE_ID] = conn;
 
-  bucket_copy::BucketObjectsLister lister(conn, bucket_name, start_after, object_prefix);
+  bucket_copy::BucketObjectsLister lister(store->ctx(),
+                                          conn,
+                                          bucket_name,
+                                          start_after,
+                                          object_prefix);
   bucket_copy::Stats stats;
 
   while (true) {
@@ -275,18 +280,19 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
       int ret = lister.fetch_next(&listResp, copy_batch_num);
 
       if (ret < 0) {
-        cerr << "ERROR: could not list bucket: " << bucket_name
-             << ", max_keys=" << copy_batch_num
-             << ", continuation_token=" << lister.get_continuation_token()
-             << ", err=" << cpp_strerror(-ret)
-             << ", attempt=" << i;
+        ldout(store->ctx(), 0) << "ERROR: could not list bucket: " << bucket_name
+                               << ", max_keys=" << copy_batch_num
+                               << ", continuation_token=" << lister.get_continuation_token()
+                               << ", err=" << cpp_strerror(-ret)
+                               << ", attempt=" << i
+                               << dendl;
 
         if (ret == -ENOENT || ret == -EACCES || i == list_objects_attempts) {
-          cerr << std::endl;
           return ret;
         }
 
-        cerr << ", retry in " << list_objects_retry_sleep_seconds << " seconds" << std::endl;
+        ldout(store->ctx(), 20) << "retry list bucket in " << list_objects_retry_sleep_seconds << " seconds"
+                                << dendl;
         utime_t retry(list_objects_retry_sleep_seconds, 0);
         retry.sleep();
       } else {
@@ -309,7 +315,8 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
     for (const auto &obj : listResp->contents) {
       ldout(store->ctx(), 5) << "copy object=" << obj.key
                              << ", size=" << obj.size
-                             << ", bucket=" << bucket_name << dendl;
+                             << ", bucket=" << bucket_name
+                             << dendl;
 
       rgw_obj src_obj(src_bucket, obj.key);
       rgw_obj dest_obj(dest_bucket, obj.key);
@@ -351,8 +358,10 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
                                       NULL, /* rgw_zone_set *zones_trace */
                                       &bytes_transferred);
       if (r < 0) {
-        cerr << "ERROR: could not copy object " << obj.key << ", bucket=" << bucket_name
-             << ", ret_val=" << r << std::endl;
+        ldout(store->ctx(), 0) << "ERROR: could not copy object " << obj.key
+                               << ", bucket=" << bucket_name
+                               << ", ret_val=" << r
+                               << dendl;
       }
 
       stats.count(r, *bytes_transferred);

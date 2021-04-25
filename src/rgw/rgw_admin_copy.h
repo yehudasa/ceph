@@ -98,14 +98,18 @@ protected:
 private:
   string continuation_token;
 
+  CephContext *cct;
+
 public:
-  BucketObjectsLister(RGWRESTConn *_conn,
+  BucketObjectsLister(CephContext *_cct,
+                      RGWRESTConn *_conn,
                       const string &_bucket_name,
                       const string &_start_after = "",
                       const string &_prefix = "",
                       const string &_delimiter = "",
                       bool _fetch_owner = false,
                       bool _allow_unordered = false):
+    cct(_cct),
     conn(_conn),
     bucket_name(_bucket_name),
     start_after(_start_after),
