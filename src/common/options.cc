@@ -7586,7 +7586,7 @@ std::vector<Option> get_rgw_options() {
 		     "from the remote bucket on each batch"),
 
     Option("rgw_bucket_copy_obj_sleep", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
-    .set_default(0.1)
+    .set_default(0.0)
     .set_description("sleep seconds before copying the next object "
 		     "from the remote bucket"),
   });
