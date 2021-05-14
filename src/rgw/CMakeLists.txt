@@ -375,19 +375,6 @@ target_link_libraries(radosgw-admin ${rgw_libs} librados
   ${CURL_LIBRARIES} ${EXPAT_LIBRARIES} ${BLKID_LIBRARIES})
 install(TARGETS radosgw-admin DESTINATION bin)
 
-set(radosgw_admin_srcs
-  rgw_admin_cli.cc
-  rgw_sync_checkpoint.cc
-  rgw_orphan.cc)
-add_executable(radosgw-admin-cli ${radosgw_admin_srcs})
-target_link_libraries(radosgw-admin-cli ${rgw_libs} librados
-  cls_rgw_client cls_otp_client cls_lock_client cls_refcount_client
-  cls_log_client cls_timeindex_client neorados_cls_fifo
-  cls_version_client cls_user_client
-  global ${FCGI_LIBRARY} ${LIB_RESOLV}
-  ${CURL_LIBRARIES} ${EXPAT_LIBRARIES} ${BLKID_LIBRARIES})
-install(TARGETS radosgw-admin-cli DESTINATION bin)
-
 set(radosgw_es_srcs
   rgw_es_main.cc)
 add_executable(radosgw-es ${radosgw_es_srcs})
@@ -475,8 +462,12 @@ if(WITH_TESTS)
     DESTINATION bin)
 endif(WITH_TESTS)
 
+configure_file(${CMAKE_SOURCE_DIR}/src/rgw/rgwam.py.in
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/rgwam @ONLY)
+
 install(PROGRAMS
   rgw-gap-list
   rgw-gap-list-comparator
   rgw-orphan-list
+  rgwam
   DESTINATION bin)
