@@ -118,7 +118,7 @@ public:
   ~BucketObjLister() {}
 
   const std::string& get_next_token() const;
-  int fetch_next(unique_ptr<S3ListBucketResp> &resp, uint64_t max_keys);
+  int fetch_next(S3ListBucketResp &resp, uint64_t max_keys);
 };
 
 class Stats

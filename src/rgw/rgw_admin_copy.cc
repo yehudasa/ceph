@@ -123,7 +123,7 @@ const std::string& bucket_copy::BucketObjLister::get_next_token() const {
   return last_obj_key;
 }
 
-int bucket_copy::BucketObjLister::fetch_next(unique_ptr<S3ListBucketResp> &resp, uint64_t max_keys)
+int bucket_copy::BucketObjLister::fetch_next(S3ListBucketResp &resp, uint64_t max_keys)
 {
   string resource("/" + bucket_name);
   param_vec_t params;
@@ -162,22 +162,21 @@ int bucket_copy::BucketObjLister::fetch_next(unique_ptr<S3ListBucketResp> &resp,
     return -ERR_MALFORMED_XML;
   }
 
-  resp = make_unique<S3ListBucketResp>();
   try {
-    RGWXMLDecoder::decode_xml("ListBucketResult", *resp, &parser);
+    RGWXMLDecoder::decode_xml("ListBucketResult", resp, &parser);
   } catch (RGWXMLDecoder::err &err) {
     ldout(cct, 0) << "ERROR: could not decode XML node ListBucketResult: " << err << dendl;
     return -ERR_MALFORMED_XML;
   }
 
   // keep track of current list status in order to list next batch
-  is_truncated = resp->is_truncated;
-  next_marker = resp->next_marker;
+  is_truncated = resp.is_truncated;
+  next_marker = resp.next_marker;
 
-  if (resp->contents.empty()) {
+  if (resp.contents.empty()) {
     last_obj_key = "";
   } else {
-    last_obj_key = resp->contents.back().key;
+    last_obj_key = resp.contents.back().key;
   }
 
   return 0;
@@ -227,7 +226,7 @@ void bucket_copy::Stats::count(int r, uint64_t bytes_transferred)
 int bucket_copy::CopyObjTask::run() {
   RGWObjectCtx obj_ctx(store);
   rgw_user user_id;
-  rgw_obj dest_obj(dest_bucket, obj_key);  
+  rgw_obj dest_obj(dest_bucket, obj_key);
   rgw_obj src_obj(src_bucket, obj_key);
   RGWBucketInfo src_bucket_info;
   std::optional<rgw_placement_rule> dest_placement_rule;
@@ -307,7 +306,7 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
   // RGWSI_Zone::zone_conn_map, so that RGWRados::fetch_remote_obj can be
   // reused, where it looks for the RGWRESTConn by source_zone when fetching
   // remote objects.
-  map<string, RGWRESTConn *> &zone_conn_map = store->svc.zone->get_zone_conn_map();
+  auto& zone_conn_map = store->svc.zone->get_zone_conn_map();
   map<string, RGWRESTConn *>::const_iterator it = zone_conn_map.find(BUCKET_COPY_SOURCE_ZONE_ID);
 
   // Though this should never happen, we need to ensure it does not exist in
@@ -318,6 +317,8 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
     return -EEXIST;
   }
 
+  // RGWRESTConn needs to remain allocated, because we inject it into
+  // zone_conn_map which will be properly destroyed by RGWSI_Zone::shutdown.
   RGWRESTConn *conn = new RGWRESTConn(store->ctx(),
                                       nullptr, // RGWSI_Zone *zone_svc
                                       "", // const string& _remote_id
@@ -342,7 +343,7 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
                            << ", marker=" << lister.get_next_token()
                            << dendl;
 
-    unique_ptr<bucket_copy::S3ListBucketResp> listResp;
+    bucket_copy::S3ListBucketResp listResp;
 
     for (int i = 1; i <= LIST_BUCKET_ATTEMPTS; i++) {
       int r = lister.fetch_next(listResp, copy_batch_num);
@@ -369,7 +370,7 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
       }
     }
 
-    for (const auto &obj : listResp->contents) {
+    for (const auto &obj : listResp.contents) {
       runner.submit(CopyObjTask(store,
                                 &stats,
                                 dest_bucket_info,
@@ -384,7 +385,7 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
       }
     }
 
-    if (!listResp->is_truncated) {
+    if (!listResp.is_truncated) {
       runner.done();
       break;
     }
