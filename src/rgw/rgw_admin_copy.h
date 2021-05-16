@@ -17,11 +17,9 @@
 
 namespace bucket_copy {
 
-class S3ListBucketEntry
-{
+class S3ListBucketEntry {
 public:
-  struct Owner
-  {
+  struct Owner {
     string id;
     string display_name;
 
@@ -46,11 +44,9 @@ public:
   void dump_xml(Formatter *f) const;
 };
 
-class S3ListBucketResp
-{
+class S3ListBucketResp {
 public:
-  struct CommonPrefix
-  {
+  struct CommonPrefix {
     string value;
 
     void decode_xml(XMLObj *obj) {
@@ -76,8 +72,7 @@ public:
   void dump_xml(Formatter *f) const;
 };
 
-class BucketObjLister
-{
+class BucketObjLister {
 protected:
   CephContext *cct{nullptr};
   RGWRESTConn *conn{nullptr};
@@ -116,20 +111,24 @@ public:
   int fetch_next(S3ListBucketResp &resp, uint64_t max_keys);
 };
 
-class Stats
-{
+class Stats {
 private:
-  std::unique_ptr<PerfCounters> logger;
-  std::mutex mtx;
+  CephContext *cct;
+  PerfCountersRef logger;
 
 public:
   enum {
     l_first = 101010,
 
     l_copy_ok,
+    l_copy_enoent,
     l_copy_err,
 
-    l_bytes_transferred,
+    l_copy_bytes_transferred,
+
+    l_list_ok,
+    l_list_err,
+    l_list_latency,
 
     l_last,
   };
@@ -137,8 +136,24 @@ public:
   Stats(const Stats &rhs) = delete; // no copy
   Stats& operator=(const Stats &rhs) = delete; // no assignment
 
-  Stats();
-  ~Stats();
+  explicit Stats(CephContext *_cct) : cct(_cct) {
+    PerfCountersBuilder b(cct, "bucket-copy", Stats::l_first, Stats::l_last);
+
+    // do not share these counters with ceph-mgr
+    b.set_prio_default(PerfCountersBuilder::PRIO_DEBUGONLY);
+
+    b.add_u64_counter(Stats::l_copy_ok, "copy_ok", "Number of objects copied");
+    b.add_u64_counter(Stats::l_copy_enoent, "copy_enoent", "Number of objects failed to copy due to ENOENT");
+    b.add_u64_counter(Stats::l_copy_err, "copy_err", "Number of objects failed to copy due to other errors");
+    b.add_u64_avg(Stats::l_copy_bytes_transferred, "copy_bytes_transferred", "Number of bytes transferred for object copy");
+    b.add_u64_counter(Stats::l_list_ok, "list_ok", "Number of successful list bucket operations");
+    b.add_u64_counter(Stats::l_list_err, "list_err", "Number of failed list bucket operations");
+    b.add_time_avg(l_list_latency, "list_latency", "List bucket operation latency");
+
+    logger = { b.create_perf_counters(), cct };
+    cct->get_perfcounters_collection()->add(logger.get());
+  }
+  ~Stats() {}
 
   void dump(Formatter *f) const {
     if (logger) {
@@ -146,15 +161,35 @@ public:
     }
   }
 
-  void count(int r, uint64_t bytes_transferred);
-  void reset();
+  PerfCountersRef& get_logger() {
+    return logger;
+  }
+
+  void count_copy(int r, uint64_t bytes_transferred) {
+    if (r >= 0) {
+      logger->inc(Stats::l_copy_ok);
+      logger->inc(Stats::l_copy_bytes_transferred, bytes_transferred);
+    } else if (r == -ENOENT) {
+      logger->inc(Stats::l_copy_enoent);
+    } else {
+      logger->inc(Stats::l_copy_err);
+    }
+  }
+
+  void count_list(int r, utime_t latency) {
+    if (r >= 0) {
+      logger->inc(Stats::l_list_ok);
+    } else {
+      logger->inc(Stats::l_list_err);
+    }
+    logger->tinc(Stats::l_list_latency, latency);
+  }
 };
 
 class CopyObjTask {
 private:
   RGWRados *store = nullptr;
-  Stats *stats = nullptr;
-
+  Stats &stats;
   RGWBucketInfo &dest_bucket_info;
   const rgw_bucket &dest_bucket;
   rgw_bucket src_bucket;
@@ -162,7 +197,7 @@ private:
 
 public:
   CopyObjTask(RGWRados *_store,
-              Stats *_stats,
+              Stats &_stats,
               RGWBucketInfo &_dest_bucket_info,
               const rgw_bucket &_dest_bucket,
               const rgw_bucket &_src_bucket,

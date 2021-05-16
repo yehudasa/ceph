@@ -115,7 +115,8 @@ void bucket_copy::S3ListBucketResp::dump_xml(Formatter *f) const
 }
 
 
-const std::string& bucket_copy::BucketObjLister::get_next_token() const {
+const std::string& bucket_copy::BucketObjLister::get_next_token() const
+{
   if (is_truncated) {
     return next_marker;
   }
@@ -174,7 +175,7 @@ int bucket_copy::BucketObjLister::fetch_next(S3ListBucketResp &resp, uint64_t ma
   next_marker = resp.next_marker;
 
   if (resp.contents.empty()) {
-    last_obj_key = "";
+    last_obj_key.clear();
   } else {
     last_obj_key = resp.contents.back().key;
   }
@@ -182,48 +183,8 @@ int bucket_copy::BucketObjLister::fetch_next(S3ListBucketResp &resp, uint64_t ma
   return 0;
 }
 
-bucket_copy::Stats::Stats()
+int bucket_copy::CopyObjTask::run()
 {
-  PerfCountersBuilder b(g_ceph_context, "bucket-copy", Stats::l_first, Stats::l_last);
-
-  // do not share these counters with ceph-mgr
-  b.set_prio_default(PerfCountersBuilder::PRIO_DEBUGONLY);
-
-  b.add_u64_counter(Stats::l_copy_ok, "copy_ok", "Number of objects copied");
-  b.add_u64_counter(Stats::l_copy_err, "copy_err", "Number of objects that hit errors while copying");
-  b.add_u64_avg(Stats::l_bytes_transferred, "bytes_transferred", "Number of bytes transferred");
-
-  logger.reset(b.create_perf_counters());
-  g_ceph_context->get_perfcounters_collection()->add(logger.get());
-}
-
-bucket_copy::Stats::~Stats()
-{
-  if (logger) {
-    g_ceph_context->get_perfcounters_collection()->remove(logger.get());
-  }
-}
-
-void bucket_copy::Stats::reset()
-{
-  if (logger) {
-    g_ceph_context->get_perfcounters_collection()->reset(logger->get_name());
-  }
-}
-
-void bucket_copy::Stats::count(int r, uint64_t bytes_transferred)
-{
-  std::lock_guard<std::mutex> lock(mtx);
-
-  if (r >= 0) {
-    logger->inc(Stats::l_copy_ok);
-    logger->inc(Stats::l_bytes_transferred, bytes_transferred);
-  } else {
-    logger->inc(Stats::l_copy_err);
-  }
-}
-
-int bucket_copy::CopyObjTask::run() {
   RGWObjectCtx obj_ctx(store);
   rgw_user user_id;
   rgw_obj dest_obj(dest_bucket, obj_key);
@@ -272,6 +233,9 @@ int bucket_copy::CopyObjTask::run() {
                                 NULL, /* void *progress_data*); */
                                 NULL, /* rgw_zone_set *zones_trace */
                                 &bytes_transferred);
+
+    stats.count_copy(r, *bytes_transferred);
+
     if (r < 0) {
       ldout(store->ctx(), 0) << "ERROR: could not copy remote object " << obj_key
                              << ", bucket=" << src_bucket.name
@@ -291,8 +255,6 @@ int bucket_copy::CopyObjTask::run() {
       break;
     }
   }
-
-  stats->count(r, *bytes_transferred);
 
   return r;
 }
@@ -339,7 +301,7 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
 
   bucket_copy::BucketObjLister lister(store->ctx(), conn, bucket_name, object_prefix);
   bucket_copy::Runner<CopyObjTask> runner(num_threads);
-  bucket_copy::Stats stats;
+  bucket_copy::Stats stats(g_ceph_context);
 
   while (true) {
     auto batch_num = g_conf().get_val<uint64_t>("rgw_bucket_copy_list_batch_num");
@@ -355,7 +317,10 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
                              << ", attempt=" << i
                              << dendl;
 
+      auto start = ceph_clock_now();
       int r = lister.fetch_next(listResp, batch_num);
+      stats.count_list(r, ceph_clock_now() - start);
+
       if (r < 0) {
         ldout(store->ctx(), 0) << "ERROR: could not list remote bucket " << bucket_name
                                << ", max_keys=" << batch_num
@@ -380,7 +345,7 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
 
     for (const auto &obj : listResp.contents) {
       runner.submit(CopyObjTask(store,
-                                &stats,
+                                stats,
                                 dest_bucket_info,
                                 dest_bucket,
                                 src_bucket,
