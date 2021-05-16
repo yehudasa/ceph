@@ -7579,16 +7579,45 @@ std::vector<Option> get_rgw_options() {
     .set_default(false)
     .set_description("interpret the x-amz-storage-class header"),
 
-    Option("rgw_bucket_copy_batch_num", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
-    .set_default(100)
-    .set_min_max(1, 10000)
-    .set_description("maximum number of objects that can be listed "
-		     "from the remote bucket on each batch"),
+    Option("rgw_bucket_copy_list_batch_num", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_flag(Option::FLAG_RUNTIME)
+    .set_default(200)
+    .set_min(1)
+    .set_description("maximum number of objects that can be listed per batch "
+                     "in the remote bucket"),
 
-    Option("rgw_bucket_copy_obj_sleep", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
-    .set_default(0.0)
-    .set_description("sleep seconds before copying the next object "
-		     "from the remote bucket"),
+    Option("rgw_bucket_copy_list_attempts", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_flag(Option::FLAG_RUNTIME)
+    .set_default(10)
+    .set_min(1)
+    .set_description("maximum number of attempts that can be made to list objects "
+                     "in the remote bucket for each batch"),
+
+    Option("rgw_bucket_copy_list_retry_sleep", Option::TYPE_SECS, Option::LEVEL_ADVANCED)
+    .set_flag(Option::FLAG_RUNTIME)
+    .set_default(3)
+    .set_min(0)
+    .set_description("Time in seconds to sleep before retrying list objects "
+                     "in the remote bucket"),
+
+    Option("rgw_bucket_copy_obj_attempts", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_flag(Option::FLAG_RUNTIME)
+    .set_default(10)
+    .set_min(1)
+    .set_description("maximum number of attempts that can be made to copy an object "
+                     "from the remote bucket"),
+
+    Option("rgw_bucket_copy_obj_retry_sleep", Option::TYPE_SECS, Option::LEVEL_ADVANCED)
+    .set_flag(Option::FLAG_RUNTIME)
+    .set_default(3)
+    .set_min(0)
+    .set_description("Time in seconds to sleep before retrying copy an object "
+                     "from the remote bucket"),
+
+    Option("rgw_bucket_copy_obj_threads", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(5)
+    .set_min(1)
+    .set_description("Number of threads used to copy objects from the remote bucket"),
   });
 }
 

@@ -234,12 +234,16 @@ int bucket_copy::CopyObjTask::run() {
   map<string, bufferlist> attrs;
   std::optional<uint64_t> bytes_transferred;
 
-  ldout(store->ctx(), 5) << "copy remote object=" << obj_key
-                         << ", bucket=" << src_bucket.name
-                         << dendl;
+  auto attempts = g_conf().get_val<uint64_t>("rgw_bucket_copy_obj_attempts");
+  auto retry_sleep = g_conf().get_val<std::chrono::seconds>("rgw_bucket_copy_obj_retry_sleep");
 
   int r;
-  for (int i = 1; i <= COPY_OBJECT_ATTEMPTS; i++) {
+  for (uint i = 1; i <= attempts; i++) {
+    ldout(store->ctx(), 5) << "copy remote object " << obj_key
+                           << ", bucket=" << src_bucket.name
+                           << ", attempt=" << i
+                           << dendl;
+
     r = store->fetch_remote_obj(obj_ctx,
                                 user_id,
                                 NULL,
@@ -271,18 +275,18 @@ int bucket_copy::CopyObjTask::run() {
     if (r < 0) {
       ldout(store->ctx(), 0) << "ERROR: could not copy remote object " << obj_key
                              << ", bucket=" << src_bucket.name
-                             << ", err=" << cpp_strerror(-r)
                              << ", attempt=" << i
+                             << ", err=" << cpp_strerror(-r)
                              << dendl;
 
-      if (r == -ENOENT || r == -EACCES || i == COPY_OBJECT_ATTEMPTS) {
+      if (r == -ENOENT || r == -EACCES || i == attempts) {
         break;
       }
 
-      ldout(store->ctx(), 5) << "retry copy remote object in " << COPY_OBJECT_RETRY_SLEEP_SECONDS << " seconds"
+      ldout(store->ctx(), 5) << "copy remote object " << obj_key
+                             << ", will retry in " << retry_sleep
                              << dendl;
-      utime_t retry(COPY_OBJECT_RETRY_SLEEP_SECONDS, 0);
-      retry.sleep();
+      std::this_thread::sleep_for(retry_sleep);
     } else {
       break;
     }
@@ -327,6 +331,8 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
 
   zone_conn_map[BUCKET_COPY_SOURCE_ZONE_ID] = conn;
 
+  auto num_threads = g_conf().get_val<uint64_t>("rgw_bucket_copy_obj_threads");
+
   rgw_bucket src_bucket;
   src_bucket.tenant = tenant;
   src_bucket.name = bucket_name;
@@ -336,35 +342,37 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
   bucket_copy::Stats stats;
 
   while (true) {
-    auto copy_batch_num = g_conf().get_val<uint64_t>("rgw_bucket_copy_batch_num");
-
-    ldout(store->ctx(), 5) << "list remote bucket=" << bucket_name
-                           << ", max_keys=" << copy_batch_num
-                           << ", marker=" << lister.get_next_token()
-                           << dendl;
+    auto batch_num = g_conf().get_val<uint64_t>("rgw_bucket_copy_list_batch_num");
+    auto attempts = g_conf().get_val<uint64_t>("rgw_bucket_copy_list_attempts");
+    auto retry_sleep = g_conf().get_val<std::chrono::seconds>("rgw_bucket_copy_list_retry_sleep");
 
     bucket_copy::S3ListBucketResp listResp;
 
-    for (int i = 1; i <= LIST_BUCKET_ATTEMPTS; i++) {
-      int r = lister.fetch_next(listResp, copy_batch_num);
+    for (uint i = 1; i <= attempts; i++) {
+      ldout(store->ctx(), 5) << "list remote bucket " << bucket_name
+                             << ", max_keys=" << batch_num
+                             << ", marker=" << lister.get_next_token()
+                             << ", attempt=" << i
+                             << dendl;
 
+      int r = lister.fetch_next(listResp, batch_num);
       if (r < 0) {
-        ldout(store->ctx(), 0) << "ERROR: could not list remote bucket: " << bucket_name
-                               << ", max_keys=" << copy_batch_num
+        ldout(store->ctx(), 0) << "ERROR: could not list remote bucket " << bucket_name
+                               << ", max_keys=" << batch_num
                                << ", marker=" << lister.get_next_token()
-                               << ", err=" << cpp_strerror(-r)
                                << ", attempt=" << i
+                               << ", err=" << cpp_strerror(-r)
                                << dendl;
 
-        if (r == -ENOENT || r == -EACCES || i == LIST_BUCKET_ATTEMPTS) {
+        if (r == -ENOENT || r == -EACCES || i == attempts) {
           runner.done();
           return r;
         }
 
-        ldout(store->ctx(), 5) << "retry list remote bucket in " << LIST_BUCKET_RETRY_SLEEP_SECONDS << " seconds"
+        ldout(store->ctx(), 5) << "list remote bucket " << bucket_name
+                               << ", will retry in " << retry_sleep
                                << dendl;
-        utime_t retry(LIST_BUCKET_RETRY_SLEEP_SECONDS, 0);
-        retry.sleep();
+        std::this_thread::sleep_for(retry_sleep);
       } else {
         break;
       }

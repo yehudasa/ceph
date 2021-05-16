@@ -13,11 +13,6 @@
 // It can be any non-existing zone ID.
 #define BUCKET_COPY_SOURCE_ZONE_ID "bucket-copy-source-zone"
 
-#define COPY_OBJECT_ATTEMPTS            5
-#define COPY_OBJECT_RETRY_SLEEP_SECONDS 5
-#define LIST_BUCKET_ATTEMPTS            5
-#define LIST_BUCKET_RETRY_SLEEP_SECONDS 5
-
 #define RUNNER_BUFFER_SIZE 1000
 
 namespace bucket_copy {
