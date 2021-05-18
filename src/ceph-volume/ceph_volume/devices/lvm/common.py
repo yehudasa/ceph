@@ -20,20 +20,21 @@ def rollback_osd(args, osd_id=None):
         # it means that it wasn't generated, so there is nothing to rollback here
         return
 
-    # once here, this is an error condition that needs to be rolled back
-    terminal.error('Was unable to complete a new OSD, will rollback changes')
-    osd_name = 'osd.%s'
-    bootstrap_keyring = '/var/lib/ceph/bootstrap-osd/%s.keyring' % conf.cluster
-    cmd = [
-        'ceph',
-        '--cluster', conf.cluster,
-        '--name', 'client.bootstrap-osd',
-        '--keyring', bootstrap_keyring,
-        'osd', 'purge-new', osd_name % osd_id,
-        '--yes-i-really-mean-it',
-    ]
+    if args.osd_id is None:
+        # once here, this is an error condition that needs to be rolled back
+        terminal.error('Was unable to complete a new OSD, will rollback changes')
+        osd_name = 'osd.%s'
+        bootstrap_keyring = '/var/lib/ceph/bootstrap-osd/%s.keyring' % conf.cluster
+        cmd = [
+            'ceph',
+            '--cluster', conf.cluster,
+            '--name', 'client.bootstrap-osd',
+            '--keyring', bootstrap_keyring,
+            'osd', 'purge-new', osd_name % osd_id,
+            '--yes-i-really-mean-it',
+        ]
 
-    process.run(cmd)
+        process.run(cmd)
 
 
 common_args = {
