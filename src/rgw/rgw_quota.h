@@ -106,7 +106,8 @@ public:
   virtual int check_bucket_shards_static(uint64_t min_bucket_objs, uint64_t max_bucket_objs,
                                   uint64_t num_shards, const rgw_user& bucket_owner,
                                   const rgw_bucket& bucket, RGWQuotaInfo& bucket_quota,
-                                  bool& need_resharding, uint64_t configured_shards) = 0;
+                                  bool& need_resharding, uint64_t configured_shards,
+                                  uint64_t versioning_index_factor) = 0;
 
   virtual void update_stats(const rgw_user& bucket_owner, rgw_bucket& bucket, int obj_delta, uint64_t added_bytes, uint64_t removed_bytes) = 0;
 

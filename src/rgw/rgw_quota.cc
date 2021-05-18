@@ -959,9 +959,9 @@ public:
     }
   }
 
-  int check_bucket_shards_static(uint64_t min_bucket_objs, uint64_t max_bucket_objs, uint64_t num_shards,
+  int check_bucket_shards_static(uint64_t min_index_records, uint64_t max_index_records, uint64_t num_shards,
 			  const rgw_user& user, const rgw_bucket& bucket, RGWQuotaInfo& bucket_quota,
-			  bool& need_resharding, uint64_t configured_shards) override
+			  bool& need_resharding, uint64_t configured_shards, uint64_t versioning_index_factor) override
   {
     RGWStorageStats bucket_stats;
     int ret = bucket_stats_cache.get_stats(user, bucket, bucket_stats,
@@ -970,7 +970,9 @@ public:
       return ret;
     }
 
-    if (bucket_stats.num_objects  >= min_bucket_objs && bucket_stats.num_objects <= max_bucket_objs) {
+    uint64_t index_records = bucket_stats.num_objects * versioning_index_factor;
+
+    if (index_records >= min_index_records && index_records <= max_index_records) {
       need_resharding = num_shards != configured_shards;
     } else {
       need_resharding = false;

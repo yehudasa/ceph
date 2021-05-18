@@ -7378,23 +7378,32 @@ std::vector<Option> get_rgw_options() {
         "rgw_dynamic_resharding_max_object_count to determine a size range for "
         "resharding.")
     .add_see_also("rgw_dynamic_resharding")
-    .add_see_also("rgw_dynamic_resharding_min_object_count")
-    .add_see_also("rgw_dynamic_resharding_max_object_count"),
+    .add_see_also("rgw_dynamic_resharding_min_index_records_count")
+    .add_see_also("rgw_dynamic_resharding_max_index_records_count"),
 
-    Option("rgw_dynamic_resharding_min_object_count", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    Option("rgw_dynamic_resharding_min_index_records_count", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(0)
-    .set_description("Minimum number of objects for a dynamic resharding candidate bucket")
+    .set_description("Minimum number of index records for a dynamic resharding candidate bucket")
     .set_long_description(
-        "If greater than zero, a bucket must have at least this many objects "
+        "If greater than zero, a bucket must have at least this many index records "
         "for dynamic resharding to proceed")
     .add_see_also("rgw_dynamic_resharding_static_shards"),
 
-    Option("rgw_dynamic_resharding_max_object_count", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    Option("rgw_dynamic_resharding_max_index_records_count", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(0)
-    .set_description("Maximum number of objects for a dynamic resharding candidate bucket")
+    .set_description("Maximum number of index records for a dynamic resharding candidate bucket")
     .set_long_description(
         "If greater than zero, a bucket must have less than this number of "
-        "objects for dynamic resharding to proceed")
+        "index records for dynamic resharding to proceed")
+    .add_see_also("rgw_dynamic_resharding_static_shards"),
+
+    Option("rgw_dynamic_resharding_versioning_index_factor", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(4)
+    .set_min(1)
+    .set_description("The amount of shard index entries per object in versioned buckets")
+    .set_long_description(
+        "Given value will be used as an object number multiplier in order to "
+        "calculate the number of index records for a bucket")
     .add_see_also("rgw_dynamic_resharding_static_shards"),
 
     Option("rgw_reshard_thread_interval", Option::TYPE_UINT, Option::LEVEL_ADVANCED)

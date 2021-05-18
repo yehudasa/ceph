@@ -9130,19 +9130,26 @@ int RGWRados::check_bucket_shards(const RGWBucketInfo& bucket_info,
     cct->_conf.get_val<uint64_t>("rgw_max_objs_per_shard");
   const uint64_t static_shards =
     cct->_conf.get_val<uint64_t>("rgw_dynamic_resharding_static_shards");
-  const uint64_t min_object_count =
-    cct->_conf.get_val<uint64_t>("rgw_dynamic_resharding_min_object_count");
-  const uint64_t max_object_count =
-    cct->_conf.get_val<uint64_t>("rgw_dynamic_resharding_max_object_count");
+  const uint64_t min_index_records_count =
+    cct->_conf.get_val<uint64_t>("rgw_dynamic_resharding_min_index_records_count");
+  const uint64_t max_index_records_count =
+    cct->_conf.get_val<uint64_t>("rgw_dynamic_resharding_max_index_records_count");
+
+  uint64_t versioning_index_factor = 1;
+  // Check if bucket has ever had versioning enabled
+  if (bucket_info.versioning_status() > 0) {
+    versioning_index_factor =
+      cct->_conf.get_val<uint64_t>("rgw_dynamic_resharding_versioning_index_factor");
+  }
 
   int ret = 0;
   if (static_shards > 0 &&
-      min_object_count > 0 &&
-      max_object_count >= min_object_count) {
+      min_index_records_count > 0 &&
+      max_index_records_count >= min_index_records_count) {
     ret =
-      quota_handler->check_bucket_shards_static(min_object_count, max_object_count, num_source_shards,
-                                         bucket_info.owner, bucket, bucket_quota,
-                                         need_resharding, static_shards);
+      quota_handler->check_bucket_shards_static(min_index_records_count, max_index_records_count,
+                                         num_source_shards, bucket_info.owner, bucket, bucket_quota,
+                                         need_resharding, static_shards, versioning_index_factor);
       suggested_num_shards = static_shards;
     if (ret < 0) {
       return ret;
