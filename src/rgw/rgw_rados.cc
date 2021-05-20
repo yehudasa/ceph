@@ -9134,6 +9134,8 @@ int RGWRados::check_bucket_shards(const RGWBucketInfo& bucket_info,
     cct->_conf.get_val<uint64_t>("rgw_dynamic_resharding_min_index_records_count");
   const uint64_t max_index_records_count =
     cct->_conf.get_val<uint64_t>("rgw_dynamic_resharding_max_index_records_count");
+  const uint64_t reshard_percentage =
+    cct->_conf.get_val<uint64_t>("rgw_dynamic_resharding_percentage");
 
   uint64_t versioning_index_factor = 1;
   // Check if bucket has ever had versioning enabled
@@ -9149,7 +9151,8 @@ int RGWRados::check_bucket_shards(const RGWBucketInfo& bucket_info,
     ret =
       quota_handler->check_bucket_shards_static(min_index_records_count, max_index_records_count,
                                          num_source_shards, bucket_info.owner, bucket, bucket_quota,
-                                         need_resharding, static_shards, versioning_index_factor);
+                                         need_resharding, static_shards, versioning_index_factor,
+                                         reshard_percentage);
       suggested_num_shards = static_shards;
     if (ret < 0) {
       return ret;

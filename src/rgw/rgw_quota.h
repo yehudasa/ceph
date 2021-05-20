@@ -107,7 +107,7 @@ public:
                                   uint64_t num_shards, const rgw_user& bucket_owner,
                                   const rgw_bucket& bucket, RGWQuotaInfo& bucket_quota,
                                   bool& need_resharding, uint64_t configured_shards,
-                                  uint64_t versioning_index_factor) = 0;
+                                  uint64_t versioning_index_factor, uint64_t reshard_percentage) = 0;
 
   virtual void update_stats(const rgw_user& bucket_owner, rgw_bucket& bucket, int obj_delta, uint64_t added_bytes, uint64_t removed_bytes) = 0;
 

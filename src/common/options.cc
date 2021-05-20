@@ -7406,6 +7406,15 @@ std::vector<Option> get_rgw_options() {
         "calculate the number of index records for a bucket")
     .add_see_also("rgw_dynamic_resharding_static_shards"),
 
+    Option("rgw_dynamic_resharding_percentage", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(5)
+    .set_min_max(1, 100)
+    .set_description("The percentage of eligible buckets to consider for dynamic resharding")
+    .set_long_description(
+        "The bucket will only be dynamically resharded when "
+        "MD5(bucket_name) % 100 < rgw_dynamic_resharding_percentage")
+    .add_see_also("rgw_dynamic_resharding_static_shards"),
+
     Option("rgw_reshard_thread_interval", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(10_min)
     .set_min(10)
