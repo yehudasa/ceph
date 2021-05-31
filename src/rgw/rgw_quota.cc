@@ -977,7 +977,7 @@ public:
       uint32_t hash = ceph_str_hash_linux(bucket.name.c_str(), bucket.name.size());
       uint32_t modulo = hash % 100;
 
-      if (reshard_percentage >= modulo) {
+      if (modulo >= reshard_percentage) {
         ldout(store->ctx(), 15) << __func__ << ": skipping bucket=" << bucket.name
                                 << " modulo=" << modulo
                                 << " reshard percentage=" << reshard_percentage << dendl;

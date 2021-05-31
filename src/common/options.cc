@@ -7412,7 +7412,7 @@ std::vector<Option> get_rgw_options() {
     .set_description("The percentage of eligible buckets to consider for dynamic resharding")
     .set_long_description(
         "The bucket will only be dynamically resharded when "
-        "MD5(bucket_name) % 100 < rgw_dynamic_resharding_percentage")
+        "ceph_hash(bucket_name) % 100 < rgw_dynamic_resharding_percentage")
     .add_see_also("rgw_dynamic_resharding_static_shards"),
 
     Option("rgw_reshard_thread_interval", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
