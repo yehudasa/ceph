@@ -6,6 +6,7 @@
 
 #include "rgw_zone.h"
 #include "rgw_bucket.h"
+#include "rgw_perf_counters.h"
 #include "rgw_reshard.h"
 #include "rgw_sal.h"
 #include "rgw_sal_rados.h"
@@ -1031,6 +1032,7 @@ int RGWReshard::process_single_logshard(int logshard_num, const DoutPrefixProvid
     for(auto& entry: entries) { // logshard entries
       if(entry.new_instance_id.empty()) {
 
+	utime_t start_time = ceph_clock_now();
 	ldpp_dout(dpp, 20) << __func__ << " resharding " <<
 	  entry.bucket_name  << dendl;
 
@@ -1096,6 +1098,11 @@ int RGWReshard::process_single_logshard(int logshard_num, const DoutPrefixProvid
 	    entry.bucket_name << " from resharding queue: " <<
 	    cpp_strerror(-ret) << dendl;
 	  return ret;
+	}
+
+	if (perfcounter) {
+	  perfcounter->inc(l_rgw_reshard);
+	  perfcounter->tinc(l_rgw_reshard_lat, (ceph_clock_now() - start_time));
 	}
       } // if new instance id is empty
 
