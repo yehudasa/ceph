@@ -50,7 +50,6 @@ enum {
   l_rgw_pubsub_push_pending,
   l_rgw_pubsub_missing_conf,
 
-  l_rgw_dynamic_reshard_scheduled,
   l_rgw_reshard,
   l_rgw_reshard_lat,
 

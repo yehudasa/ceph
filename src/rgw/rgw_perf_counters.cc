@@ -60,7 +60,6 @@ int rgw_perf_start(CephContext *cct)
   plb.add_u64(l_rgw_pubsub_push_pending, "pubsub_push_pending", "Pubsub events pending reply from endpoint");
   plb.add_u64_counter(l_rgw_pubsub_missing_conf, "pubsub_missing_conf", "Pubsub events could not be handled because of missing configuration");
 
-  plb.add_u64_counter(l_rgw_dynamic_reshard_scheduled, "dynamic_reshard_scheduled", "Buckets scheduled for dynamic resharding");
   plb.add_u64_counter(l_rgw_reshard, "reshard", "Bucket reshards");
   plb.add_time_avg(l_rgw_reshard_lat, "reshard_lat", "Reshard latency");
 
