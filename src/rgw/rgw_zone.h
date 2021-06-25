@@ -860,6 +860,13 @@ struct RGWPeriodMap
   }
 
   uint32_t get_zone_short_id(const std::string& zone_id) const;
+
+  bool find_zone_by_id(const rgw_zone_id& zone_id,
+                       RGWZoneGroup *zonegroup,
+                       RGWZone *zone) const;
+  bool find_zone_by_name(const string& zone_id,
+                       RGWZoneGroup *zonegroup,
+                       RGWZone *zone) const;
 };
 WRITE_CLASS_ENCODER(RGWPeriodMap)
 
@@ -996,6 +1003,13 @@ public:
   int notify_zone(bufferlist& bl, optional_yield y);
   /// notify the zone of a new period
   int notify_new_period(const RGWPeriod& period, optional_yield y);
+
+  int find_zone(const DoutPrefixProvider *dpp,
+                const rgw_zone_id& zid,
+                RGWPeriod *pperiod,
+                RGWZoneGroup *pzonegroup,
+                bool *pfound,
+                optional_yield y) const;
 };
 WRITE_CLASS_ENCODER(RGWRealm)
 
@@ -1144,6 +1158,12 @@ public:
     }
     return false;
   }
+
+  int find_zone(const DoutPrefixProvider *dpp,
+                const rgw_zone_id& zid,
+                RGWZoneGroup *pzonegroup,
+                bool *pfound,
+                optional_yield y) const;
 
   int get_latest_epoch(epoch_t& epoch, optional_yield y);
   int set_latest_epoch(optional_yield y,
