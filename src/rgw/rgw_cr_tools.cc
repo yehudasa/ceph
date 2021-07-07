@@ -17,7 +17,7 @@
 #define dout_context g_ceph_context
 #define dout_subsys ceph_subsys_rgw
 
-int RGWSerialCR::operate()
+int RGWSerialCR::operate(const DoutPrefixProvider *dpp)
 {
   reenter(this) {
     for (iter = crs.begin();

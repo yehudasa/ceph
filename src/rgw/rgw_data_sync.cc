@@ -86,10 +86,10 @@ class RGWReadDataSyncStatusMarkersCR : public RGWShardCollectCR {
     : RGWShardCollectCR(sc->cct, MAX_CONCURRENT_SHARDS),
       sc(sc), env(sc->env), num_shards(num_shards), markers(markers)
   {}
-  bool spawn_next() override;
+  bool spawn_next(const DoutPrefixProvider *dpp) override;
 };
 
-bool RGWReadDataSyncStatusMarkersCR::spawn_next()
+bool RGWReadDataSyncStatusMarkersCR::spawn_next(const DoutPrefixProvider *dpp)
 {
   if (shard_id >= num_shards) {
     return false;
@@ -122,10 +122,10 @@ class RGWReadDataSyncRecoveringShardsCR : public RGWShardCollectCR {
     : RGWShardCollectCR(sc->cct, MAX_CONCURRENT_SHARDS), sc(sc), env(sc->env),
       max_entries(_max_entries), num_shards(_num_shards), omapkeys(omapkeys)
   {}
-  bool spawn_next() override;
+  bool spawn_next(const DoutPrefixProvider *dpp) override;
 };
 
-bool RGWReadDataSyncRecoveringShardsCR::spawn_next()
+bool RGWReadDataSyncRecoveringShardsCR::spawn_next(const DoutPrefixProvider *dpp)
 {
   if (shard_id >= num_shards)
     return false;
@@ -358,10 +358,10 @@ public:
                                                                  sc(_sc), sync_env(_sc->env), num_shards(_num_shards),
                                                                  datalog_info(_datalog_info), shard_id(0) {}
 
-  bool spawn_next() override;
+  bool spawn_next(const DoutPrefixProvider *dpp) override;
 };
 
-bool RGWReadRemoteDataLogInfoCR::spawn_next() {
+bool RGWReadRemoteDataLogInfoCR::spawn_next(const DoutPrefixProvider *dpp) {
   if (shard_id >= num_shards) {
     return false;
   }
@@ -452,10 +452,10 @@ public:
     shards.swap(_shards);
     iter = shards.begin();
   }
-  bool spawn_next() override;
+  bool spawn_next(const DoutPrefixProvider *dpp) override;
 };
 
-bool RGWListRemoteDataLogCR::spawn_next() {
+bool RGWListRemoteDataLogCR::spawn_next(const DoutPrefixProvider *dpp) {
   if (iter == shards.end()) {
     return false;
   }
@@ -502,12 +502,13 @@ public:
 
   virtual RGWCoroutine *init_cr(RGWSyncTraceNodeRef& tn) = 0;
 
-  virtual RGWCoroutine *get_pos_cr(int shard_id, M *pos, bool *disabled) = 0;
+  virtual RGWCoroutine *get_pos_cr(const DoutPrefixProvider *dpp, int shard_id, M *pos, bool *disabled) = 0;
   virtual RGWCoroutine *fetch_cr(int shard_id,
                                  const string& marker,
                                  T *result) = 0;
 
-  virtual RGWCoroutine *update_marker_cr(int shard_id,
+  virtual RGWCoroutine *update_marker_cr(const DoutPrefixProvider *dpp,
+                                         int shard_id,
                                          const RGWSI_SIP_Marker::SetParams& params) {
     return nullptr;
   }
@@ -532,7 +533,7 @@ class RGWInitDataSyncStatusCoroutine : public RGWCoroutine {
   RGWDataSyncCtx *sc;
   RGWDataSyncEnv *sync_env;
   RGWDataSyncInfoCRHandlerPair dsi;
-  rgw::sal::RGWRadosStore* store;
+  rgw::sal::RadosStore* store;
   const rgw_pool& pool;
   uint32_t num_shards;
 
@@ -610,7 +611,7 @@ public:
       /* fetch current position in logs */
       shards_info.resize(num_shards);
       for (i = 0; i < (int)num_shards; i++) {
-        yield_spawn_window(dsi.inc->get_pos_cr(i, &shards_info[i], nullptr),
+        yield_spawn_window(dsi.inc->get_pos_cr(dpp, i, &shards_info[i], nullptr),
                            DATA_INIT_SPAWN_WINDOW,
                            [&](uint64_t stack_id, int ret) {
                            if (ret < 0) {
@@ -635,7 +636,7 @@ public:
 
         {
           auto& info = shards_info[i];
-          cr = dsi.inc->update_marker_cr(i, { RGWSI_SIP_Marker::create_target_id(sync_env->svc->zone->get_zone().id, nullopt),
+          cr = dsi.inc->update_marker_cr(dpp, i, { RGWSI_SIP_Marker::create_target_id(sync_env->svc->zone->get_zone().id, nullopt),
                                                info.marker,
                                                info.timestamp,
                                                false });
@@ -751,13 +752,13 @@ int RGWRemoteDataLog::init(const rgw_zone_id& _source_zone, const RGWRemoteCtl::
     }
   }
 
-  ret = run(sc.dsi.full->init_cr(tn));
+  ret = run(dpp, sc.dsi.full->init_cr(tn));
   if (ret < 0) {
     ldpp_dout(dpp, 0) << "failed to initialize datalog full sync handler: " << ret << dendl;
     return ret;
   }
 
-  ret = run(sc.dsi.inc->init_cr(tn));
+  ret = run(dpp, sc.dsi.inc->init_cr(tn));
   if (ret < 0) {
     ldpp_dout(dpp, 0) << "failed to initialize datalog incrementa sync handler: " << ret << dendl;
     return ret;
@@ -800,7 +801,7 @@ int RGWRemoteDataLog::read_sync_status(const DoutPrefixProvider *dpp, rgw_data_s
   // cannot run concurrently with run_sync(), so run in a separate manager
   int ret = local_call(dpp, [&](RGWCoroutinesManager& crs, RGWDataSyncCtx& sc_local) {
 
-    return crs.run(new RGWReadDataSyncStatusCoroutine(&sc, sync_status));
+    return crs.run(dpp, new RGWReadDataSyncStatusCoroutine(&sc, sync_status));
   });
 
   return ret;
@@ -903,7 +904,7 @@ class RGWDataFullSyncInfoCRHandler_Legacy : public RGWDataSyncInfoCRHandler {
                                                  marker(_marker),
                                                  result(_result) {}
 
-    int operate() {
+    int operate(const DoutPrefixProvider *dpp) {
       reenter(this) {
         yield {
           string entrypoint = string("/admin/metadata/bucket.instance");
@@ -979,7 +980,7 @@ public:
 
   }
 
-  RGWCoroutine *get_pos_cr(int shard_id, sip_data_inc_pos *pos, bool *disabled) override {
+  RGWCoroutine *get_pos_cr(const DoutPrefixProvider *dpp, int shard_id, sip_data_inc_pos *pos, bool *disabled) override {
     pos->marker.clear();
     pos->timestamp = ceph::real_time();
     if (*disabled) {
@@ -1022,7 +1023,7 @@ class RGWDataIncSyncInfoCRHandler_Legacy : public RGWDataSyncInfoCRHandler {
                                                        marker(_marker),
                                                        timestamp(_timestamp) {}
 
-    int operate() {
+    int operate(const DoutPrefixProvider *dpp) {
       reenter(this) {
         yield call(new RGWReadRemoteDataLogShardInfoCR(sc, shard_id, &info));
         if (retcode < 0) {
@@ -1046,7 +1047,7 @@ class RGWDataIncSyncInfoCRHandler_Legacy : public RGWDataSyncInfoCRHandler {
                                                 handler(_handler),
                                                 sc(_sc) {}
 
-    int operate() {
+    int operate(const DoutPrefixProvider *dpp) {
       reenter(this) {
         yield {
           string entrypoint = string("/admin/log");
@@ -1090,7 +1091,7 @@ class RGWDataIncSyncInfoCRHandler_Legacy : public RGWDataSyncInfoCRHandler {
                                                 marker(_marker),
                                                 result(_result) {}
 
-    int operate() {
+    int operate(const DoutPrefixProvider *dpp) {
       reenter(this) {
         yield call(new RGWReadRemoteDataLogShardCR(sc, shard_id,
                                                    marker,
@@ -1145,7 +1146,7 @@ public:
     return new InitCR(this, sc);
   }
 
-  RGWCoroutine *get_pos_cr(int shard_id, sip_data_inc_pos *pos, bool *disabled) override {
+  RGWCoroutine *get_pos_cr(const DoutPrefixProvider *dpp, int shard_id, sip_data_inc_pos *pos, bool *disabled) override {
     if (disabled) {
       *disabled = false;
     }
@@ -1197,9 +1198,9 @@ protected:
     InitCR(RGWSyncInfoCRHandler_SIP *_siph) : RGWCoroutine(_siph->ctx()),
                                               siph(_siph) {}
 
-    int operate() {
+    int operate(const DoutPrefixProvider *dpp) {
       reenter(this) {
-        yield call(siph->sip->init_cr());
+        yield call(siph->sip->init_cr(dpp));
         if (retcode < 0) {
           ldout(cct, 0) << "ERROR: failed to initialize sip (" << siph->sip_id() << "): retcode=" << retcode << dendl;
           return set_cr_error(retcode);
@@ -1221,7 +1222,7 @@ protected:
           ldout(cct, 0) << "ERROR: sip (" << siph->sip_id() << ") failed to find an appropirate stage" << dendl;
           return set_cr_error(-EIO);
         }
-        yield call(siph->sip->get_stage_info_cr(siph->sid, &siph->stage_info));
+        yield call(siph->sip->get_stage_info_cr(dpp, siph->sid, &siph->stage_info));
         if (retcode < 0) {
           ldout(cct, 0) << "ERROR: sip (" << siph->sip_id() << ") failed to fetch stage info for sid " << siph->sid << ", retcode=" << retcode << dendl;
           return set_cr_error(retcode);
@@ -1257,9 +1258,9 @@ protected:
                           marker(_marker),
                           result(_result) {}
 
-    int operate() {
+    int operate(const DoutPrefixProvider *dpp) {
       reenter(this) {
-        yield call(provider->fetch_cr(sid, shard_id, marker, handler->max_entries, &provider_result));
+        yield call(provider->fetch_cr(dpp, sid, shard_id, marker, handler->max_entries, &provider_result));
         if (retcode < 0) {
           return set_cr_error(retcode);
         }
@@ -1373,7 +1374,7 @@ public:
                                                                                                   _stage_type),
                                                                          RGWDataSyncInfoCRHandler(_sc) {
     type_provider = std::make_shared<SITypeHandlerProvider_Default<siprovider_data_info> >();
-    sip_mgr_init(std::make_unique<SIProviderCRMgr_REST>(_sc->dpp,
+    sip_mgr_init(std::make_unique<SIProviderCRMgr_REST>(_sc->cct,
                                                         _sc->conns.sip,
                                                         _sc->env->http_manager));
     sip_init(std::unique_ptr<SIProviderCRMgrInstance_REST>(sip_mgr->alloc_instance(data_type,
@@ -1404,7 +1405,7 @@ public:
   RGWDataFullSyncInfoCRHandler_SIP(RGWDataSyncCtx *_sc) : RGWDataSyncInfoCRHandler_SIP_Base(_sc, SIProvider::StageType::FULL) {
   }
 
-  RGWCoroutine *get_pos_cr(int shard_id, sip_data_inc_pos *pos, bool *disabled) override {
+  RGWCoroutine *get_pos_cr(const DoutPrefixProvider *dpp, int shard_id, sip_data_inc_pos *pos, bool *disabled) override {
     pos->marker.clear();
     pos->timestamp = ceph::real_time();
     if (disabled) {
@@ -1426,13 +1427,14 @@ public:
   RGWDataIncSyncInfoCRHandler_SIP(RGWDataSyncCtx *_sc) : RGWDataSyncInfoCRHandler_SIP_Base(_sc, SIProvider::StageType::INC) {
   }
 
-  RGWCoroutine *get_pos_cr(int shard_id, sip_data_inc_pos *pos, bool *disabled) override {
-    return sip->get_cur_state_cr(sid, shard_id, pos, disabled);
+  RGWCoroutine *get_pos_cr(const DoutPrefixProvider *dpp, int shard_id, sip_data_inc_pos *pos, bool *disabled) override {
+    return sip->get_cur_state_cr(dpp, sid, shard_id, pos, disabled);
   }
 
-  RGWCoroutine *update_marker_cr(int shard_id,
+  RGWCoroutine *update_marker_cr(const DoutPrefixProvider *dpp,
+                                 int shard_id,
                                  const RGWSI_SIP_Marker::SetParams& params) override {
-    return sip->update_marker_cr(sid, shard_id, params);
+    return sip->update_marker_cr(dpp, sid, shard_id, params);
   }
 };
 
@@ -1491,7 +1493,7 @@ public:
         }
 
         for (iter = result.entries.begin(); iter != result.entries.end(); ++iter) {
-          ldout_dpp(dpp, 20) << "fetch full: bucket=" << iter->bucket << dendl;
+          ldpp_dout(dpp, 20) << "fetch full: bucket=" << iter->bucket << dendl;
 
           if (iter->num_shards > 0) {
             for (i = 0; i < iter->num_shards; i++) {
@@ -1671,9 +1673,9 @@ public:
 
   virtual ~RGWBucketPipeSyncStatusCRHandler() {}
 
-  virtual RGWCoroutine *read_status_cr(rgw_bucket_shard_sync_info *status) = 0;
-  virtual RGWCoroutine *write_status_cr(const rgw_bucket_shard_sync_info& status) = 0;
-  virtual RGWCoroutine *remove_status_cr() = 0;
+  virtual RGWCoroutine *read_status_cr(const DoutPrefixProvider *dpp, rgw_bucket_shard_sync_info *status) = 0;
+  virtual RGWCoroutine *write_status_cr(const DoutPrefixProvider *dpp, const rgw_bucket_shard_sync_info& status) = 0;
+  virtual RGWCoroutine *remove_status_cr(const DoutPrefixProvider *dpp) = 0;
 };
 
 using RGWBucketPipeInfoHandlerRef = std::shared_ptr<RGWBucketPipeSyncInfoCRHandler>;
@@ -2108,7 +2110,7 @@ public:
         return set_cr_error(sync_status);
       }
       if (sip && has_lowerbound_marker) {
-        yield call(sip->update_marker_cr(shard_id, { RGWSI_SIP_Marker::create_target_id(sc->env->svc->zone->get_zone().id, nullopt),
+        yield call(sip->update_marker_cr(dpp, shard_id, { RGWSI_SIP_Marker::create_target_id(sc->env->svc->zone->get_zone().id, nullopt),
                                                      lowerbound_marker.marker,
                                                      lowerbound_marker.timestamp,
                                                      false }));
@@ -2257,7 +2259,7 @@ public:
     while (true) {
       switch (sync_marker.state) {
       case rgw_data_sync_marker::FullSync:
-        r = full_sync();
+        r = full_sync(dpp);
         if (r < 0) {
           if (r != -EBUSY) {
             tn->log(10, SSTR("full sync failed (r=" << r << ")"));
@@ -2295,7 +2297,7 @@ public:
     lease_stack.reset(spawn(lease_cr.get(), false));
   }
 
-  int full_sync() {
+  int full_sync(const DoutPrefixProvider *dpp) {
 #define OMAP_GET_MAX_ENTRIES 100
     int max_entries = OMAP_GET_MAX_ENTRIES;
     reenter(&full_cr) {
@@ -3545,7 +3547,7 @@ public:
                                          SSTR(bucket))) {
   }
 
-  int operate() override;
+  int operate(const DoutPrefixProvider *dpp) override;
 };
 
 class RGWBucketPipeSyncInfoCRHandler_Legacy_Base : public RGWBucketPipeSyncInfoCRHandler {
@@ -3567,7 +3569,7 @@ class RGWBucketPipeSyncInfoCRHandler_Legacy_Base : public RGWBucketPipeSyncInfoC
                                        sc(_sc),
                                        tn(_tn) {}
 
-    int operate() {
+    int operate(const DoutPrefixProvider *dpp) {
       reenter(this) {
         yield call(new RGWSyncGetBucketInfoCR(sc->env,
                                               caller->source_bucket,
@@ -3606,7 +3608,7 @@ public:
     return "legacy/bucket.full";
   }
 
-  RGWCoroutine *get_pos_cr(int shard_id, rgw_bucket_index_marker_info *info, bool *disabled) override {
+  RGWCoroutine *get_pos_cr(const DoutPrefixProvider *dpp, int shard_id, rgw_bucket_index_marker_info *info, bool *disabled) override {
     return nullptr;
   }
 
@@ -3626,7 +3628,7 @@ public:
     return "legacy/bucket.inc";
   }
 
-  RGWCoroutine *get_pos_cr(int shard_id, rgw_bucket_index_marker_info *info, bool *disabled) override {
+  RGWCoroutine *get_pos_cr(const DoutPrefixProvider *dpp, int shard_id, rgw_bucket_index_marker_info *info, bool *disabled) override {
     rgw_bucket_shard source_bs(source_bucket, shard_id);
     return new RGWReadRemoteBucketIndexLogInfoCR(sc, source_bs, info, disabled);
   }
@@ -3682,7 +3684,7 @@ public:
                                                                                                     _stage_type),
                                                                            RGWBucketPipeSyncInfoCRHandler(_sc) {
     type_provider = std::make_shared<SITypeHandlerProvider_Default<siprovider_bucket_entry_info> >();
-    sip_mgr_init(std::make_unique<SIProviderCRMgr_REST>(_sc->dpp,
+    sip_mgr_init(std::make_unique<SIProviderCRMgr_REST>(_sc->cct,
                                                         _sc->conns.sip,
                                                         _sc->env->http_manager));
     sip_init(std::unique_ptr<SIProviderCRMgrInstance_REST>(sip_mgr->alloc_instance(data_type,
@@ -3699,13 +3701,14 @@ public:
                                  SIProvider::StageType _stage_type) : RGWBucketSyncInfoCRHandler_SIP_Base(_sc, _source_bucket, _stage_type) {
   }
 
-  RGWCoroutine *get_pos_cr(int shard_id, rgw_bucket_index_marker_info *pos, bool *disabled) override {
-    return sip->get_cur_state_cr(sid, shard_id, pos, disabled);
+  RGWCoroutine *get_pos_cr(const DoutPrefixProvider *dpp, int shard_id, rgw_bucket_index_marker_info *pos, bool *disabled) override {
+    return sip->get_cur_state_cr(dpp, sid, shard_id, pos, disabled);
   }
 
-  RGWCoroutine *update_marker_cr(int shard_id,
+  RGWCoroutine *update_marker_cr(const DoutPrefixProvider *dpp,
+                                 int shard_id,
                                  const RGWSI_SIP_Marker::SetParams& params) override {
-    return sip->update_marker_cr(sid, shard_id, params);
+    return sip->update_marker_cr(dpp, sid, shard_id, params);
   }
 };
 
@@ -3759,7 +3762,7 @@ public:
     sync_status_oid(RGWBucketPipeSyncStatusManager::status_oid(sc->source_zone, _sync_pair)),
     status_obj(sync_env->svc->zone->get_zone_params().log_pool, sync_status_oid) {}
 
-  RGWCoroutine *read_status_cr(rgw_bucket_shard_sync_info *status) override {
+  RGWCoroutine *read_status_cr(const DoutPrefixProvider *dpp, rgw_bucket_shard_sync_info *status) override {
     return new ReadSyncStatusCR(sc, status_obj, status, &objv_tracker);
   }
 
@@ -3769,7 +3772,7 @@ public:
     return new RGWSimpleRadosWriteAttrsCR(dpp, sync_env->async_rados, sync_env->svc->sysobj, status_obj, attrs, &objv_tracker);
   }
 
-  RGWCoroutine *remove_status_cr() override {
+  RGWCoroutine *remove_status_cr(const DoutPrefixProvider *dpp) override {
     return new RGWRadosRemoveCR(sync_env->store, status_obj, &objv_tracker);
   }
 };
@@ -3891,7 +3894,7 @@ public:
   RGWGroupCallCR(CephContext *cct,
                  State& _group) : RGWCoroutine(cct),
                                   group(_group) {}
-  int operate() override {
+  int operate(const DoutPrefixProvider *dpp) override {
     reenter(this) {
       if (group.is_init()) {
         group.start();
@@ -3965,7 +3968,7 @@ class RGWBucketShardSIPCRWrapperCore
                                        legacy_fallback(_legacy_fallback),
                                        tn(_tn) {}
 
-    int operate() {
+    int operate(const DoutPrefixProvider *dpp) {
       reenter(this) {
 
         for (i = 0; i < 2; ++i) {
@@ -4019,8 +4022,8 @@ public:
     return handler->num_shards();
   }
 
-  RGWCoroutine *get_pos_cr(int shard_id, rgw_bucket_index_marker_info *info, bool *disabled) {
-    return handler->get_pos_cr(shard_id, info, disabled);
+  RGWCoroutine *get_pos_cr(const DoutPrefixProvider *dpp, int shard_id, rgw_bucket_index_marker_info *info, bool *disabled) {
+    return handler->get_pos_cr(dpp, shard_id, info, disabled);
   }
 
   RGWCoroutine *fetch_cr(int shard_id,
@@ -4029,8 +4032,8 @@ public:
     return handler->fetch_cr(shard_id, list_marker, result);
   }
 
-  RGWCoroutine *update_marker_cr(int shard_id, const RGWSI_SIP_Marker::SetParams& params) {
-    return handler->update_marker_cr(shard_id, params);
+  RGWCoroutine *update_marker_cr(const DoutPrefixProvider *dpp, int shard_id, const RGWSI_SIP_Marker::SetParams& params) {
+    return handler->update_marker_cr(dpp, shard_id, params);
   }
 
   string sip_id() const {
@@ -4048,8 +4051,8 @@ public:
                              int _shard_id) : wrapper_core(_wrapper_core),
                                               shard_id(_shard_id) {}
 
-  RGWCoroutine *get_pos_cr(rgw_bucket_index_marker_info *info, bool *disabled) {
-    return wrapper_core->get_pos_cr(shard_id, info, disabled);
+  RGWCoroutine *get_pos_cr(const DoutPrefixProvider *dpp, rgw_bucket_index_marker_info *info, bool *disabled) {
+    return wrapper_core->get_pos_cr(dpp, shard_id, info, disabled);
   }
 
   RGWCoroutine *fetch_cr(const string& list_marker,
@@ -4057,8 +4060,8 @@ public:
     return wrapper_core->fetch_cr(shard_id, list_marker, result);
   }
 
-  RGWCoroutine *update_marker_cr(const RGWSI_SIP_Marker::SetParams& params) {
-    return wrapper_core->update_marker_cr(shard_id, params);
+  RGWCoroutine *update_marker_cr(const DoutPrefixProvider *dpp, const RGWSI_SIP_Marker::SetParams& params) {
+    return wrapper_core->update_marker_cr(dpp, shard_id, params);
   }
 
   string sip_id() const {
@@ -4087,7 +4090,7 @@ public:
   int operate(const DoutPrefixProvider *dpp) override {
     reenter(this) {
       /* fetch current position in logs */
-      yield call(bsc->hsi.inc->get_pos_cr(&info, &syncstopped));
+      yield call(bsc->hsi.inc->get_pos_cr(dpp, &info, &syncstopped));
       ldout(cct, 20) << __func__ << ": hsi.inc sip_id=" << bsc->hsi.inc->sip_id() << ", syncstopped=" << syncstopped << dendl;
       if (retcode < 0 && retcode != -ENOENT) {
         ldout(cct, 0) << "ERROR: failed to fetch bucket index status" << dendl;
@@ -4096,7 +4099,7 @@ public:
 
       if (!syncstopped) {
         /* init remote status markers */
-        yield call(bsc->hsi.inc->update_marker_cr({ target_id,
+        yield call(bsc->hsi.inc->update_marker_cr(dpp, { target_id,
                                                     info.marker,
                                                     info.timestamp,
                                                     false }));
@@ -4135,7 +4138,7 @@ public:
         if (write_status) {
           call(bsc->hst->write_status_cr(dpp, status));
         } else {
-          call(bsc->hst->remove_status_cr());
+          call(bsc->hst->remove_status_cr(dpp));
         }
       }
       if (syncstopped) {
@@ -4178,13 +4181,13 @@ int RGWRemoteBucketManager::init(RGWCoroutinesManager *cr_mgr)
 
   auto tn = sync_env->sync_tracer->add_node(sync_env->sync_tracer->root_node, "bucket_manager.init", SSTR(source_bucket));
 
-  int ret = cr_mgr->run(wrapper_core_full->init_cr(SIProvider::StageType::FULL, true, tn));
+  int ret = cr_mgr->run(dpp, wrapper_core_full->init_cr(SIProvider::StageType::FULL, true, tn));
   if (ret < 0) {
     ldpp_dout(dpp, 0) << "ERROR: " << __func__ << "(): failed to initialize SIP core for full bucket sync: ret=" << ret << dendl;
     return ret;
   }
 
-  ret = cr_mgr->run(wrapper_core_inc->init_cr(SIProvider::StageType::INC, true, tn));
+  ret = cr_mgr->run(dpp, wrapper_core_inc->init_cr(SIProvider::StageType::INC, true, tn));
   if (ret < 0) {
     ldpp_dout(dpp, 0) << "ERROR: " << __func__ << "(): failed to initialize SIP core for incremental bucket sync: ret=" << ret << dendl;
     return ret;
@@ -4487,7 +4490,7 @@ RGWCoroutine *RGWRemoteBucketManager::read_sync_status_cr(int num, rgw_bucket_sh
     return nullptr;
   }
 
-  return bscs[num].hst->read_status_cr(sync_status);
+  return bscs[num].hst->read_status_cr(dpp, sync_status);
 }
 
 RGWBucketPipeSyncStatusManager::RGWBucketPipeSyncStatusManager(rgw::sal::RadosStore* _store,
@@ -5375,7 +5378,7 @@ int RGWBucketShardIncrementalSyncCR::operate(const DoutPrefixProvider *dpp)
       for (; entries_iter != entries_end; ++entries_iter) {
         auto e = *entries_iter;
         if (e.op == RGWModifyOp::CLS_RGW_OP_SYNCSTOP) {
-          ldout(dpp, 20) << "syncstop on " << e.mtime << dendl;
+          ldpp_dout(dpp, 20) << "syncstop on " << e.mtime << dendl;
           syncstopped = true;
           entries_end = std::next(entries_iter); // stop after this entry
           break;
@@ -5537,7 +5540,7 @@ int RGWBucketShardIncrementalSyncCR::operate(const DoutPrefixProvider *dpp)
     });
 
     if (marker_tracker.get_lowerbound(&lowerbound_marker)) {
-      yield call(bsc->hsi.inc->update_marker_cr({ target_id,
+      yield call(bsc->hsi.inc->update_marker_cr(dpp, { target_id,
                                                   lowerbound_marker.marker,
                                                   lowerbound_marker.timestamp,
                                                   false }));
@@ -6152,7 +6155,7 @@ int RGWRunBucketsSyncBySourceCR::operate(const DoutPrefixProvider *dpp)
 int RGWRunBucketSyncCoroutine::operate(const DoutPrefixProvider *dpp)
 {
   reenter(this) {
-    yield call(bsc->hst->read_status_cr(&sync_status));
+    yield call(bsc->hst->read_status_cr(dpp, &sync_status));
     if (retcode < 0 && retcode != -ENOENT) {
       tn->log(0, "ERROR: failed to read sync status for bucket");
       drain_all();
@@ -6479,14 +6482,14 @@ class RGWCollectBucketSyncStatusCR : public RGWShardCollectCR {
     end = status->end();
   }
 
-  bool spawn_next() override {
+  bool spawn_next(const DoutPrefixProvider *dpp) override {
     if (i == end) {
       return false;
     }
     sync_pair.source_bs = source_bs;
     sync_pair.dest_bs = dest_bs;
     bst.emplace_back(new RGWBucketSyncStatusCRHandler_Legacy(sc, sync_pair));
-    spawn(bst.back()->read_status_cr(&*i), false);
+    spawn(bst.back()->read_status_cr(dpp, &*i), false);
     ++i;
     ++source_bs.shard_id;
     if (shard_to_shard_sync) {
@@ -6498,7 +6501,7 @@ class RGWCollectBucketSyncStatusCR : public RGWShardCollectCR {
 
 class RGWCollectBucketSourceShardStateCR : public RGWShardCollectCR {
   static constexpr int max_concurrent_shards = 16;
-  rgw::sal::RGWRadosStore *const store;
+  rgw::sal::RadosStore *const store;
   RGWDataSyncCtx *const sc;
   RGWDataSyncEnv *const env;
 
@@ -6512,7 +6515,7 @@ class RGWCollectBucketSourceShardStateCR : public RGWShardCollectCR {
   int cur_shard{0};
 
  public:
-  RGWCollectBucketSourceShardStateCR(rgw::sal::RGWRadosStore *store,
+  RGWCollectBucketSourceShardStateCR(rgw::sal::RadosStore *store,
                                      RGWDataSyncCtx *sc,
                                      std::shared_ptr<RGWBucketShardSIPCRWrapperCore> wrapper_core_inc,
                                      Vector *status)
@@ -6532,12 +6535,12 @@ class RGWCollectBucketSourceShardStateCR : public RGWShardCollectCR {
     end = status->end();
   }
 
-  bool spawn_next() override {
+  bool spawn_next(const DoutPrefixProvider *dpp) override {
     if (i == end) {
       return false;
     }
     sips.emplace_back(new RGWBucketShardSIPCRWrapper(wrapper_core_inc, cur_shard));
-    spawn(sips.back()->get_pos_cr(&*i, nullptr), false);
+    spawn(sips.back()->get_pos_cr(dpp, &*i, nullptr), false);
     ++i;
     ++cur_shard;
     return true;
