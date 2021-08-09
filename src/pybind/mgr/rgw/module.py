@@ -87,7 +87,7 @@ class Module(orchestrator.OrchestratorClientMixin, MgrModule):
     @CLICommand('rgw admin', perm='rw')
     def _cmd_rgw_admin(self, params: Sequence[str]):
         """rgw admin"""
-        run_cmd = [ './bin/radosgw-admin',
+        run_cmd = [ 'radosgw-admin',
                     '-c', str(self.get_ceph_conf_path()),
                     '-k', str(self.get_ceph_option('keyring')),
                     '-n', f'mgr.{self.get_mgr_id()}' ] + (params or [])
