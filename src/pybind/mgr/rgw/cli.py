@@ -99,7 +99,7 @@ class ZoneCommand:
             usage='''rgwam zone <subcommand>
 
 The subcommands are:
-   run                     run radosgw daemon in current zone
+   create                  create new zone and connect it to existing realm
 ''')
         parser.add_argument('subcommand', help='Subcommand to run')
         # parse_args defaults to [1:] for args, but you need to
@@ -157,7 +157,6 @@ The commands are:
    realm bootstrap               Bootstrap new realm
    realm new-zone-creds          Create credentials to connect new zone to realm
    zone create                   Create new zone and connect it to existing realm
-   zone run                      Run radosgw in current zone
 ''')
 
         parser.add_argument('command', help='command to run', default=None)
