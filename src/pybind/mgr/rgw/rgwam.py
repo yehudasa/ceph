@@ -556,19 +556,6 @@ class RGWAM:
 
         svc_id = realm_name  + '.' + zone_name
 
-        #if endpoints:
-        #    eps = endpoints.split(',')
-        #    ep = ''
-        #    if len(eps) > 0:
-        #        ep = eps[0]
-        #        o = urlparse(ep)
-        #        port = o.port
-        #        spec = RGWSpec(service_id = svc_id,
-        #                       rgw_realm = realm_name,
-        #                       rgw_zone = zone_name,
-        #                       rgw_frontend_port = o.port)
-        #        self.env.mgr.apply_rgw(spec)
-
         self.env.mgr.apply_rgw(svc_id, realm_name, zone_name)
 
         daemons = self.env.mgr.list_daemons(svc_id, 'rgw', refresh=True)
