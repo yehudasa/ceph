@@ -163,13 +163,11 @@ class PgAutoscaler(MgrModule):
         # to just keep a copy of the pythonized version.
         self._osd_map = None
         if TYPE_CHECKING:
+            self.autoscale_profile: 'ScaleModeT' = 'scale-up'
             self.sleep_interval = 60
             self.mon_target_pg_per_osd = 0
-<<<<<<< HEAD
             self.noautoscale = False
-=======
             self.threshold = 3.0
->>>>>>> b5b9597d2ac (mgr/pg_autoscaler: add threshold module option)
 
     def config_notify(self) -> None:
         for opt in self.NATIVE_OPTIONS:
@@ -273,6 +271,40 @@ class PgAutoscaler(MgrModule):
                 'var': 'pg_autoscale_mode',
                 'val': status
             })
+    @CLIWriteCommand("osd pool set threshold")
+    def set_scaling_threshold(self, num: float) -> Tuple[int, str, str]:
+        """
+        set the autoscaler threshold 
+        A.K.A. the factor by which the new PG_NUM must vary from the existing PG_NUM
+        """
+        if num < 2.0:
+            return 22, "", "threshold can not be set less than 2.0"
+        self.set_module_option("threshold", num)
+        return 0, "threshold updated", ""
+
+    @CLIWriteCommand("osd pool set autoscale-profile scale-up")
+    def set_profile_scale_up(self) -> Tuple[int, str, str]:
+        """
+        set the autoscaler behavior to start out with minimum pgs and scales up when there is pressure
+        """
+        if self.autoscale_profile == "scale-up":
+            return 0, "", "autoscale-profile is already a scale-up!"
+        else:
+            self.set_module_option("autoscale_profile", "scale-up")
+            return 0, "", "autoscale-profile is now scale-up"
+
+    @CLIWriteCommand("osd pool set autoscale-profile scale-down")
+    def set_profile_scale_down(self) -> Tuple[int, str, str]:
+        """
+        set the autoscaler behavior to start out with full pgs and
+        scales down when there is pressure
+        """
+        if self.autoscale_profile == "scale-down":
+            return 0, "", "autoscale-profile is already a scale-down!"
+        else:
+            self.set_module_option("autoscale_profile", "scale-down")
+            return 0, "", "autoscale-profile is now scale-down"
+
     @CLIWriteCommand("osd pool get noautoscale")
     def get_noautoscale(self) -> Tuple[int, str, str]:
         """
@@ -638,11 +670,7 @@ class PgAutoscaler(MgrModule):
             self,
             osdmap: OSDMap,
             pools: Dict[str, Dict[str, Any]],
-<<<<<<< HEAD
-            threshold: float = 3.0,
-=======
             profile: 'ScaleModeT',
->>>>>>> b5b9597d2ac (mgr/pg_autoscaler: add threshold module option)
     ) -> Tuple[List[Dict[str, Any]],
                Dict[int, CrushSubtreeResourceStatus]]:
         threshold = self.threshold
