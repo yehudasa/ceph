@@ -1035,7 +1035,11 @@ int64_t PGMap::get_rule_avail(const OSDMap& osdmap, int ruleno) const
   for (auto p = wm.begin(); p != wm.end(); ++p) {
     auto osd_info = osd_stat.find(p->first);
     if (osd_info != osd_stat.end()) {
-      if (osd_info->second.statfs.total == 0 || p->second == 0) {
+      // DigitalOcean: We use swing OSDs with near 0 weights to
+      // repave OSD to Bluestore. This messes up the available
+      // space reporting from `ceph df`
+      // If an OSD has a weight below .001 we skip it
+      if (osd_info->second.statfs.total == 0 || p->second < 0.001) {
 	// osd must be out, hence its stats have been zeroed
 	// (unless we somehow managed to have a disk with size 0...)
 	//
