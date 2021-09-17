@@ -85,14 +85,16 @@ public:
   };
   using PoolRef = std::shared_ptr<Pool>;
 
-  LRemDBCluster();
+  LRemDBCluster(CephContext *cct);
   ~LRemDBCluster() override;
 
   LRemRadosClient *create_rados_client(CephContext *cct) override;
 
-  int register_object_handler(int64_t pool_id, const ObjectLocator& locator,
+  int register_object_handler(LRemRadosClient *client,
+                              int64_t pool_id, const ObjectLocator& locator,
                               ObjectHandler* object_handler) override;
-  void unregister_object_handler(int64_t pool_id, const ObjectLocator& locator,
+  void unregister_object_handler(LRemRadosClient *client,
+                                 int64_t pool_id, const ObjectLocator& locator,
                                  ObjectHandler* object_handler) override;
 
   int pool_create(LRemDBStore::Cluster& dbc, const std::string &pool_name);
@@ -111,7 +113,7 @@ public:
   void deallocate_client(uint32_t nonce);
 
   bool is_blocklisted(uint32_t nonce) const;
-  void blocklist(uint32_t nonce);
+  void blocklist(LRemRadosClient *rados_client, uint32_t nonce);
 
   void transaction_start(LRemTransactionStateRef& state);
   void transaction_finish(LRemTransactionStateRef& state);
@@ -121,6 +123,8 @@ private:
 
   typedef std::map<std::string, PoolRef>		Pools;
   typedef std::set<uint32_t> Blocklist;
+
+  CephContext *cct;
 
   mutable ceph::mutex m_lock =
     ceph::make_mutex("LRemDBCluster::m_lock");

@@ -200,9 +200,9 @@ namespace LRemDBStore {
     int create(const std::string& _name, const std::string& _val);
     int read();
 
-    ObjRef get_obj_handler(const std::string& name, const std::string& nspace);
-    XAttrsRef get_xattrs_handler(const std::string& name, const std::string& nspace);
-    OMapRef get_omap_handler(const std::string& name, const std::string& nspace);
+    ObjRef get_obj_handler(const std::string& nspace, const std::string& oid);
+    XAttrsRef get_xattrs_handler(const std::string& nspace, const std::string& oid);
+    OMapRef get_omap_handler(const std::string& nspace, const std::string& oid);
   };
   using PoolRef = std::shared_ptr<Pool>;
 

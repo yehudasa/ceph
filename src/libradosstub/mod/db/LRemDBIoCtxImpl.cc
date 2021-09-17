@@ -42,6 +42,11 @@ LRemDBIoCtxImpl::LRemDBIoCtxImpl() {
 
 LRemDBIoCtxImpl::LRemDBIoCtxImpl(const LRemDBIoCtxImpl& rhs)
     : LRemIoCtxImpl(rhs), m_client(rhs.m_client), m_pool(rhs.m_pool) {
+  auto uuid = m_client->cct()->_conf.get_val<uuid_d>("fsid");
+  m_dbc = std::make_shared<LRemDBStore::Cluster>(uuid.to_string());
+  m_dbc->get_pool(m_pool_name, &m_pool_db);
+
+std::cerr << __FILE__ << ":" << __LINE__ << " m_pool_db=" << (void *)m_pool_db.get() << " mpool_name=" << m_pool_name << std::endl;
 }
 
 LRemDBIoCtxImpl::LRemDBIoCtxImpl(LRemDBRadosClient *client, int64_t pool_id,
@@ -53,6 +58,7 @@ LRemDBIoCtxImpl::LRemDBIoCtxImpl(LRemDBRadosClient *client, int64_t pool_id,
   m_dbc = std::make_shared<LRemDBStore::Cluster>(uuid.to_string());
   m_dbc->get_pool(pool_name, &m_pool_db);
 
+std::cerr << __FILE__ << ":" << __LINE__ << " m_pool_db=" << (void *)m_pool_db.get() << " mpool_name=" << m_pool_name << std::endl;
 #warning check all ops for m_pool_db not null
 }
 
@@ -824,7 +830,7 @@ int LRemDBIoCtxImpl::truncate(const std::string& oid, uint64_t size,
   file->modify_meta().epoch = epoch;
   file->meta.snap_overlap.subtract(is);
   file->obj->truncate(size, file->meta);
-  return 0;
+  return file->flush();
 }
 
 int LRemDBIoCtxImpl::write(const std::string& oid, bufferlist& bl, size_t len,
@@ -857,7 +863,7 @@ int LRemDBIoCtxImpl::write(const std::string& oid, bufferlist& bl, size_t len,
 
   file->modify_meta().epoch = epoch;
   file->obj->write(off, len, bl, file->meta);
-  return 0;
+  return file->flush();
 }
 
 int LRemDBIoCtxImpl::write_full(const std::string& oid, bufferlist& bl,
@@ -894,7 +900,7 @@ int LRemDBIoCtxImpl::write_full(const std::string& oid, bufferlist& bl,
 
   file->obj->truncate(0, file->meta);
   file->obj->write(0, bl.length(), bl, file->meta);
-  return 0;
+  return file->flush();
 }
 
 int LRemDBIoCtxImpl::writesame(const std::string& oid, bufferlist& bl,
@@ -938,7 +944,7 @@ int LRemDBIoCtxImpl::writesame(const std::string& oid, bufferlist& bl,
 
   file->modify_meta().epoch = epoch;
 
-  return 0;
+  return file->flush();;
 }
 
 int LRemDBIoCtxImpl::cmpext(const std::string& oid, uint64_t off,
