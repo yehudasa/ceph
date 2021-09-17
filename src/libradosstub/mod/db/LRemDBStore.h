@@ -100,20 +100,26 @@ namespace LRemDBStore {
 
     int read_meta(LRemDBStore::Obj::Meta *pmeta);
     int write_meta(const LRemDBStore::Obj::Meta& pmeta);
+    int remove_meta();
 
     int read_data(uint64_t ofs, uint64_t len, bufferlist *bl);
     int write_data(uint64_t ofs, uint64_t len, const bufferlist& bl);
+    int remove_data();
 
     int write(uint64_t ofs, uint64_t len,
               const bufferlist& bl,
               uint64_t epoch);
     int write(uint64_t ofs, uint64_t len,
               const bufferlist& bl,
-              LRemDBStore::Obj::Meta& meta,
-              uint64_t epoch);
+              LRemDBStore::Obj::Meta& meta);
+
+    int truncate(uint64_t ofs,
+                 LRemDBStore::Obj::Meta& meta);
 
     int append(const bufferlist& bl,
                uint64_t epoch);
+
+    int remove();
   };
   using ObjRef = std::shared_ptr<Obj>;
 
@@ -122,6 +128,7 @@ namespace LRemDBStore {
 
     int write_block(int bid, bufferlist& bl);
     int read_block(int bid, bufferlist *bl);
+    int truncate_block(int bid);
 
   public:
     ObjData(LRemDBOpsRef& _dbo, int _pool_id) : TableBase(_dbo, _pool_id, "objdata") {}
@@ -132,6 +139,8 @@ namespace LRemDBStore {
 
     int read(uint64_t ofs, uint64_t len, bufferlist *bl);
     int write(uint64_t ofs, uint64_t len, const bufferlist& bl);
+    int remove();
+    int truncate(uint64_t ofs);
   };
   using ObjDataRef = std::shared_ptr<ObjData>;
 

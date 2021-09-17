@@ -420,6 +420,21 @@ int LRemDBStore::Obj::write_meta(const LRemDBStore::Obj::Meta& meta) {
   return 0;
 }
 
+int LRemDBStore::Obj::remove_meta() {
+  auto q = dbo->statement("DELETE FROM ? WHERE nspace = ? and oid = ?"); 
+
+  q.bind(1, table_name);
+  q.bind(2, nspace);
+  q.bind(3, oid);
+
+  int r = dbo->exec(q);
+  if (r < 0) {
+    return r;
+  }
+
+  return 0;
+}
+
 int LRemDBStore::Obj::read_data(uint64_t ofs, uint64_t len,
                                 bufferlist *bl) {
 
@@ -493,13 +508,14 @@ int LRemDBStore::Obj::write(uint64_t ofs, uint64_t len,
     return r;
   }
 
-  return write(ofs, len, bl, epoch);
+  meta.touch(epoch);
+
+  return write(ofs, len, bl, meta);
 }
 
 int LRemDBStore::Obj::write(uint64_t ofs, uint64_t len,
                             const bufferlist& bl,
-                            LRemDBStore::Obj::Meta& meta,
-                            uint64_t epoch) {
+                            LRemDBStore::Obj::Meta& meta) {
   int r = write_data(ofs, len, bl);
   if (r < 0) {
     return r;
@@ -510,7 +526,34 @@ int LRemDBStore::Obj::write(uint64_t ofs, uint64_t len,
     meta.size = size;
   }
 
-  meta.touch(epoch);
+  return write_meta(meta);
+}
+
+int LRemDBStore::Obj::remove() {
+  ObjData od(dbo, pool_id, nspace, oid);
+
+  int r = od.remove();
+  if (r < 0) {
+    return r;
+  }
+
+  return remove_meta();
+}
+
+int LRemDBStore::Obj::truncate(uint64_t ofs,
+                               LRemDBStore::Obj::Meta& meta) {
+  ObjData od(dbo, pool_id, nspace, oid);
+
+  int r;
+
+  if (ofs >= meta.size) {
+    r = od.truncate(ofs);
+    if (r < 0) {
+      return r;
+    }
+  }
+
+  meta.size = ofs;
 
   return write_meta(meta);
 }
@@ -569,12 +612,29 @@ int LRemDBStore::ObjData::read_block(int bid, bufferlist *bl) {
 }
 
 int LRemDBStore::ObjData::write_block(int bid, bufferlist& bl) {
-  SQLite::Statement q = dbo->statement("REPLACE INTO ? VALUES ( ?, ?, ?, ?, ? )");
+  SQLite::Statement q = dbo->statement("REPLACE INTO ? VALUES ( ?, ?, ?, ? )");
 
   q.bind(1, table_name);
   q.bind(2, nspace);
-  q.bind(3, bid);
-  q.bind(4, bl.c_str(), bl.length());
+  q.bind(3, oid);
+  q.bind(4, bid);
+  q.bind(5, bl.c_str(), bl.length());
+
+  int r = dbo->exec(q);
+  if (r < 0) {
+    return r;
+  }
+
+  return 0;
+}
+
+int LRemDBStore::ObjData::truncate_block(int bid) {
+  SQLite::Statement q = dbo->statement("DELETE FROM ? WHERE nspace = ? and oid = ? and bid >= ?");
+
+  q.bind(1, table_name);
+  q.bind(2, nspace);
+  q.bind(3, oid);
+  q.bind(4, bid);
 
   int r = dbo->exec(q);
   if (r < 0) {
@@ -667,6 +727,57 @@ int LRemDBStore::ObjData::write(uint64_t ofs, uint64_t len, const bufferlist& bl
   }
 
   return (int)write_len;
+}
+
+int LRemDBStore::ObjData::remove() {
+  SQLite::Statement q = dbo->statement("DELETE FROM ? WHERE nspace = ? and oid = ?");
+
+  q.bind(1, table_name);
+  q.bind(2, nspace);
+  q.bind(3, oid);
+
+  int r = dbo->exec(q);
+  if (r < 0) {
+    return r;
+  }
+
+  return 0;
+}
+
+int LRemDBStore::ObjData::truncate(uint64_t ofs) {
+  int start_block = (ofs + block_size - 1) / block_size;
+
+  int r = truncate_block(start_block);
+  if (r < 0) {
+    return r;
+  }
+
+  if (start_block == 0) {
+    return 0;
+  }
+
+  int block_ofs = ofs % block_size;
+  if (block_ofs == 0) {
+    return 0;
+  }
+
+  int bid = start_block - 1;
+
+  bufferlist bl;
+  r = read_block(bid, &bl);
+  if (r < 0) {
+    return r;
+  }
+
+  bufferlist newbl;
+  bl.splice(0, block_ofs, &newbl);
+
+  r = write_block(bid, newbl);
+  if (r < 0) {
+    return r;
+  }
+
+  return 0;
 }
 
 int LRemDBStore::KVTableBase::create_table() {

@@ -16,8 +16,7 @@ LRemDBCluster::File::File()
 }
 
 LRemDBCluster::File::File(const File &rhs)
-  : data(rhs.data),
-    mtime(rhs.mtime),
+  : mtime(rhs.mtime),
     objver(rhs.objver),
     snap_id(rhs.snap_id),
     exists(rhs.exists) {

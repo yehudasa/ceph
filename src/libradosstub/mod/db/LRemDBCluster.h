@@ -39,7 +39,6 @@ public:
     File();
     File(const File &rhs);
 
-    bufferlist data;
     struct timespec mtime;
     uint64_t objver;
 
@@ -58,6 +57,12 @@ public:
   typedef std::list<SharedFile> FileSnapshots;
   typedef std::map<ObjectLocator, FileSnapshots> Files;
 
+  struct FileLock {
+    ceph::shared_mutex lock =
+      ceph::make_shared_mutex("LRemDBCluster::FileLock::lock");
+  };
+
+  typedef std::map<ObjectLocator, FileLock> FileLocks;
   typedef std::set<uint64_t> SnapSeqs;
   struct Pool {
     Pool();
@@ -72,6 +77,7 @@ public:
     ceph::shared_mutex file_lock =
       ceph::make_shared_mutex("LRemDBCluster::Pool::file_lock");
     Files files;
+    FileLocks file_locks;
     FileOMaps file_omaps;
     FileTMaps file_tmaps;
     FileXAttrs file_xattrs;
