@@ -657,7 +657,7 @@ int radosgw_Main(int argc, const char **argv)
   }
   string err_msg;
   r = ruser.add(&dp, user_op, null_yield, &err_msg);
-  if (r < 0) {
+  if (r < 0 && r != -EEXIST) {
     derr << "could not create user: " << err_msg << dendl;
     if (r == -ERR_INVALID_TENANT_NAME)
       r = -EINVAL;
