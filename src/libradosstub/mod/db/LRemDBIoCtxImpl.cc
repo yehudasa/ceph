@@ -1151,15 +1151,30 @@ int LRemDBIoCtxImpl::rmxattr(LRemTransactionStateRef& trans, const char *name) {
     return -EBLOCKLISTED;
   }
 
-  auto cct = m_client->cct();
   auto& oid = trans->oid();
 
-  ldout(cct, 20) << ": -> name=" << name << dendl;
+  uint64_t epoch;
 
-  return pool_op(trans, true, [&](LRemDBCluster::PoolRef& pool, bool write) {
-    pool->file_xattrs[trans->locator].erase(name);
-    return 0;
-  });
+  ObjFileRef file;
+  {
+    std::unique_lock l{m_pool->file_lock};
+    file = get_file(oid, true, CEPH_NOSNAP, {});
+    epoch = ++m_pool->epoch;
+  }
+
+  std::unique_lock l{*file->lock};
+
+  std::set<string> keys;
+  keys.insert(name);
+
+  int r = file->xattrs->rm_keys(keys);
+  if (r < 0) {
+    return r;
+  }
+
+  file->modify_meta().epoch = epoch;
+
+  return file->flush();;
 }
 
 int LRemDBIoCtxImpl::zero(const std::string& oid, uint64_t off, uint64_t len,
