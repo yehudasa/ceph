@@ -140,12 +140,9 @@ int LRemDBOps::exec(SQLite::Statement& stmt)
     try {
       retry = false;
       dout(20) << "SQL: " << stmt.getExpandedSQL() << dendl;
-dout(0) << __FILE__ << ":" << __LINE__ << dendl;
       r = stmt.exec();
-dout(0) << __FILE__ << ":" << __LINE__ << dendl;
       /* return code is not interesting */
     } catch (SQLite::Exception& e) {
-dout(0) << __FILE__ << ":" << __LINE__ << dendl;
       dout(0) << "exception: " << e.what() << " ret=" << e.getExtendedErrorCode() << dendl;
       if (e.getExtendedErrorCode() == 5) {
         retry = true;
@@ -153,7 +150,6 @@ dout(0) << __FILE__ << ":" << __LINE__ << dendl;
       }
       return -EIO;
     }
-dout(0) << __FILE__ << ":" << __LINE__ << dendl;
   } while (retry);
   return r;
 }
@@ -408,7 +404,6 @@ int LRemDBStore::Obj::read_meta(LRemDBStore::Obj::Meta *pmeta) {
 }
 
 int LRemDBStore::Obj::write_meta(const LRemDBStore::Obj::Meta& meta) {
-dout(0) << __FILE__ << ":" << __LINE__ << " nspace=" << nspace << " oid=" << oid << dendl;
   auto q = dbo->statement(string("REPLACE INTO ") + table_name + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"); 
 
   q.bind(1, nspace);
@@ -596,7 +591,6 @@ int LRemDBStore::ObjData::create_table() {
 }
 
 int LRemDBStore::ObjData::read_block(int bid, bufferlist *bl) {
-dout(0) << __FILE__ << ":" << __LINE__ << ": oid=" << oid << " bid=" << bid << dendl;
   SQLite::Statement q = dbo->statement(string("SELECT data FROM ") + table_name +
                                        " WHERE nspace = ? AND oid = ? AND bid == ?");
 
@@ -605,9 +599,7 @@ dout(0) << __FILE__ << ":" << __LINE__ << ": oid=" << oid << " bid=" << bid << d
   q.bind(3, bid);
 
   try {
-dout(0) << __FILE__ << ":" << __LINE__ << dendl;
     if (!q.executeStep()) {
-dout(0) << __FILE__ << ":" << __LINE__ << dendl;
       return -ENOENT;
     }
   } catch (SQLite::Exception& e) {
@@ -615,7 +607,6 @@ dout(0) << __FILE__ << ":" << __LINE__ << dendl;
     return -EIO;
   }
 
-dout(0) << __FILE__ << ":" << __LINE__ << dendl;
   auto blob_col = q.getColumn(0);
 
   const char *data = (const char *)blob_col.getBlob();
