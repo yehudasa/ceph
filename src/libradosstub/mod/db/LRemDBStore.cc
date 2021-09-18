@@ -305,7 +305,7 @@ int LRemDBStore::Pool::read() {
 
     if (dbo->exec_step(q)) {
       id      = q.getColumn(0);
-      value   = (const char *)q.getColumn(2);
+      value   = q.getColumn(2).getString();
 
       return id;
     }
@@ -542,7 +542,7 @@ int LRemDBStore::Obj::write(uint64_t ofs, uint64_t len,
     meta.size = size;
   }
 
-  return write_meta(meta);
+  return 0;
 }
 
 int LRemDBStore::Obj::remove() {
