@@ -226,6 +226,16 @@ namespace LRemDBStore {
   };
   using PoolRef = std::shared_ptr<Pool>;
 
+  class Transaction {
+    LRemDBOpsRef dbo;
+    SQLite::Transaction trans;
+
+  public:
+    Transaction(LRemDBOpsRef& _dbo);
+
+    void complete(int r);
+  };
+
   class Cluster {
     LRemDBOpsRef dbo;
 
@@ -234,7 +244,7 @@ namespace LRemDBStore {
 
     int init();
 
-    SQLite::Transaction new_transaction();
+    Transaction new_transaction();
 
     int create_pool(const std::string& name, const std::string& val);
     int get_pool(const std::string& name, PoolRef *pool);

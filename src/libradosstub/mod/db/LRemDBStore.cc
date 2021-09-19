@@ -264,8 +264,17 @@ int LRemDBStore::Cluster::get_pool(int id, PoolRef *pool) {
   return -ENOENT;
 }
 
-SQLite::Transaction LRemDBStore::Cluster::new_transaction() {
-  return dbo->new_transaction();
+LRemDBStore::Transaction::Transaction(LRemDBOpsRef& _dbo) : dbo(_dbo), trans(dbo->new_transaction()) {
+}
+
+void LRemDBStore::Transaction::complete(int r) {
+  if (r >= 0) {
+    trans.commit();
+  }
+}
+
+LRemDBStore::Transaction LRemDBStore::Cluster::new_transaction() {
+  return LRemDBStore::Transaction(dbo);
 }
 
 int LRemDBStore::Cluster::create_pool(const string& name, const string& val) {
