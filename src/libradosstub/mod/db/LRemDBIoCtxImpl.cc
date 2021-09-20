@@ -1425,7 +1425,7 @@ int LRemDBIoCtxImpl::ObjFile::flush() {
 }
 
 struct LRemDBTransactionState : public LRemTransactionState {
-  LRemDBStore::Transaction db_trans;  
+  LRemDBOps::Transaction db_trans;  
 
   LRemDBTransactionState(const LRemCluster::ObjectLocator& loc,
                          LRemDBStore::ClusterRef dbc) : LRemTransactionState(loc),

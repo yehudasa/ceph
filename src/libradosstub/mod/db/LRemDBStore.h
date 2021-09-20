@@ -25,16 +25,21 @@ public:
   int create_table(const std::string& name, const std::string& defs);
 
 
-  SQLite::Transaction new_transaction();
   SQLite::Statement statement(const std::string& sql);
 
   struct Transaction {
-    SQLite::Transaction trans;
+    int retcode{0};
+    std::unique_ptr<SQLite::Transaction> trans;
 
-    Transaction(LRemDBOps& dbo) : trans(dbo.get_db()) {}
+    void *p{nullptr};
 
-    void commit();
+    Transaction(LRemDBOps& dbo);
+    ~Transaction();
+
+    void complete_op(int _r);
   };
+
+  Transaction new_transaction();
 };
 
 using LRemDBOpsRef = std::shared_ptr<LRemDBOps>;
@@ -226,16 +231,6 @@ namespace LRemDBStore {
   };
   using PoolRef = std::shared_ptr<Pool>;
 
-  class Transaction {
-    LRemDBOpsRef dbo;
-    SQLite::Transaction trans;
-
-  public:
-    Transaction(LRemDBOpsRef& _dbo);
-
-    void complete(int r);
-  };
-
   class Cluster {
     LRemDBOpsRef dbo;
 
@@ -244,7 +239,9 @@ namespace LRemDBStore {
 
     int init();
 
-    Transaction new_transaction();
+    LRemDBOps::Transaction new_transaction() {
+      return dbo->new_transaction();
+    }
 
     int create_pool(const std::string& name, const std::string& val);
     int get_pool(const std::string& name, PoolRef *pool);
