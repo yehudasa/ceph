@@ -150,7 +150,7 @@ int LRemDBCluster::pool_create(LRemDBStore::Cluster& dbc,
 
   LRemDBTransactionState dbtrans(cct);
 
-  int r = dbtrans.dbo->exec("PRAGMA journal_mode = wal;");
+  int r = dbtrans.dbo->exec("PRAGMA journal_mode = wal; PRAGMA page_size = 32768; PRAGMA synchronous = NORMAL; PRAGMA temp_store = memory; PRAGMA wal_autocheckpoint=10");
   if (r < 0) {
     return r;
   }
