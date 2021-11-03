@@ -21,6 +21,8 @@ class LRemDBOps {
   std::unique_ptr<SQLite::Database> db;
   std::unique_ptr<DBStatementCache> stmt_cache;
 
+  ceph::mutex *trans_lock;
+
   struct queued_statement {
     int count{0};
     std::unique_ptr<StatementCacheRef> ref;
@@ -34,7 +36,7 @@ class LRemDBOps {
   void queue_remove_key(const std::string& key);
   StatementCacheRef *new_cache_ref(SQLite::Statement *statement);
 public:
-  LRemDBOps(const std::string& _name, int _flags);
+  LRemDBOps(const std::string& _name, int _flags, ceph::mutex *_trans_lock);
 
   int exec(const std::string& sql);
   int exec(SQLite::Statement& stmt);
@@ -55,6 +57,7 @@ public:
   struct Transaction {
     int retcode{0};
     std::unique_ptr<SQLite::Transaction> trans;
+    ceph::mutex *trans_lock;
 
     void *p;
 
@@ -67,7 +70,7 @@ public:
       trans.reset();
     }
 
-    Transaction(SQLite::Database& db);
+    Transaction(SQLite::Database& db, ceph::mutex *_trans_lock);
     ~Transaction();
 
     void complete_op(int _r);
@@ -290,9 +293,13 @@ struct LRemDBTransactionState : public LRemTransactionState {
 
   std::map<int, bufferlist> data_blocks;
 
+  uint32_t shard_id{0};
+
   LRemDBTransactionState(CephContext *_cct);
   LRemDBTransactionState(CephContext *_cct,
                          const LRemCluster::ObjectLocator& loc);
+  LRemDBTransactionState(CephContext *_cct,
+                         int _shard_id);
   ~LRemDBTransactionState();
 
   void init(bool start_trans);

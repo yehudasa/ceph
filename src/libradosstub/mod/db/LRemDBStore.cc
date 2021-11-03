@@ -113,6 +113,21 @@ int decode_base64(const string& s, T *t)
 
 namespace librados {
 
+static uint32_t do_hash(const string& s) {
+  char result[sizeof(uint32_t)];
+  const char *cs = s.c_str();
+  int len = min(s.size(), sizeof(result) - 1);
+  result[0] = (char)len;
+  memcpy(&result[1], cs, len); /* memcpy and not strcpy because s might hold null chars */
+
+  return *(uint32_t *)result;
+}
+
+static uint32_t loc_hash(const LRemCluster::ObjectLocator& loc) {
+  return do_hash(loc.nspace) ^ do_hash(loc.name);
+}
+
+
 class DBStatementCache {
   SQLite::Database *db;
   ceph::mutex lock = ceph::make_mutex("DBStatementCache::lock");
@@ -145,18 +160,20 @@ dout(0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): cache=" << (vo
   }
 };
 
-LRemDBOps::LRemDBOps(const std::string& _name, int _flags) : name(_name), flags(_flags) {
+LRemDBOps::LRemDBOps(const std::string& _name, int _flags, ceph::mutex *_trans_lock) : name(_name),
+                                                                                       flags(_flags),
+                                                                                       trans_lock(_trans_lock) {
 #define DB_TIMEOUT_SEC 20
   db = std::make_unique<SQLite::Database>(name, flags, DB_TIMEOUT_SEC * 1000);
   stmt_cache = std::make_unique<DBStatementCache>(db.get());
 }
 
 LRemDBOps::Transaction LRemDBOps::new_transaction() {
-  return Transaction(*db);
+  return Transaction(*db, trans_lock);
 }
 
 LRemDBOps::Transaction *LRemDBOps::alloc_transaction() {
-  return new Transaction(*db);
+  return new Transaction(*db, trans_lock);
 }
 
 SQLite::Statement LRemDBOps::statement(const string& sql) {
@@ -265,7 +282,7 @@ void LRemDBOps::flush() {
 
   std::unique_lock locker{flush_lock};
 
-  Transaction t(*db);
+  Transaction t(*db, trans_lock);
 
   for (auto& i : deferred_statements) {
     auto s = i.second.ref->stmt;
@@ -282,6 +299,7 @@ void LRemDBOps::flush() {
 
 class DBOpsCache {
   ceph::mutex lock = ceph::make_mutex("DBOpsCache::lock");
+  ceph::mutex trans_lock = ceph::make_mutex("DBOpsCache::trans_lock");
   map<string, list<LRemDBOpsRef> > entries;
 
 public:
@@ -291,7 +309,7 @@ public:
     std::unique_lock locker{lock};
     auto& l = entries[dbname];
     if (l.empty()) {
-      return make_shared<LRemDBOps>(dbname, SQLite::OPEN_NOMUTEX|SQLite::OPEN_READWRITE|SQLite::OPEN_CREATE);
+      return make_shared<LRemDBOps>(dbname, SQLite::OPEN_NOMUTEX|SQLite::OPEN_READWRITE|SQLite::OPEN_CREATE, &trans_lock);
     }
     auto dbo = l.front();
     l.pop_front();
@@ -304,16 +322,17 @@ public:
   }
 };
 
-static DBOpsCache dbops_cache;
+#define NUM_DB_SHARDS 8
 
-ceph::mutex mlock = ceph::make_mutex("LRemDBCluster::m_lock");
+static DBOpsCache dbops_cache[NUM_DB_SHARDS];
 
-LRemDBOps::Transaction::Transaction(SQLite::Database& db) {
+LRemDBOps::Transaction::Transaction(SQLite::Database& db,
+                                    ceph::mutex *_trans_lock) : trans_lock(_trans_lock) {
   trans = make_unique<SQLite::Transaction>(db, true);
 }
 
 LRemDBOps::Transaction::~Transaction() {
-  std::unique_lock locker{mlock};
+  std::unique_lock locker{*trans_lock};
 
   if (!trans) {
     return;
@@ -386,7 +405,14 @@ LRemDBTransactionState::LRemDBTransactionState(CephContext *_cct) : cct(_cct) {
 }
 
 LRemDBTransactionState::LRemDBTransactionState(CephContext *_cct,
+                                               int _shard_id) : cct(_cct),
+                                                                shard_id(_shard_id) {
+  init(true);
+}
+
+LRemDBTransactionState::LRemDBTransactionState(CephContext *_cct,
                                                const LRemCluster::ObjectLocator& loc) : LRemTransactionState(loc), cct(_cct) {
+  shard_id = loc_hash(loc) % NUM_DB_SHARDS;
   init(true);
 }
 
@@ -398,13 +424,13 @@ LRemDBTransactionState::~LRemDBTransactionState() {
 
   dbo->flush();
 
-  dbops_cache.put(std::move(dbo));
+  dbops_cache[shard_id].put(std::move(dbo));
 }
 
 void LRemDBTransactionState::init(bool start_trans) {
   auto uuid = cct->_conf.get_val<uuid_d>("fsid");
-  string dbname = string("cluster-") + uuid.to_string() + ".db3";
-  dbo = dbops_cache.get(dbname);
+  string dbname = string("cluster-") + uuid.to_string() + "-" + to_str(shard_id) + ".db3";
+  dbo = dbops_cache[shard_id].get(dbname);
   dbc = std::make_shared<LRemDBStore::Cluster>(cct, this);
 
   if (start_trans) {
@@ -517,7 +543,8 @@ int LRemDBStore::Cluster::list_pools(std::map<string, PoolRef> *pools)
     return 0;
   }
 
-  auto& dbo = trans->dbo;
+  LRemDBTransactionState shard_trans(trans->cct, 0);
+  auto& dbo = shard_trans.dbo;
   pools->clear();
   try {
     auto q = dbo->statement("SELECT * from pools");
@@ -547,7 +574,8 @@ int LRemDBStore::Cluster::get_pool(const string& name, PoolRef *pool) {
     *pool = std::make_shared<Pool>(trans, pi.id, pi.name, pi.value);
     return pi.id;
   }
-  auto& dbo = trans->dbo;
+  LRemDBTransactionState shard_trans(trans->cct, 0);
+  auto& dbo = shard_trans.dbo;
   try {
     auto q = dbo->statement("SELECT * from pools WHERE name = ?");
 
@@ -579,7 +607,8 @@ int LRemDBStore::Cluster::get_pool(int id, PoolRef *pool) {
     *pool = std::make_shared<Pool>(trans, pi.id, pi.name, pi.value);
     return pi.id;
   }
-  auto& dbo = trans->dbo;
+  LRemDBTransactionState shard_trans(trans->cct, 0);
+  auto& dbo = shard_trans.dbo;
   try {
     auto q = dbo->statement("SELECT * from pools WHERE id = ?");
 
@@ -616,12 +645,14 @@ int LRemDBStore::Pool::create(const string& _name, const string& _val) {
   name = _name;
   value = _val;
 
-  int r = trans->dbo->exec(string("INSERT INTO pools VALUES (" + join( { "NULL", ::quoted(name), ::quoted(value) } ) + ")"));
+  LRemDBTransactionState shard_trans(trans->cct, 0);
+  auto& dbo = shard_trans.dbo;
+  int r = dbo->exec(string("INSERT INTO pools VALUES (" + join( { "NULL", ::quoted(name), ::quoted(value) } ) + ")"));
   if (r < 0) {
     return r;
   }
 
-  trans->commit();
+  shard_trans.commit();
 
   pool_cache.clear();
 
@@ -646,7 +677,8 @@ int LRemDBStore::Pool::read() {
     return id;
   }
 
-  auto& dbo = trans->dbo;
+  LRemDBTransactionState shard_trans(trans->cct, 0);
+  auto& dbo = shard_trans.dbo;
   try {
     auto q = dbo->statement("SELECT * from pools WHERE name = ?");
 
@@ -739,28 +771,34 @@ int LRemDBStore::Pool::list(std::optional<string> nspace,
 }
 
 int LRemDBStore::Pool::init_tables() {
-  Obj obj_table(trans, id);
-  int r = obj_table.create_table();
-  if (r < 0) {
-    return r;
-  }
+  for (int i = 0; i < NUM_DB_SHARDS; ++i) {
+    LRemDBTransactionState shard_trans(trans->cct, i);
 
-  ObjData od_table(trans, id);
-  r = od_table.create_table();
-  if (r < 0) {
-    return r;
-  }
+    Obj obj_table(&shard_trans, id);
+    int r = obj_table.create_table();
+    if (r < 0) {
+      return r;
+    }
 
-  XAttrs xattrs_table(trans, id);
-  r = xattrs_table.create_table();
-  if (r < 0) {
-    return r;
-  }
+    ObjData od_table(&shard_trans, id);
+    r = od_table.create_table();
+    if (r < 0) {
+      return r;
+    }
 
-  OMap omap_table(trans, id);
-  r = omap_table.create_table();
-  if (r < 0) {
-    return r;
+    XAttrs xattrs_table(&shard_trans, id);
+    r = xattrs_table.create_table();
+    if (r < 0) {
+      return r;
+    }
+
+    OMap omap_table(&shard_trans, id);
+    r = omap_table.create_table();
+    if (r < 0) {
+      return r;
+    }
+
+    shard_trans.commit();
   }
 
   return 0;
