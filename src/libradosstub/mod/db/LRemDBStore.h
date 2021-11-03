@@ -316,10 +316,10 @@ struct LRemDBTransactionState : public LRemTransactionState {
 
   void init();
 
-  LRemDBOpsRef& dbo(int shard_id);
+  LRemDBOpsRef& dbo(int shard_id, bool start_trans = true);
   LRemDBOpsRef& dbo();
 
-  LRemDBOpsRef& dbroot();
+  LRemDBOpsRef& dbroot(bool start_trans = true);
 
   void set_write(bool w) override;
 

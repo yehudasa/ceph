@@ -10,6 +10,7 @@
 #include "common/ceph_time.h"
 #include "common/debug.h"
 #include "common/iso_8601.h"
+#include "include/ceph_hash.h"
 
 #include "LRemDBStore.h"
 #include "LRemDBCluster.h"
@@ -385,13 +386,7 @@ int LRemDBOps::exec_step(SQLite::Statement& stmt)
 }
 
 static uint32_t do_hash(const string& s) {
-  char result[sizeof(uint32_t)];
-  const char *cs = s.c_str();
-  int len = min(s.size(), sizeof(result) - 1);
-  result[0] = (char)len;
-  memcpy(&result[1], cs, len); /* memcpy and not strcpy because s might hold null chars */
-
-  return *(uint32_t *)result;
+  return ceph_str_hash_linux(s.c_str(), s.size());
 }
 
 static uint32_t loc_hash(const LRemCluster::ObjectLocator& loc) {
@@ -405,7 +400,7 @@ LRemDBTransactionState::LRemDBTransactionState(CephContext *_cct) : cct(_cct) {
 
 LRemDBTransactionState::LRemDBTransactionState(CephContext *_cct,
                                                const LRemCluster::ObjectLocator& loc) : LRemTransactionState(loc), cct(_cct) {
-  shard_id = loc_hash(loc) % NUM_DB_SHARDS;
+  shard_id = loc_hash(loc) % 1021 % NUM_DB_SHARDS;
   init();
 }
 
@@ -431,7 +426,7 @@ void LRemDBTransactionState::init() {
 }
 
 
-LRemDBOpsRef& LRemDBTransactionState::dbroot() {
+LRemDBOpsRef& LRemDBTransactionState::dbroot(bool start_trans) {
   if (ops.dbroot) {
     return ops.dbroot;
   }
@@ -444,14 +439,14 @@ LRemDBOpsRef& LRemDBTransactionState::dbroot() {
   all_ops.push_back({&ops_cache,
                      ops.dbroot});
 
-  if (0 /* start_trans */) {
+  if (start_trans) {
     db_trans.push_back(std::unique_ptr<LRemDBOps::Transaction>(ops.dbroot->alloc_transaction()));
   }
 
   return ops.dbroot;
 }
 
-LRemDBOpsRef& LRemDBTransactionState::dbo(int sid) {
+LRemDBOpsRef& LRemDBTransactionState::dbo(int sid, bool start_trans) {
   auto& _dbo = ops.dbo[sid];
   if (_dbo) {
     return _dbo;
@@ -465,7 +460,7 @@ LRemDBOpsRef& LRemDBTransactionState::dbo(int sid) {
   all_ops.push_back({&ops_cache,
                      _dbo});
 
-  if (0) {
+  if (start_trans) {
     db_trans.push_back(std::unique_ptr<LRemDBOps::Transaction>(_dbo->alloc_transaction()));
   }
 
@@ -494,9 +489,15 @@ LRemDBStore::Cluster::Cluster(CephContext *cct,
                               LRemDBTransactionState *_trans) : trans(_trans) {}
 
 int LRemDBStore::Cluster::init_cluster() {
-  // int r = trans->dbo->exec("PRAGMA journal_mode = wal; PRAGMA page_size = 32768; PRAGMA synchronous = NORMAL; PRAGMA temp_store = memory; PRAGMA wal_autocheckpoint=10");
-  auto& dbroot = trans->dbroot();
-  int r = dbroot->exec("PRAGMA journal_mode = wal");
+  auto db_conf = join({ "PRAGMA journal_mode = wal",
+                        // "PRAGMA page_size = 32768",
+                        "PRAGMA synchronous = NORMAL",
+                        "PRAGMA temp_store = memory",
+                       //  "PRAGMA wal_autocheckpoint=10"
+                      },
+                        ";");
+  auto& dbroot = trans->dbroot(false);
+  int r = dbroot->exec(db_conf);
   if (r < 0) {
     return r;
   }
@@ -506,6 +507,14 @@ int LRemDBStore::Cluster::init_cluster() {
                                             "value TEXT" } ));
   if (r < 0) {
     return r;
+  }
+
+  for (int sid = 0; sid < NUM_DB_SHARDS; ++sid) {
+    auto& dbo = trans->dbo(sid, false);
+    int r = dbo->exec(db_conf);
+    if (r < 0) {
+      return r;
+    }
   }
 
   trans->commit();
@@ -811,36 +820,34 @@ int LRemDBStore::Pool::list(std::optional<string> nspace,
 }
 
 int LRemDBStore::Pool::init_tables() {
+  LRemDBTransactionState trans2(trans->cct);
   for (int sid = 0; sid < NUM_DB_SHARDS; ++sid) {
-    int r = trans->dbo(sid)->exec("PRAGMA journal_mode = wal; PRAGMA page_size = 32768; PRAGMA synchronous = NORMAL; PRAGMA temp_store = memory; PRAGMA wal_autocheckpoint=10");
+    Obj obj_table(&trans2, id);
+    int r = obj_table.create_table(sid);
     if (r < 0) {
       return r;
     }
 
-    Obj obj_table(trans, id);
-    r = obj_table.create_table(sid);
-    if (r < 0) {
-      return r;
-    }
-
-    ObjData od_table(trans, id);
+    ObjData od_table(&trans2, id);
     r = od_table.create_table(sid);
     if (r < 0) {
       return r;
     }
 
-    XAttrs xattrs_table(trans, id);
+    XAttrs xattrs_table(&trans2, id);
     r = xattrs_table.create_table(sid);
     if (r < 0) {
       return r;
     }
 
-    OMap omap_table(trans, id);
+    OMap omap_table(&trans2, id);
     r = omap_table.create_table(sid);
     if (r < 0) {
       return r;
     }
   }
+
+  trans2.commit();
 
   return 0;
 }
