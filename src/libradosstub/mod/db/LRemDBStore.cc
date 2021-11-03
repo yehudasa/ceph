@@ -22,6 +22,8 @@
 
 using namespace std;
 
+#define NUM_DB_SHARDS 2
+
 
 static inline string quoted(const string& s) {
   return string("\"") + s + "\"";
@@ -145,18 +147,20 @@ dout(0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): cache=" << (vo
   }
 };
 
-LRemDBOps::LRemDBOps(const std::string& _name, int _flags) : name(_name), flags(_flags) {
+LRemDBOps::LRemDBOps(const std::string& _name, int _flags, ceph::mutex *_trans_lock) : name(_name),
+                                                                                       flags(_flags),
+                                                                                       trans_lock(_trans_lock) {
 #define DB_TIMEOUT_SEC 20
   db = std::make_unique<SQLite::Database>(name, flags, DB_TIMEOUT_SEC * 1000);
   stmt_cache = std::make_unique<DBStatementCache>(db.get());
 }
 
 LRemDBOps::Transaction LRemDBOps::new_transaction() {
-  return Transaction(*db);
+  return Transaction(*db, trans_lock);
 }
 
 LRemDBOps::Transaction *LRemDBOps::alloc_transaction() {
-  return new Transaction(*db);
+  return new Transaction(*db, trans_lock);
 }
 
 SQLite::Statement LRemDBOps::statement(const string& sql) {
@@ -265,7 +269,7 @@ void LRemDBOps::flush() {
 
   std::unique_lock locker{flush_lock};
 
-  Transaction t(*db);
+  Transaction t(*db, trans_lock);
 
   for (auto& i : deferred_statements) {
     auto s = i.second.ref->stmt;
@@ -282,6 +286,7 @@ void LRemDBOps::flush() {
 
 class DBOpsCache {
   ceph::mutex lock = ceph::make_mutex("DBOpsCache::lock");
+  ceph::mutex trans_lock = ceph::make_mutex("DBOpsCache::trans_lock");
   map<string, list<LRemDBOpsRef> > entries;
 
 public:
@@ -291,7 +296,7 @@ public:
     std::unique_lock locker{lock};
     auto& l = entries[dbname];
     if (l.empty()) {
-      return make_shared<LRemDBOps>(dbname, SQLite::OPEN_NOMUTEX|SQLite::OPEN_READWRITE|SQLite::OPEN_CREATE);
+      return make_shared<LRemDBOps>(dbname, SQLite::OPEN_NOMUTEX|SQLite::OPEN_READWRITE|SQLite::OPEN_CREATE, &trans_lock);
     }
     auto dbo = l.front();
     l.pop_front();
@@ -304,16 +309,15 @@ public:
   }
 };
 
-static DBOpsCache dbops_cache;
+static DBOpsCache dbops_cache[NUM_DB_SHARDS + 1];
 
-ceph::mutex mlock = ceph::make_mutex("LRemDBCluster::m_lock");
-
-LRemDBOps::Transaction::Transaction(SQLite::Database& db) {
+LRemDBOps::Transaction::Transaction(SQLite::Database& db,
+                                    ceph::mutex *_lock) : lock(_lock) {
   trans = make_unique<SQLite::Transaction>(db, true);
 }
 
 LRemDBOps::Transaction::~Transaction() {
-  std::unique_lock locker{mlock};
+  std::unique_lock locker{*lock};
 
   if (!trans) {
     return;
@@ -380,6 +384,20 @@ int LRemDBOps::exec_step(SQLite::Statement& stmt)
   return stmt.executeStep();
 }
 
+static uint32_t do_hash(const string& s) {
+  char result[sizeof(uint32_t)];
+  const char *cs = s.c_str();
+  int len = min(s.size(), sizeof(result) - 1);
+  result[0] = (char)len;
+  memcpy(&result[1], cs, len); /* memcpy and not strcpy because s might hold null chars */
+
+  return *(uint32_t *)result;
+}
+
+static uint32_t loc_hash(const LRemCluster::ObjectLocator& loc) {
+  return do_hash(loc.nspace) ^ do_hash(loc.name);
+}
+
 
 LRemDBTransactionState::LRemDBTransactionState(CephContext *_cct) : cct(_cct) {
   init();
@@ -387,6 +405,7 @@ LRemDBTransactionState::LRemDBTransactionState(CephContext *_cct) : cct(_cct) {
 
 LRemDBTransactionState::LRemDBTransactionState(CephContext *_cct,
                                                const LRemCluster::ObjectLocator& loc) : LRemTransactionState(loc), cct(_cct) {
+  shard_id = loc_hash(loc) % NUM_DB_SHARDS;
   init();
 }
 
@@ -398,10 +417,10 @@ LRemDBTransactionState::~LRemDBTransactionState() {
     }
   }
 
-  for (auto& dbo : all_ops) {
-    dbo->flush();
+  for (auto& op : all_ops) {
+    op.dbo->flush();
 
-    dbops_cache.put(std::move(dbo));
+    op.cache->put(std::move(op.dbo));
   }
 }
 
@@ -419,8 +438,11 @@ LRemDBOpsRef& LRemDBTransactionState::dbroot() {
 
   auto dbname = db_name_prefix + ".db3";
 
-  ops.dbroot = dbops_cache.get(dbname);
-  all_ops.push_back(ops.dbroot);
+  auto& ops_cache = dbops_cache[NUM_DB_SHARDS];
+
+  ops.dbroot = ops_cache.get(dbname);
+  all_ops.push_back({&ops_cache,
+                     ops.dbroot});
 
   if (0 /* start_trans */) {
     db_trans.push_back(std::unique_ptr<LRemDBOps::Transaction>(ops.dbroot->alloc_transaction()));
@@ -429,21 +451,29 @@ LRemDBOpsRef& LRemDBTransactionState::dbroot() {
   return ops.dbroot;
 }
 
+LRemDBOpsRef& LRemDBTransactionState::dbo(int sid) {
+  auto& _dbo = ops.dbo[sid];
+  if (_dbo) {
+    return _dbo;
+  }
+
+  auto dbname = db_name_prefix + "-" + to_str(sid) + ".db3";
+
+  auto& ops_cache = dbops_cache[shard_id];
+
+  _dbo = ops_cache.get(dbname);
+  all_ops.push_back({&ops_cache,
+                     _dbo});
+
+  if (0) {
+    db_trans.push_back(std::unique_ptr<LRemDBOps::Transaction>(_dbo->alloc_transaction()));
+  }
+
+  return _dbo;
+}
+
 LRemDBOpsRef& LRemDBTransactionState::dbo() {
-  if (ops.dbo) {
-    return ops.dbo;
-  }
-
-  auto dbname = db_name_prefix + "-0.db3";
-
-  ops.dbo = dbops_cache.get(dbname);
-  all_ops.push_back(ops.dbo);
-
-  if (0 /* start_trans */) {
-    db_trans.push_back(std::unique_ptr<LRemDBOps::Transaction>(ops.dbroot->alloc_transaction()));
-  }
-
-  return ops.dbo;
+  return dbo(shard_id);
 }
 
 void LRemDBTransactionState::set_write(bool w) {
@@ -781,33 +811,35 @@ int LRemDBStore::Pool::list(std::optional<string> nspace,
 }
 
 int LRemDBStore::Pool::init_tables() {
-  int r = trans->dbo()->exec("PRAGMA journal_mode = wal; PRAGMA page_size = 32768; PRAGMA synchronous = NORMAL; PRAGMA temp_store = memory; PRAGMA wal_autocheckpoint=10");
-  if (r < 0) {
-    return r;
-  }
+  for (int sid = 0; sid < NUM_DB_SHARDS; ++sid) {
+    int r = trans->dbo(sid)->exec("PRAGMA journal_mode = wal; PRAGMA page_size = 32768; PRAGMA synchronous = NORMAL; PRAGMA temp_store = memory; PRAGMA wal_autocheckpoint=10");
+    if (r < 0) {
+      return r;
+    }
 
-  Obj obj_table(trans, id);
-  r = obj_table.create_table();
-  if (r < 0) {
-    return r;
-  }
+    Obj obj_table(trans, id);
+    r = obj_table.create_table(sid);
+    if (r < 0) {
+      return r;
+    }
 
-  ObjData od_table(trans, id);
-  r = od_table.create_table();
-  if (r < 0) {
-    return r;
-  }
+    ObjData od_table(trans, id);
+    r = od_table.create_table(sid);
+    if (r < 0) {
+      return r;
+    }
 
-  XAttrs xattrs_table(trans, id);
-  r = xattrs_table.create_table();
-  if (r < 0) {
-    return r;
-  }
+    XAttrs xattrs_table(trans, id);
+    r = xattrs_table.create_table(sid);
+    if (r < 0) {
+      return r;
+    }
 
-  OMap omap_table(trans, id);
-  r = omap_table.create_table();
-  if (r < 0) {
-    return r;
+    OMap omap_table(trans, id);
+    r = omap_table.create_table(sid);
+    if (r < 0) {
+      return r;
+    }
   }
 
   return 0;
@@ -829,8 +861,8 @@ void LRemDBStore::TableBase::init_table_name(const string& table_name_prefix) {
   table_name = table_name_prefix + sprintf_int("_%d", (int)pool_id);
 }
 
-int LRemDBStore::Obj::create_table() {
-  int r = trans->dbo()->create_table(table_name, join( {
+int LRemDBStore::Obj::create_table(int shard_id) {
+  int r = trans->dbo(shard_id)->create_table(table_name, join( {
                                                 "nspace TEXT",
                                                 "oid TEXT",
                                                 "size INTEGER",
@@ -1061,8 +1093,8 @@ int LRemDBStore::Obj::append(const bufferlist& bl,
   return write(meta.size, bl.length(), bl, epoch);
 }
 
-int LRemDBStore::ObjData::create_table() {
-  auto& dbo = trans->dbo();
+int LRemDBStore::ObjData::create_table(int shard_id) {
+  auto& dbo = trans->dbo(shard_id);
   int r = dbo->create_table(table_name, join( { "nspace TEXT",
                                                 "oid TEXT",
                                                 "bid INTEGER",
@@ -1288,8 +1320,8 @@ int LRemDBStore::ObjData::truncate(uint64_t ofs) {
   return 0;
 }
 
-int LRemDBStore::KVTableBase::create_table() {
-  auto& dbo = trans->dbo();
+int LRemDBStore::KVTableBase::create_table(int shard_id) {
+  auto& dbo = trans->dbo(shard_id);
   int r = dbo->create_table(table_name, join( { "nspace TEXT",
                                                 "oid TEXT",
                                                 "key TEXT",
