@@ -326,17 +326,21 @@ LRemDBOps::Transaction::Transaction(SQLite::Database& db,
 LRemDBOps::Transaction::~Transaction() {
 auto mtime = real_clock::now().time_since_epoch();
   std::unique_lock locker{*lock};
+auto ts0 = real_clock::now().time_since_epoch() - mtime;
+dout(0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): lock=" << (void *)lock << " transaction lock ts=" << ts0 << dendl;
 
   if (!trans) {
     return;
   }
 
+auto mtime1 = real_clock::now().time_since_epoch();
   if (retcode >= 0) {
     trans->commit();
   }
   trans.reset();
 auto ts = real_clock::now().time_since_epoch() - mtime;
-dout(0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): transaction finish ts=" << ts << dendl;
+auto exec_ts = real_clock::now().time_since_epoch() - mtime1;
+dout(0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): lock=" << (void *)lock << " transaction finish ts=" << ts << " exec_ts=" << exec_ts << dendl;
 }
 
 int LRemDBOps::create_table(const string& name, const string& defs)

@@ -261,11 +261,14 @@ int LRemIoCtxImpl::operate(const std::string& oid,
   get();
   ops.get();
   m_pending_ops++;
+dout(0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): this=" << (void *)this << dendl;
   m_client->add_aio_operation(oid, false, std::bind(
     &LRemIoCtxImpl::execute_aio_operations, this, oid, &ops,
     reinterpret_cast<bufferlist*>(0), m_snap_seq, m_snapc, flags, nullptr), comp);
 
+dout(0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): this=" << (void *)this << dendl;
   comp->wait_for_complete();
+dout(0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): this=" << (void *)this << dendl;
   int ret = comp->get_return_value();
   comp->put();
   return ret;
@@ -449,6 +452,7 @@ int LRemIoCtxImpl::execute_aio_operations(const std::string& oid,
                                           int flags,
                                           uint64_t* objver) {
 #warning flags not used
+dout(0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): this=" << (void *)this << dendl;
   int ret = 0;
   if (m_client->is_blocklisted()) {
     ret = -EBLOCKLISTED;
@@ -466,11 +470,12 @@ auto mtime = real_clock::now().time_since_epoch();
       ++trans->op_id;
     }
 auto ts = real_clock::now().time_since_epoch() - mtime;
-dout(0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): aio_op ts=" << ts << dendl;
+dout(0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): aio_op ts=" << ts << " m_pending_ops=" << m_pending_ops << dendl;
   }
   m_pending_ops--;
   ops->put();
   put();
+dout(0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): this=" << (void *)this << dendl;
   return ret;
 }
 

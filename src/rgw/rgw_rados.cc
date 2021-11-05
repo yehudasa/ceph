@@ -3098,12 +3098,14 @@ int RGWRados::Object::Write::_do_write_meta(const DoutPrefixProvider *dpp,
                                            bool assume_noent, bool modify_tail,
                                            void *_index_op, optional_yield y)
 {
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
   RGWRados::Bucket::UpdateIndex *index_op = static_cast<RGWRados::Bucket::UpdateIndex *>(_index_op);
   RGWRados *store = target->get_store();
 
   ObjectWriteOperation op;
 #ifdef WITH_LTTNG
   const struct req_state* s =  get_req_state();
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
   string req_id;
   if (!s) {
     // fake req_id
@@ -3115,6 +3117,7 @@ int RGWRados::Object::Write::_do_write_meta(const DoutPrefixProvider *dpp,
 
   RGWObjState *state;
   int r = target->get_state(dpp, &state, false, y, assume_noent);
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
   if (r < 0)
     return r;
 
@@ -3138,7 +3141,9 @@ int RGWRados::Object::Write::_do_write_meta(const DoutPrefixProvider *dpp,
   if (!ptag && !index_op->get_optag()->empty()) {
     ptag = index_op->get_optag();
   }
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
   r = target->prepare_atomic_modification(dpp, op, reset_obj, ptag, meta.if_match, meta.if_nomatch, false, modify_tail, y);
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
   if (r < 0)
     return r;
 
@@ -3261,7 +3266,9 @@ int RGWRados::Object::Write::_do_write_meta(const DoutPrefixProvider *dpp,
 
   if (!index_op->is_prepared()) {
     tracepoint(rgw_rados, prepare_enter, req_id.c_str());
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
     r = index_op->prepare(dpp, CLS_RGW_OP_ADD, &state->write_tag, y);
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
     tracepoint(rgw_rados, prepare_exit, req_id.c_str());
     if (r < 0)
       return r;
@@ -3270,7 +3277,9 @@ int RGWRados::Object::Write::_do_write_meta(const DoutPrefixProvider *dpp,
   auto& ioctx = ref.pool.ioctx();
 
   tracepoint(rgw_rados, operate_enter, req_id.c_str());
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
   r = rgw_rados_operate(dpp, ref.pool.ioctx(), ref.obj.oid, &op, null_yield);
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
   tracepoint(rgw_rados, operate_exit, req_id.c_str());
   if (r < 0) { /* we can expect to get -ECANCELED if object was replaced under,
                 or -ENOENT if was removed, or -EEXIST if it did not exist
@@ -3291,10 +3300,12 @@ int RGWRados::Object::Write::_do_write_meta(const DoutPrefixProvider *dpp,
   }
 
   tracepoint(rgw_rados, complete_enter, req_id.c_str());
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
   r = index_op->complete(dpp, poolid, epoch, size, accounted_size,
                         meta.set_mtime, etag, content_type,
                         storage_class, &acl_bl,
                         meta.category, meta.remove_objs, meta.user_data, meta.appendable);
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
   tracepoint(rgw_rados, complete_exit, req_id.c_str());
   if (r < 0)
     goto done_cancel;
@@ -6205,6 +6216,7 @@ int RGWRados::Bucket::UpdateIndex::prepare(const DoutPrefixProvider *dpp, RGWMod
   if (blind) {
     return 0;
   }
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
   RGWRados *store = target->get_store();
 
   if (write_tag && write_tag->length()) {
@@ -6215,9 +6227,12 @@ int RGWRados::Bucket::UpdateIndex::prepare(const DoutPrefixProvider *dpp, RGWMod
     }
   }
 
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
   int r = guard_reshard(dpp, nullptr, [&](BucketShard *bs) -> int {
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
 				   return store->cls_obj_prepare_op(dpp, *bs, op, optag, obj, bilog_flags, y, zones_trace);
 				 });
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
 
   if (r < 0) {
     return r;
@@ -6270,6 +6285,7 @@ int RGWRados::Bucket::UpdateIndex::complete(const DoutPrefixProvider *dpp, int64
   ent.meta.content_type = content_type;
   ent.meta.appendable = appendable;
 
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
   ret = store->cls_obj_complete_add(*bs, obj, optag, poolid, epoch, ent, category, remove_objs, bilog_flags, zones_trace);
 
   int r = store->svc.datalog_rados->add_entry(dpp, target->bucket_info, bs->shard_id);

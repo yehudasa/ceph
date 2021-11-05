@@ -3539,6 +3539,7 @@ int RGWPutObj::init_processing(optional_yield y) {
 
 int RGWPutObj::verify_permission(optional_yield y)
 {
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
   if (! copy_source.empty()) {
 
     RGWAccessControlPolicy cs_acl(s->cct);
@@ -3706,6 +3707,7 @@ int RGWPutObj::verify_permission(optional_yield y)
 
 void RGWPutObj::pre_exec()
 {
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
   rgw_bucket_object_pre_exec(s);
 }
 
@@ -3828,6 +3830,7 @@ static CompressorRef get_compressor_plugin(const req_state *s,
 
 void RGWPutObj::execute(optional_yield y)
 {
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
   char supplied_md5_bin[CEPH_CRYPTO_MD5_DIGESTSIZE + 1];
   char supplied_md5[CEPH_CRYPTO_MD5_DIGESTSIZE * 2 + 1];
   char calc_md5[CEPH_CRYPTO_MD5_DIGESTSIZE * 2 + 1];
@@ -3917,8 +3920,10 @@ void RGWPutObj::execute(optional_yield y)
   }
 
   // create the object processor
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
   auto aio = rgw::make_throttle(s->cct->_conf->rgw_put_obj_min_window_size,
                                 s->yield);
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
   std::unique_ptr<rgw::sal::Writer> processor;
 
   rgw_placement_rule *pdest_placement = &s->dest_placement;
@@ -4035,6 +4040,7 @@ void RGWPutObj::execute(optional_yield y)
     bufferlist data;
     if (fst > lst)
       break;
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
     if (copy_source.empty()) {
       len = get_data(data);
     } else {
@@ -4061,7 +4067,9 @@ void RGWPutObj::execute(optional_yield y)
     /* update torrrent */
     torrent.update(data);
 
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
     op_ret = filter->process(std::move(data), ofs);
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
     if (op_ret < 0) {
       ldpp_dout(this, 20) << "processor->process() returned ret="
           << op_ret << dendl;
@@ -4177,10 +4185,12 @@ void RGWPutObj::execute(optional_yield y)
   }
 
   tracepoint(rgw_op, processor_complete_enter, s->req_id.c_str());
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
   op_ret = processor->complete(s->obj_size, etag, &mtime, real_time(), attrs,
                                (delete_at ? *delete_at : real_time()), if_match, if_nomatch,
                                (user_data.empty() ? nullptr : &user_data), nullptr, nullptr,
                                s->yield);
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
   tracepoint(rgw_op, processor_complete_exit, s->req_id.c_str());
 
   /* produce torrent */
@@ -4202,6 +4212,7 @@ void RGWPutObj::execute(optional_yield y)
     ldpp_dout(this, 1) << "ERROR: publishing notification failed, with error: " << ret << dendl;
     // too late to rollback operation, hence op_ret is not set here
   }
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
 }
 
 int RGWPostObj::verify_permission(optional_yield y)

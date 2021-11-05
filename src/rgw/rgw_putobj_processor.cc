@@ -328,7 +328,9 @@ int AtomicObjectProcessor::complete(size_t accounted_size,
   obj_op.meta.zones_trace = zones_trace;
   obj_op.meta.modify_tail = true;
 
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
   r = obj_op.write_meta(dpp, actual_size, accounted_size, attrs, y);
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "():" << dendl;
   if (r < 0) {
     return r;
   }
