@@ -18,6 +18,12 @@ from ceph.rgw.rgwam_core import EnvArgs, RGWAM
 class RGWAMOrchMgr(RGWAMEnvMgr):
     def __init__(self, mgr):
         self.mgr = mgr
+        self.ceph_keyring = str(mgr.get_ceph_option('keyring'))
+
+    def tool_exec(self, prog, args):
+        cmd = [ prog ] + [ '-k', self.ceph_keyring ] + args
+        rc, stdout, stderr = self.mgr.tool_exec(args = cmd)
+        return cmd, rc, stdout, stderr
 
     def apply_rgw(self, svc_id, realm_name, zone_name, port = None):
         spec = RGWSpec(service_id = svc_id,
@@ -52,10 +58,7 @@ class Module(orchestrator.OrchestratorClientMixin, MgrModule):
 
         with self.lock:
             self.inited = True
-            self.env = EnvArgs(RGWAMOrchMgr(self),
-                               str(self.get_ceph_conf_path()),
-                               f'mgr.{self.get_mgr_id()}',
-                               str(self.get_ceph_option('keyring')))
+            self.env = EnvArgs(RGWAMOrchMgr(self))
 
         # set up some members to enable the serve() method and shutdown()
         self.run = True
