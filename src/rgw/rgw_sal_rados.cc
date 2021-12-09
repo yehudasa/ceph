@@ -2210,6 +2210,16 @@ int RadosMultipartUpload::complete(const DoutPrefixProvider *dpp,
       return ret;
     }
 
+{
+JSONFormatter f;
+stringstream ss;
+{
+Formatter::ObjectSection top_section(f, "bla");
+encode_json("manifest", manifest, &f);
+}
+f.flush(ss);
+ldpp_dout(dpp, 20) << __FILE__ << ":" << __LINE__ << ":RadosMultipartUpload::complete: this=" << (void *)this << " manifest=" << ss.str() << dendl;
+}
     for (auto obj_iter = parts.begin(); etags_iter != part_etags.end() && obj_iter != parts.end(); ++etags_iter, ++obj_iter, ++handled_parts) {
       RadosMultipartPart* part = dynamic_cast<rgw::sal::RadosMultipartPart*>(obj_iter->second.get());
       uint64_t part_size = part->get_size();
@@ -2254,6 +2264,16 @@ int RadosMultipartUpload::complete(const DoutPrefixProvider *dpp,
       } else {
         manifest.append(dpp, obj_part.manifest, store->get_zone());
       }
+{
+JSONFormatter f;
+stringstream ss;
+{
+Formatter::ObjectSection top_section(f, "bla");
+encode_json("manifest", manifest, &f);
+}
+f.flush(ss);
+ldpp_dout(dpp, 20) << __FILE__ << ":" << __LINE__ << ":RadosMultipartUpload::complete: this=" << (void *)this << " manifest=" << ss.str() << dendl;
+}
 
       bool part_compressed = (obj_part.cs_info.compression_type != "none");
       if ((handled_parts > 0) &&

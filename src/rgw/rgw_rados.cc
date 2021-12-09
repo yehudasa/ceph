@@ -3189,6 +3189,15 @@ int RGWRados::Object::Write::_do_write_meta(const DoutPrefixProvider *dpp,
   }
 
   if (meta.manifest) {
+JSONFormatter f;
+stringstream ss;
+{
+Formatter::ObjectSection top_section(f, "bla");
+encode_json("manifest", *(meta.manifest), &f);
+}
+f.flush(ss);
+ldpp_dout(dpp, 20) << __FILE__ << ":" << __LINE__ << ":write_meta: this=" << (void *)this << " manifest=" << ss.str() << dendl;
+
     storage_class = meta.manifest->get_tail_placement().placement_rule.storage_class;
 
     /* remove existing manifest attr */
@@ -4948,6 +4957,16 @@ int RGWRados::Object::complete_atomic_modification(const DoutPrefixProvider *dpp
 
 void RGWRados::update_gc_chain(const DoutPrefixProvider *dpp, rgw_obj& head_obj, RGWObjManifest& manifest, cls_rgw_obj_chain *chain)
 {
+  JSONFormatter f;
+  stringstream ss;
+  {
+    Formatter::ObjectSection top_section(f, "bla");
+    encode_json("manifest", manifest, &f);
+  }
+  f.flush(ss);
+
+  ldpp_dout(dpp, 20) << __FILE__ << ":" << __LINE__ << ":RGWObjManifest::seek(): this=" << (void *)this << " manifest=" << ss.str() << dendl;
+
   RGWObjManifest::obj_iterator iter;
   rgw_raw_obj raw_head;
   obj_to_raw(manifest.get_head_placement_rule(), head_obj, &raw_head);
@@ -5455,11 +5474,15 @@ int RGWRados::get_olh_target_state(const DoutPrefixProvider *dpp, RGWObjectCtx& 
   ceph_assert(olh_state->is_olh);
 
   rgw_obj target;
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
   int r = RGWRados::follow_olh(dpp, bucket_info, obj_ctx, olh_state, obj, &target); /* might return -EAGAIN */
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
   if (r < 0) {
     return r;
   }
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
   r = get_obj_state(dpp, &obj_ctx, bucket_info, target, target_state, false, y);
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
   if (r < 0) {
     return r;
   }
@@ -5481,8 +5504,10 @@ int RGWRados::get_obj_state_impl(const DoutPrefixProvider *dpp, RGWObjectCtx *rc
   *state = s;
   if (s->has_attrs) {
     if (s->is_olh && need_follow_olh) {
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
       return get_olh_target_state(dpp, *rctx, bucket_info, obj, s, state, y);
     }
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
     return 0;
   }
 
@@ -5493,11 +5518,15 @@ int RGWRados::get_obj_state_impl(const DoutPrefixProvider *dpp, RGWObjectCtx *rc
 
   int r = -ENOENT;
 
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
   if (!assume_noent) {
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
     r = RGWRados::raw_obj_stat(dpp, raw_obj, &s->size, &s->mtime, &s->epoch, &s->attrset, (s->prefetch_data ? &s->data : NULL), NULL, y);
   }
 
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
   if (r == -ENOENT) {
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
     s->exists = false;
     s->has_attrs = true;
     tombstone_entry entry;
@@ -5512,6 +5541,7 @@ int RGWRados::get_obj_state_impl(const DoutPrefixProvider *dpp, RGWObjectCtx *rc
     }
     return 0;
   }
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
   if (r < 0)
     return r;
 
@@ -5521,6 +5551,7 @@ int RGWRados::get_obj_state_impl(const DoutPrefixProvider *dpp, RGWObjectCtx *rc
 
   auto iter = s->attrset.find(RGW_ATTR_ETAG);
   if (iter != s->attrset.end()) {
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
     /* get rid of extra null character at the end of the etag, as we used to store it like that */
     bufferlist& bletag = iter->second;
     if (bletag.length() > 0 && bletag[bletag.length() - 1] == '\0') {
@@ -5530,9 +5561,11 @@ int RGWRados::get_obj_state_impl(const DoutPrefixProvider *dpp, RGWObjectCtx *rc
     }
   }
 
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
   iter = s->attrset.find(RGW_ATTR_COMPRESSION);
   const bool compressed = (iter != s->attrset.end());
   if (compressed) {
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
     // use uncompressed size for accounted_size
     try {
       RGWCompressionInfo info;
@@ -5544,22 +5577,27 @@ int RGWRados::get_obj_state_impl(const DoutPrefixProvider *dpp, RGWObjectCtx *rc
       return -EIO;
     }
   }
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
 
   iter = s->attrset.find(RGW_ATTR_SHADOW_OBJ);
   if (iter != s->attrset.end()) {
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
     bufferlist bl = iter->second;
     bufferlist::iterator it = bl.begin();
     it.copy(bl.length(), s->shadow_obj);
     s->shadow_obj[bl.length()] = '\0';
   }
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
   s->obj_tag = s->attrset[RGW_ATTR_ID_TAG];
   auto ttiter = s->attrset.find(RGW_ATTR_TAIL_TAG);
   if (ttiter != s->attrset.end()) {
     s->tail_tag = s->attrset[RGW_ATTR_TAIL_TAG];
   }
 
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
   bufferlist manifest_bl = s->attrset[RGW_ATTR_MANIFEST];
   if (manifest_bl.length()) {
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
     auto miter = manifest_bl.cbegin();
     try {
       s->manifest.emplace();
@@ -5591,8 +5629,10 @@ int RGWRados::get_obj_state_impl(const DoutPrefixProvider *dpp, RGWObjectCtx *rc
       s->fake_tag = true;
     }
   }
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
   map<string, bufferlist>::iterator aiter = s->attrset.find(RGW_ATTR_PG_VER);
   if (aiter != s->attrset.end()) {
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
     bufferlist& pg_ver_bl = aiter->second;
     if (pg_ver_bl.length()) {
       auto pgbl = pg_ver_bl.cbegin();
@@ -5603,6 +5643,7 @@ int RGWRados::get_obj_state_impl(const DoutPrefixProvider *dpp, RGWObjectCtx *rc
       }
     }
   }
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
   aiter = s->attrset.find(RGW_ATTR_SOURCE_ZONE);
   if (aiter != s->attrset.end()) {
     bufferlist& zone_short_id_bl = aiter->second;
@@ -5615,6 +5656,7 @@ int RGWRados::get_obj_state_impl(const DoutPrefixProvider *dpp, RGWObjectCtx *rc
       }
     }
   }
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
   if (s->obj_tag.length()) {
     ldpp_dout(dpp, 20) << "get_obj_state: setting s->obj_tag to " << s->obj_tag.c_str() << dendl;
   } else {
@@ -6613,6 +6655,16 @@ int RGWRados::iterate_obj(const DoutPrefixProvider *dpp, RGWObjectCtx& obj_ctx,
     len = end - ofs + 1;
 
   if (astate->manifest) {
+  JSONFormatter f;
+  stringstream ss;
+  {
+    Formatter::ObjectSection top_section(f, "bla");
+    encode_json("manifest", astate->manifest, &f);
+  }
+  f.flush(ss);
+
+  ldpp_dout(dpp, 20) << __FILE__ << ":" << __LINE__ << ":iterate_obj: this=" << (void *)this << " manifest=" << ss.str() << dendl;
+
     /* now get the relevant object stripe */
     RGWObjManifest::obj_iterator iter = astate->manifest->obj_find(dpp, ofs);
 

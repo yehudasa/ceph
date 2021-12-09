@@ -2133,6 +2133,7 @@ void RGWGetObj::execute(optional_yield y)
 
   std::unique_ptr<rgw::sal::Object::ReadOp> read_op(s->object->get_read_op(s->obj_ctx));
 
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
   op_ret = get_params(y);
   if (op_ret < 0)
     goto done_err;
@@ -2141,6 +2142,7 @@ void RGWGetObj::execute(optional_yield y)
   if (op_ret < 0)
     goto done_err;
 
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
   read_op->params.mod_ptr = mod_ptr;
   read_op->params.unmod_ptr = unmod_ptr;
   read_op->params.high_precision_time = s->system_request; /* system request need to use high precision time */
@@ -2151,6 +2153,7 @@ void RGWGetObj::execute(optional_yield y)
   read_op->params.lastmod = &lastmod;
 
   op_ret = read_op->prepare(s->yield, this);
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
   if (op_ret < 0)
     goto done_err;
   version_id = s->object->get_instance();
@@ -2165,6 +2168,7 @@ void RGWGetObj::execute(optional_yield y)
     op_ret = 0;
     goto done_err;
   }
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
   /* start gettorrent */
   if (torrent.get_flag())
   {
@@ -2194,11 +2198,13 @@ void RGWGetObj::execute(optional_yield y)
   }
   /* end gettorrent */
 
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
   op_ret = rgw_compression_info_from_attrset(attrs, need_decompress, cs_info);
   if (op_ret < 0) {
     ldpp_dout(this, 0) << "ERROR: failed to decode compression info, cannot decompress" << dendl;
     goto done_err;
   }
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
   if (need_decompress) {
       s->obj_size = cs_info.orig_size;
       s->object->set_obj_size(cs_info.orig_size);
@@ -2206,10 +2212,17 @@ void RGWGetObj::execute(optional_yield y)
       filter = &*decompress;
   }
 
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
   attr_iter = attrs.find(RGW_ATTR_MANIFEST);
   if (attr_iter != attrs.end() && get_type() == RGW_OP_GET_OBJ && get_data) {
     RGWObjManifest m;
-    decode(m, attr_iter->second);
+    try {
+      decode(m, attr_iter->second);
+    } catch (buffer::error& err) {
+      ldpp_dout(this, 0) << "ERROR: failed to decode manifest" << dendl;
+      op_ret = -EIO;
+      goto done_err;
+    }
     if (m.get_tier_type() == "cloud-s3") {
       /* XXX: Instead send presigned redirect or read-through */
       op_ret = -ERR_INVALID_OBJECT_STATE;
@@ -2219,6 +2232,7 @@ void RGWGetObj::execute(optional_yield y)
     }
   }
 
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
   attr_iter = attrs.find(RGW_ATTR_USER_MANIFEST);
   if (attr_iter != attrs.end() && !skip_manifest) {
     op_ret = handle_user_manifest(attr_iter->second.c_str(), y);
@@ -2230,6 +2244,7 @@ void RGWGetObj::execute(optional_yield y)
     return;
   }
 
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
   attr_iter = attrs.find(RGW_ATTR_SLO_MANIFEST);
   if (attr_iter != attrs.end() && !skip_manifest) {
     is_slo = true;
@@ -2248,6 +2263,7 @@ void RGWGetObj::execute(optional_yield y)
     op_ret = -ERANGE;
     goto done_err;
   }
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
 
   op_ret = s->object->range_to_ofs(s->obj_size, ofs, end);
   if (op_ret < 0)
@@ -2266,6 +2282,7 @@ void RGWGetObj::execute(optional_yield y)
 
   start = ofs;
 
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
   attr_iter = attrs.find(RGW_ATTR_MANIFEST);
   op_ret = this->get_decrypt_filter(&decrypt, filter,
                                     attr_iter != attrs.end() ? &(attr_iter->second) : nullptr);

@@ -232,12 +232,14 @@ void RGWObjManifest::obj_iterator::operator++()
 
   /* are we still pointing at the head? */
   if (ofs < head_size) {
+ldpp_dout(dpp, 20) << __FILE__ << ":" << __LINE__ << ":RGWObjManifest::operator++(): this=" << (void *)this << " ofs=" << ofs << " head_size=" << head_size << dendl;
     rule_iter = manifest->rules.begin();
     const RGWObjManifestRule *rule = &rule_iter->second;
     ofs = std::min(head_size, obj_size);
     stripe_ofs = ofs;
     cur_stripe = 1;
     stripe_size = std::min(obj_size - ofs, rule->stripe_max_size);
+ldpp_dout(dpp, 20) << __FILE__ << ":" << __LINE__ << ":RGWObjManifest::operator++(): this=" << (void *)this << " ofs=" << ofs << " stripe_ofs=" << stripe_ofs << " cur_stripe=" << cur_stripe << dendl;
     if (rule->part_size > 0) {
       stripe_size = std::min(stripe_size, rule->part_size);
     }
@@ -249,18 +251,22 @@ void RGWObjManifest::obj_iterator::operator++()
 
   stripe_ofs += rule->stripe_max_size;
   cur_stripe++;
-  ldpp_dout(dpp, 20) << "RGWObjManifest::operator++(): rule->part_size=" << rule->part_size << " rules.size()=" << manifest->rules.size() << dendl;
+ldpp_dout(dpp, 20) << __FILE__ << ":" << __LINE__ << ":RGWObjManifest::operator++(): this=" << (void *)this << " ofs=" << ofs << " stripe_ofs=" << stripe_ofs << " cur_stripe=" << cur_stripe << dendl;
+  ldpp_dout(dpp, 20) << "RGWObjManifest::operator++(): this=" << (void *)this << " rule->part_size=" << rule->part_size << " rules.size()=" << manifest->rules.size() << dendl;
 
+ldpp_dout(dpp, 20) << __FILE__ << ":" << __LINE__ << ":RGWObjManifest::operator++(): this=" << (void *)this << " part_ofs=" << part_ofs << " rule->part_size=" << rule->part_size << dendl;
   if (rule->part_size > 0) {
     /* multi part, multi stripes object */
 
-    ldpp_dout(dpp, 20) << "RGWObjManifest::operator++(): stripe_ofs=" << stripe_ofs << " part_ofs=" << part_ofs << " rule->part_size=" << rule->part_size << dendl;
+    ldpp_dout(dpp, 20) << "RGWObjManifest::operator++(): this=" << (void *)this << " stripe_ofs=" << stripe_ofs << " part_ofs=" << part_ofs << " rule->part_size=" << rule->part_size << dendl;
 
     if (stripe_ofs >= part_ofs + rule->part_size) {
       /* moved to the next part */
       cur_stripe = 0;
       part_ofs += rule->part_size;
       stripe_ofs = part_ofs;
+
+      ldpp_dout(dpp, 20) << "RGWObjManifest::operator++(): this=" << (void *)this << " stripe_ofs=" << stripe_ofs << " part_ofs=" << part_ofs << " rule->part_size=" << rule->part_size << dendl;
 
       bool last_rule = (next_rule_iter == manifest->rules.end());
       /* move to the next rule? */
@@ -349,6 +355,8 @@ int RGWObjManifest::generator::create_begin(CephContext *cct, RGWObjManifest *_m
 
 void RGWObjManifest::obj_iterator::seek(uint64_t o)
 {
+  ldpp_dout(dpp, 20) << __FILE__ << ":" << __LINE__ << ":RGWObjManifest::seek(): this=" << (void *)this << " o=" << o << dendl;
+
   ofs = o;
   if (manifest->explicit_objs) {
     explicit_iter = manifest->objs.upper_bound(ofs);
@@ -363,6 +371,7 @@ void RGWObjManifest::obj_iterator::seek(uint64_t o)
     update_location();
     return;
   }
+  ldpp_dout(dpp, 20) << __FILE__ << ":" << __LINE__ << ":RGWObjManifest::seek(): manifest->get_head_size()=" << manifest->get_head_size() << " obj_size=" << manifest->get_obj_size() << dendl;
   if (o < manifest->get_head_size()) {
     rule_iter = manifest->rules.begin();
     stripe_ofs = 0;
@@ -377,6 +386,7 @@ void RGWObjManifest::obj_iterator::seek(uint64_t o)
 
   rule_iter = manifest->rules.upper_bound(ofs);
   next_rule_iter = rule_iter;
+  ldpp_dout(dpp, 20) << __FILE__ << ":" << __LINE__ << ":RGWObjManifest::seek(): this=" << (void *)this << " next_rule_iter is set" << dendl;
   if (rule_iter != manifest->rules.begin()) {
     --rule_iter;
   }

@@ -44,6 +44,18 @@ static inline string join(std::vector<string> v, const string& sep = ", ")
   return result;
 }
 
+static inline string repeat(const string& s, int num, const string& sep = ", ")
+{
+  string result;
+  for (int i = 0; i < num; ++i) {
+    if (i > 0) {
+      result.append(sep);
+    }
+    result += s;
+  }
+  return result;
+}
+
 template <class T>
 static inline string join_quoted(const T& v, const string& sep = ", ")
 {
@@ -365,7 +377,7 @@ int LRemDBOps::exec(SQLite::Statement& stmt)
 
     try {
       retry = false;
-      dout(20) << "SQL: " << stmt.getQuery() << dendl;
+      dout(20) << "SQL: " << stmt.getExpandedSQL() << dendl;
       r = stmt.exec();
       /* return code is not interesting */
     } catch (SQLite::Exception& e) {
@@ -1442,7 +1454,7 @@ int LRemDBStore::KVTableBase::get_vals(const std::string& start_after,
                                        bool *pmore) {
   auto& dbo = trans->dbo();
   string s = string("SELECT key, data from ") + table_name +
-                    " WHERE nspace = ? AND oid = ? AND key > ''";
+                    " WHERE nspace = ? AND oid = ? AND key > ?";
   string filt_val;
   if (!filter_prefix.empty()) {
     s += " AND key LIKE ?";
@@ -1459,11 +1471,13 @@ int LRemDBStore::KVTableBase::get_vals(const std::string& start_after,
 
   SQLite::Statement q = dbo->statement(s);
 
-  q.bind(1, nspace);
-  q.bind(2, oid);
+  int i = 0;
+  q.bind(++i, nspace);
+  q.bind(++i, oid);
+  q.bind(++i, start_after);
   if (!filter_prefix.empty()) {
     filt_val = filter_prefix + "%";
-    q.bind(3, filt_val);
+    q.bind(++i, filt_val);
   }
 
   try {
