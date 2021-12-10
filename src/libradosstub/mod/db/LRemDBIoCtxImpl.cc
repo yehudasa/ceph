@@ -1070,32 +1070,42 @@ int LRemDBIoCtxImpl::cmpxattr(LRemTransactionStateRef& trans,
 
   bool cmp;
 
+  ldout(cct, 20) << "cmpxattr op=" << (int)op << " attr_val=" << attr_val << dendl;
   switch (op) {
     case CEPH_OSD_CMPXATTR_OP_EQ:
+ldout(cct, 20) << __FILE__ << ":" << __LINE__ << dendl;
       cmp = (v == attr_val);
       break;
     case CEPH_OSD_CMPXATTR_OP_NE:
+ldout(cct, 20) << __FILE__ << ":" << __LINE__ << dendl;
       cmp = (v != attr_val);
       break;
     case CEPH_OSD_CMPXATTR_OP_GT:
+ldout(cct, 20) << __FILE__ << ":" << __LINE__ << dendl;
       cmp = (v > attr_val);
       break;
     case CEPH_OSD_CMPXATTR_OP_GTE:
+ldout(cct, 20) << __FILE__ << ":" << __LINE__ << dendl;
       cmp = (v >= attr_val);
       break;
     case CEPH_OSD_CMPXATTR_OP_LT:
+ldout(cct, 20) << __FILE__ << ":" << __LINE__ << dendl;
       cmp = (v < attr_val);
       break;
     case CEPH_OSD_CMPXATTR_OP_LTE:
+ldout(cct, 20) << __FILE__ << ":" << __LINE__ << dendl;
       cmp = (v <= attr_val);
       break;
     default:
+ldout(cct, 20) << __FILE__ << ":" << __LINE__ << dendl;
       return -EINVAL;
   }
 
   if (!cmp) {
+ldout(cct, 20) << __FILE__ << ":" << __LINE__ << dendl;
     return -ECANCELED;
   }
+ldout(cct, 20) << __FILE__ << ":" << __LINE__ << dendl;
 
   return 0;
 }

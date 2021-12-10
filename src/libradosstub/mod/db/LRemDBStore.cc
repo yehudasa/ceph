@@ -1603,6 +1603,7 @@ int LRemDBStore::KVTableBase::rm_keys(const std::set<std::string>& keys) {
   q->bind(++i, nspace);
   q->bind(++i, oid);
   for (auto& k : keys) {
+dout(0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): k=" << k << dendl;
     q->bind(++i, k);
   }
 

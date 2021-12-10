@@ -7352,6 +7352,7 @@ int RGWRados::apply_olh_log(const DoutPrefixProvider *dpp,
       }
       string attr_name = RGW_ATTR_OLH_PENDING_PREFIX;
       attr_name.append(entry.op_tag);
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): attr_name=" << attr_name << " pcstr=" << (void *)attr_name.c_str() << dendl;
       op.rmxattr(attr_name.c_str());
     }
   }
