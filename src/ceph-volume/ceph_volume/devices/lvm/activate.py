@@ -74,7 +74,7 @@ def activate_filestore(osd_lvs, no_systemd=False):
         prepare_utils.mount_osd(source, osd_id, is_vdo=is_vdo)
 
     # ensure that the OSD destination is always chowned properly
-    system.chown(destination)
+    system.chown(destination, False)
 
     # always re-do the symlink regardless if it exists, so that the journal
     # device path that may have changed can be mapped correctly every time
