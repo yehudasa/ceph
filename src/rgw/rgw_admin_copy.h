@@ -161,6 +161,14 @@ public:
     }
   }
 
+  void print() const {
+    JSONFormatter formatter(true);
+    formatter.open_object_section("stats");
+    dump(&formatter);
+    formatter.close_section();
+    formatter.flush(cout);
+  }
+
   PerfCountersRef& get_logger() {
     return logger;
   }
@@ -234,21 +242,19 @@ public:
   }
 
   void submit(T&& task) {
-    {
-      std::unique_lock<std::mutex> lock(mtx_);
-      full_cond_.wait(lock, [this] {
-        return tasks_.size() < buf_max_len_;
-      });
-      tasks_.emplace(std::forward<T>(task));
-    }
-    cond_.notify_one();
+    std::unique_lock<std::mutex> lock(mtx_);
+    full_cond_.wait(lock, [this] {
+      return tasks_.size() < buf_max_len_;
+    });
+    tasks_.emplace(std::forward<T>(task));
+    fill_cond_.notify_one();
   }
 
   void done() {
     std::unique_lock<std::mutex> lock(mtx_);
     done_ = true;
+    fill_cond_.notify_all();
     lock.unlock();
-    cond_.notify_all();
 
     for (auto &t : threads_) {
       if (t.joinable()) {
@@ -263,9 +269,9 @@ public:
 
 private:
   std::mutex mtx_;
-  std::condition_variable cond_;
-  std::queue<T> tasks_;
+  std::condition_variable fill_cond_;
   std::condition_variable full_cond_;
+  std::queue<T> tasks_;
   std::vector<std::thread> threads_;
   size_t buf_max_len_;
 
@@ -275,26 +281,22 @@ private:
   void handler() {
     std::unique_lock<std::mutex> lock(mtx_);
     while (true) {
-      cond_.wait(lock, [this] {
+      fill_cond_.wait(lock, [this] {
         return tasks_.size() || done_;
       });
 
       if (!tasks_.empty()) {
         auto task = std::move(tasks_.front());
         tasks_.pop();
-        lock.unlock();
         full_cond_.notify_one();
-
-        // If error has occurred, record the error status and discard the
-        // remaining tasks.
-        if (!status_) {
-          int r = task.run();
-          if (r) {
-            status_ = r;
-          }
-        }
+        lock.unlock();        
+        
+        int r = task.run();
 
         lock.lock();
+        if (r) {
+          status_ = r;
+        }
       }
       else if (done_) {
         break;

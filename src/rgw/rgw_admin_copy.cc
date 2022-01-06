@@ -198,41 +198,40 @@ int bucket_copy::CopyObjTask::run()
   auto attempts = g_conf().get_val<uint64_t>("rgw_bucket_copy_obj_attempts");
   auto retry_sleep = g_conf().get_val<std::chrono::seconds>("rgw_bucket_copy_obj_retry_sleep");
 
-  int r;
   for (uint i = 1; i <= attempts; i++) {
     ldout(store->ctx(), 5) << "copy remote object " << obj_key
                            << ", bucket=" << src_bucket.name
                            << ", attempt=" << i
                            << dendl;
 
-    r = store->fetch_remote_obj(obj_ctx,
-                                user_id,
-                                NULL,
-                                BUCKET_COPY_SOURCE_ZONE_ID,
-                                dest_obj,
-                                src_obj,
-                                dest_bucket_info,
-                                src_bucket_info,
-                                dest_placement_rule,
-                                NULL, /* real_time* src_mtime, */
-                                NULL, /* real_time* mtime, */
-                                NULL, /* const real_time* mod_ptr, */
-                                NULL, /* const real_time* unmod_ptr, */
-                                false, /* high precision time */
-                                NULL, /* const char *if_match, */
-                                NULL, /* const char *if_nomatch, */
-                                RGWRados::ATTRSMOD_NONE,
-                                true, /* copy_if_newer*/
-                                attrs,
-                                RGWObjCategory::Main,
-                                versioned_epoch,
-                                real_time(), /* delete_at */
-                                NULL, /* string *ptag, */
-                                NULL, /* string *petag, */
-                                NULL, /* void (*progress_cb)(off_t, void *), */
-                                NULL, /* void *progress_data*); */
-                                NULL, /* rgw_zone_set *zones_trace */
-                                &bytes_transferred);
+    int r = store->fetch_remote_obj(obj_ctx,
+                                    user_id,
+                                    NULL,
+                                    BUCKET_COPY_SOURCE_ZONE_ID,
+                                    dest_obj,
+                                    src_obj,
+                                    dest_bucket_info,
+                                    src_bucket_info,
+                                    dest_placement_rule,
+                                    NULL, /* real_time* src_mtime, */
+                                    NULL, /* real_time* mtime, */
+                                    NULL, /* const real_time* mod_ptr, */
+                                    NULL, /* const real_time* unmod_ptr, */
+                                    false, /* high precision time */
+                                    NULL, /* const char *if_match, */
+                                    NULL, /* const char *if_nomatch, */
+                                    RGWRados::ATTRSMOD_NONE,
+                                    true, /* copy_if_newer*/
+                                    attrs,
+                                    RGWObjCategory::Main,
+                                    versioned_epoch,
+                                    real_time(), /* delete_at */
+                                    NULL, /* string *ptag, */
+                                    NULL, /* string *petag, */
+                                    NULL, /* void (*progress_cb)(off_t, void *), */
+                                    NULL, /* void *progress_data*); */
+                                    NULL, /* rgw_zone_set *zones_trace */
+                                    &bytes_transferred);
 
     stats.count_copy(r, *bytes_transferred);
 
@@ -243,8 +242,14 @@ int bucket_copy::CopyObjTask::run()
                              << ", err=" << cpp_strerror(-r)
                              << dendl;
 
-      if (r == -ENOENT || r == -EACCES || i == attempts) {
-        break;
+      // Continue when remote object is not found to tolerate object deleted
+      // midway.
+      if (r == -ENOENT) {
+        return 0;
+      }
+
+      if (r == -EACCES || i == attempts) {
+        return r;
       }
 
       ldout(store->ctx(), 5) << "copy remote object " << obj_key
@@ -256,7 +261,7 @@ int bucket_copy::CopyObjTask::run()
     }
   }
 
-  return r;
+  return 0;
 }
 
 int bucket_copy::copy_remote_bucket(RGWRados *store,
@@ -331,6 +336,7 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
 
         if (r == -ENOENT || r == -EACCES || i == attempts) {
           runner.done();
+          stats.print();
           return r;
         }
 
@@ -351,9 +357,10 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
                                 src_bucket,
                                 obj.key));
 
-      // early terminate in case of copy object errors
       int r = runner.status();
       if (r < 0) {
+        runner.done();
+        stats.print();
         return r;
       }
     }
@@ -364,12 +371,7 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
     }
   }
 
-  // Dump bucket copy stats in the end
-  JSONFormatter formatter(true);
-  formatter.open_object_section("stats");
-  stats.dump(&formatter);
-  formatter.close_section();
-  formatter.flush(cout);
+  stats.print();
 
   return 0;
 }
