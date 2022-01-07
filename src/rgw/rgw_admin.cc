@@ -6250,6 +6250,10 @@ int main(int argc, const char **argv)
       cerr << "ERROR: --access-key and --secret must be provided." << std::endl;
       return -EINVAL;
     }
+    if (!infile.empty() && !object_prefix.empty()) {
+      cerr << "ERROR: --infile and --object-prefix must not be provided together." << std::endl;
+      return -EINVAL;
+    }
 
     RGWAccessKey key;
     key.id = access_key;
@@ -6257,23 +6261,36 @@ int main(int argc, const char **argv)
 
     string tenant;
     string bucket_id;
-    RGWBucketInfo bucket_info;
-    rgw_bucket bucket;
+    RGWBucketInfo dest_bucket_info;
+    rgw_bucket dest_bucket;
 
-    int ret = init_bucket(tenant, bucket_name, bucket_id, bucket_info, bucket);
+    int ret = init_bucket(tenant, bucket_name, bucket_id, dest_bucket_info, dest_bucket);
     if (ret < 0) {
       cerr << "ERROR: could not init bucket: " << cpp_strerror(-ret) << std::endl;
       return -ret;
     }
 
-    ret = bucket_copy::copy_remote_bucket(store,
-					  bucket_info,
-					  bucket,
-					  tenant,
-					  bucket_name,
-					  object_prefix,
-					  endpoints,
-					  key);
+    rgw_bucket src_bucket;
+    src_bucket.tenant = tenant;
+    src_bucket.name = bucket_name;
+
+    if (infile.empty()) {
+      ret = bucket_copy::copy_remote_bucket(store,
+                                            dest_bucket_info,
+                                            dest_bucket,
+                                            src_bucket,
+                                            object_prefix,
+                                            endpoints,
+                                            key);
+    } else {
+      ret = bucket_copy::copy_remote_objects(store,
+                                             dest_bucket_info,
+                                             dest_bucket,
+                                             src_bucket,
+                                             infile,
+                                             endpoints,
+                                             key);
+    }
 
     if (ret < 0) {
       cerr << "ERROR: could not copy bucket: " << cpp_strerror(-ret) << std::endl;

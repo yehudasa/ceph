@@ -327,14 +327,34 @@ private:
   }
 };
 
+int make_conn(RGWRados *store,
+              const list<string> &endpoints,
+              const RGWAccessKey &key,
+              RGWRESTConn **conn);
+
+int do_copy_remote_bucket(RGWRados *store,
+                          RGWRESTConn *conn,
+                          Stats &stats,
+                          RGWBucketInfo &dest_bucket_info,
+                          const rgw_bucket &dest_bucket,
+                          const rgw_bucket &src_bucket,
+                          const string &object_prefix);
+
 int copy_remote_bucket(RGWRados *store,
                        RGWBucketInfo &dest_bucket_info,
                        const rgw_bucket &dest_bucket,
-                       const string &tenant,
-                       const string &bucket_name,
+                       const rgw_bucket &src_bucket,
                        const string &object_prefix,
                        const list<string> &endpoints,
                        const RGWAccessKey &key);
+
+int copy_remote_objects(RGWRados *store,
+                        RGWBucketInfo &dest_bucket_info,
+                        const rgw_bucket &dest_bucket,
+                        const rgw_bucket &src_bucket,
+                        const string &infile,
+                        const list<string> &endpoints,
+                        const RGWAccessKey &key);
 
 } // namespace bucket_copy
 

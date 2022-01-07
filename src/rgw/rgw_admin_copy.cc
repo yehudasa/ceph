@@ -1,6 +1,7 @@
 // -*- mode:C++; tab-width:8; c-basic-offset:2; indent-tabs-mode:nil -*-
 // vim: ts=8 sw=2 smarttab
 #include <iostream>
+#include <fstream>
 
 #include <boost/optional.hpp>
 
@@ -199,7 +200,7 @@ int bucket_copy::CopyObjTask::run()
   auto retry_sleep = g_conf().get_val<std::chrono::seconds>("rgw_bucket_copy_obj_retry_sleep");
 
   for (uint i = 1; i <= attempts; i++) {
-    ldout(store->ctx(), 5) << "copy remote object " << obj_key
+    ldout(store->ctx(), 1) << "INFO: copy remote object " << obj_key
                            << ", bucket=" << src_bucket.name
                            << ", attempt=" << i
                            << dendl;
@@ -245,9 +246,9 @@ int bucket_copy::CopyObjTask::run()
       // Make an attempt to delete local object when it is listed in the
       // remote bucket but not found when fetching.
       if (r == -ENOENT) {
-          r = store->delete_obj(obj_ctx, dest_bucket_info, dest_obj, dest_bucket_info.versioning_status());
-          if (r == 0) {
-          ldout(store->ctx(), 5) << "deleted local object " << obj_key
+        r = store->delete_obj(obj_ctx, dest_bucket_info, dest_obj, dest_bucket_info.versioning_status());
+        if (r == 0) {
+          ldout(store->ctx(), 1) << "INFO: deleted local object " << obj_key
                                  << ", bucket=" << src_bucket.name
                                  << dendl;
         }
@@ -261,7 +262,7 @@ int bucket_copy::CopyObjTask::run()
         return r;
       }
 
-      ldout(store->ctx(), 5) << "copy remote object " << obj_key
+      ldout(store->ctx(), 1) << "INFO: copy remote object " << obj_key
                              << ", will retry in " << retry_sleep
                              << dendl;
       std::this_thread::sleep_for(retry_sleep);
@@ -273,14 +274,10 @@ int bucket_copy::CopyObjTask::run()
   return 0;
 }
 
-int bucket_copy::copy_remote_bucket(RGWRados *store,
-                                    RGWBucketInfo &dest_bucket_info,
-                                    const rgw_bucket &dest_bucket,
-                                    const string &tenant,
-                                    const string &bucket_name,
-                                    const string &object_prefix,
-                                    const list<string> &endpoints,
-                                    const RGWAccessKey &key)
+int bucket_copy::make_conn(RGWRados *store,
+                           const list<string> &endpoints,
+                           const RGWAccessKey &key,
+                           RGWRESTConn **conn)
 {
   // We need to inject the RGWRESTConn for the remote cluster into the
   // RGWSI_Zone::zone_conn_map, so that RGWRados::fetch_remote_obj can be
@@ -299,23 +296,29 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
 
   // RGWRESTConn needs to remain allocated, because we inject it into
   // zone_conn_map which will be properly destroyed by RGWSI_Zone::shutdown.
-  RGWRESTConn *conn = new RGWRESTConn(store->ctx(),
-                                      nullptr, // RGWSI_Zone *zone_svc
-                                      "", // const string& _remote_id
-                                      endpoints,
-                                      key);
+  RGWRESTConn *zone_conn = new RGWRESTConn(store->ctx(),
+                                           nullptr, // RGWSI_Zone *zone_svc
+                                           "", // const string& _remote_id
+                                           endpoints,
+                                           key);
 
-  zone_conn_map[BUCKET_COPY_SOURCE_ZONE_ID] = conn;
+  zone_conn_map[BUCKET_COPY_SOURCE_ZONE_ID] = zone_conn;
+  *conn = zone_conn;
 
+  return 0;
+}
+
+int bucket_copy::do_copy_remote_bucket(RGWRados *store,
+                                       RGWRESTConn *conn,
+                                       Stats &stats,
+                                       RGWBucketInfo &dest_bucket_info,
+                                       const rgw_bucket &dest_bucket,
+                                       const rgw_bucket &src_bucket,
+                                       const string &object_prefix)
+{
   auto num_threads = g_conf().get_val<uint64_t>("rgw_bucket_copy_obj_threads");
-
-  rgw_bucket src_bucket;
-  src_bucket.tenant = tenant;
-  src_bucket.name = bucket_name;
-
-  bucket_copy::BucketObjLister lister(store->ctx(), conn, bucket_name, object_prefix);
   bucket_copy::Runner<CopyObjTask> runner(num_threads);
-  bucket_copy::Stats stats(g_ceph_context);
+  bucket_copy::BucketObjLister lister(store->ctx(), conn, src_bucket.name, object_prefix);
 
   while (true) {
     auto batch_num = g_conf().get_val<uint64_t>("rgw_bucket_copy_list_batch_num");
@@ -325,7 +328,7 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
     bucket_copy::S3ListBucketResp listResp;
 
     for (uint i = 1; i <= attempts; i++) {
-      ldout(store->ctx(), 5) << "list remote bucket " << bucket_name
+      ldout(store->ctx(), 1) << "INFO: list remote bucket " << src_bucket.name
                              << ", max_keys=" << batch_num
                              << ", marker=" << lister.get_next_token()
                              << ", attempt=" << i
@@ -336,7 +339,7 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
       stats.count_list(r, ceph_clock_now() - start);
 
       if (r < 0) {
-        ldout(store->ctx(), 0) << "ERROR: could not list remote bucket " << bucket_name
+        ldout(store->ctx(), 0) << "ERROR: could not list remote bucket " << src_bucket.name
                                << ", max_keys=" << batch_num
                                << ", marker=" << lister.get_next_token()
                                << ", attempt=" << i
@@ -345,11 +348,10 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
 
         if (r == -ENOENT || r == -EACCES || i == attempts) {
           runner.done();
-          stats.print();
           return r;
         }
 
-        ldout(store->ctx(), 5) << "list remote bucket " << bucket_name
+        ldout(store->ctx(), 1) << "INFO: list remote bucket " << src_bucket.name
                                << ", will retry in " << retry_sleep
                                << dendl;
         std::this_thread::sleep_for(retry_sleep);
@@ -369,7 +371,6 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
       int r = runner.status();
       if (r < 0) {
         runner.done();
-        stats.print();
         return r;
       }
     }
@@ -380,7 +381,86 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
     }
   }
 
+  return 0;
+}
+
+int bucket_copy::copy_remote_bucket(RGWRados *store,
+                                    RGWBucketInfo &dest_bucket_info,
+                                    const rgw_bucket &dest_bucket,
+                                    const rgw_bucket &src_bucket,
+                                    const string &object_prefix,
+                                    const list<string> &endpoints,
+                                    const RGWAccessKey &key)
+{
+
+  RGWRESTConn *conn = nullptr;
+  int r = make_conn(store, endpoints, key, &conn);
+  if (r < 0) {
+    return r;
+  }
+
+  bucket_copy::Stats stats(g_ceph_context);
+
+  r = do_copy_remote_bucket(store,
+                            conn,
+                            stats,
+                            dest_bucket_info,
+                            dest_bucket,
+                            src_bucket,
+                            object_prefix);
+
   stats.print();
 
-  return 0;
+  return r;
+}
+
+int bucket_copy::copy_remote_objects(RGWRados *store,
+                                     RGWBucketInfo &dest_bucket_info,
+                                     const rgw_bucket &dest_bucket,
+                                     const rgw_bucket &src_bucket,
+                                     const string &infile,
+                                     const list<string> &endpoints,
+                                     const RGWAccessKey &key)
+{
+  RGWRESTConn *conn = nullptr;
+  int r = make_conn(store, endpoints, key, &conn);
+  if (r < 0) {
+    return r;
+  }
+
+  auto num_threads = g_conf().get_val<uint64_t>("rgw_bucket_copy_obj_threads");
+  bucket_copy::Runner<CopyObjTask> runner(num_threads);
+  bucket_copy::Stats stats(g_ceph_context);
+
+  std::ifstream ifs(infile, ios::in);
+  if (!ifs.is_open()) {
+    r = -errno;
+    ldout(store->ctx(), 0) << "ERROR: could not open input file " << infile
+                           << ", err=" << cpp_strerror(-r)
+                           << dendl;
+    return r;
+  }
+
+  std::string obj_key;
+  while (std::getline(ifs, obj_key)) {
+    boost::algorithm::trim(obj_key);
+
+    runner.submit(CopyObjTask(store,
+                              stats,
+                              dest_bucket_info,
+                              dest_bucket,
+                              src_bucket,
+                              obj_key));
+
+    int r = runner.status();
+    if (r < 0) {
+      break;
+    }
+  }
+
+  ifs.close();
+  runner.done();
+  stats.print();
+
+  return r;
 }
