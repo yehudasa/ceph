@@ -126,8 +126,14 @@ public:
 
     l_copy_bytes_transferred,
 
+    l_delete_ok,
+    l_delete_enoent,
+    l_delete_err,
+
     l_list_ok,
+    l_list_enoent,
     l_list_err,
+
     l_list_latency,
 
     l_last,
@@ -146,7 +152,11 @@ public:
     b.add_u64_counter(Stats::l_copy_enoent, "copy_enoent", "Number of objects failed to copy due to ENOENT");
     b.add_u64_counter(Stats::l_copy_err, "copy_err", "Number of objects failed to copy due to other errors");
     b.add_u64_avg(Stats::l_copy_bytes_transferred, "copy_bytes_transferred", "Number of bytes transferred for object copy");
+    b.add_u64_counter(Stats::l_delete_ok, "delete_ok", "Number of local objects deleted");
+    b.add_u64_counter(Stats::l_delete_enoent, "delete_enoent", "Number of objects failed to delete due to ENOENT");
+    b.add_u64_counter(Stats::l_delete_err, "delete_err", "Number of objects failed to delete due to other errors");
     b.add_u64_counter(Stats::l_list_ok, "list_ok", "Number of successful list bucket operations");
+    b.add_u64_counter(Stats::l_list_enoent, "list_enoent", "Number of failed list bucket operations due to ENOENT");
     b.add_u64_counter(Stats::l_list_err, "list_err", "Number of failed list bucket operations");
     b.add_time_avg(l_list_latency, "list_latency", "List bucket operation latency");
 
@@ -184,9 +194,21 @@ public:
     }
   }
 
+  void count_delete(int r) {
+    if (r >= 0) {
+      logger->inc(Stats::l_delete_ok);
+    } else if (r == -ENOENT) {
+      logger->inc(Stats::l_delete_enoent);
+    } else {
+      logger->inc(Stats::l_delete_err);
+    }
+  }
+
   void count_list(int r, utime_t latency) {
     if (r >= 0) {
       logger->inc(Stats::l_list_ok);
+    } else if (r == -ENOENT) {
+      logger->inc(Stats::l_list_enoent);
     } else {
       logger->inc(Stats::l_list_err);
     }

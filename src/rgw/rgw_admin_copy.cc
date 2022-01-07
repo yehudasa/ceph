@@ -242,9 +242,18 @@ int bucket_copy::CopyObjTask::run()
                              << ", err=" << cpp_strerror(-r)
                              << dendl;
 
-      // Continue when remote object is not found to tolerate object deleted
-      // midway.
+      // Make an attempt to delete local object when it is listed in the
+      // remote bucket but not found when fetching.
       if (r == -ENOENT) {
+          r = store->delete_obj(obj_ctx, dest_bucket_info, dest_obj, dest_bucket_info.versioning_status());
+          if (r == 0) {
+          ldout(store->ctx(), 5) << "deleted local object " << obj_key
+                                 << ", bucket=" << src_bucket.name
+                                 << dendl;
+        }
+
+        stats.count_delete(r);
+
         return 0;
       }
 
