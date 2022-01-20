@@ -222,7 +222,7 @@ bool OpTracker::dump_historic_slow_ops(Formatter *f, set<string> filters)
   return true;
 }
 
-bool OpTracker::dump_ops_in_flight(Formatter *f, bool print_only_blocked, set<string> filters)
+bool OpTracker::dump_ops_in_flight(Formatter *f, bool print_only_blocked, set<string> filters, bool count_only)
 {
   if (!tracking_enabled)
     return false;
@@ -241,9 +241,14 @@ bool OpTracker::dump_ops_in_flight(Formatter *f, bool print_only_blocked, set<st
         break;
       if (!op.filter_out(filters))
         continue;
-      f->open_object_section("op");
-      op.dump(now, f);
-      f->close_section(); // this TrackedOp
+
+      if (!count_only) {
+          // skip dumping the op details if only the count of ops in flight was requested
+          f->open_object_section("op");
+          op.dump(now, f);
+          f->close_section(); // this TrackedOp
+      }
+
       total_ops_in_flight++;
     }
   }
