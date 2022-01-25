@@ -1895,10 +1895,10 @@ static int do_unmap(Config *cfg)
 // Modified for DO to allow "pool/volume" without namespace support
 // "pool" == "rbd"
 // "volume" == "userid/uuid"
-// "volume" == "userid/uuid@snap"
+// "volume" == "userid/uuid@userid/snap"
 static int parse_imgpath(const std::string &imgpath, Config *cfg,
                          std::ostream *err_msg) {
-  std::regex pattern("^(?:([^/]+)/?([^@]+)(?:@([^/@]+))?)$");
+  std::regex pattern("^(?:([^/]+)/?([^@]+)(?:@(.+))?)$");
   std::smatch match;
   if (!std::regex_match(imgpath, match, pattern)) {
     std::cerr << "rbd-nbd: invalid spec '" << imgpath << "'" << std::endl;
