@@ -53,7 +53,10 @@ perl -pi -e 's/--dbg-package.*//' ceph-$vers/debian/rules
 # directory is included in the sources and the upstream version will
 # change each time it is modified.
 #
-dvers="$vers-1"
+# DigitalOcean: Append the OS codename to differentiate packages for different
+# targets in the same apt repository.
+#
+dvers="$vers-1$VERSION_CODENAME"
 #
 # update the changelog to match the desired version
 #
