@@ -7,8 +7,11 @@
 
 #include "common/dout.h"
 
+#include "services/svc_zone.h"
+
 #include "rgw_user.h"
 #include "rgw_rest_conn.h"
+#include "rgw_sal_rados.h"
 #include "rgw_admin_copy.h"
 
 #define dout_subsys ceph_subsys_rgw
@@ -149,7 +152,7 @@ int bucket_copy::BucketObjLister::fetch_next(S3ListBucketResp &resp, uint64_t ma
   map<string, string> extra_headers;
   bufferlist in, out;
 
-  int r = conn->get_resource(resource, &params, &extra_headers, out, &in);
+  int r = conn->get_resource(dpp, resource, &params, &extra_headers, out, &in, nullptr, null_yield);
   if (r < 0) {
     return r;
   }
@@ -188,13 +191,17 @@ int bucket_copy::CopyObjTask::run()
 {
   RGWObjectCtx obj_ctx(store);
   rgw_user user_id;
-  rgw_obj dest_obj(dest_bucket, obj_key);
-  rgw_obj src_obj(src_bucket, obj_key);
-  RGWBucketInfo src_bucket_info;
   std::optional<rgw_placement_rule> dest_placement_rule;
   std::optional<uint64_t> versioned_epoch;
   map<string, bufferlist> attrs;
   std::optional<uint64_t> bytes_transferred;
+
+  rgw::sal::RGWRadosBucket dest_sal_bucket(store, dest_bucket_info);
+  rgw::sal::RGWRadosBucket src_sal_bucket(store, src_bucket);
+  rgw::sal::RGWRadosObject dest_sal_obj(store, obj_key, &dest_sal_bucket);
+  rgw::sal::RGWRadosObject src_sal_obj(store, obj_key, &src_sal_bucket);
+
+  rgw_obj dest_rgw_obj(dest_bucket, obj_key);
 
   auto attempts = g_conf().get_val<uint64_t>("rgw_bucket_copy_obj_attempts");
   auto retry_sleep = g_conf().get_val<std::chrono::seconds>("rgw_bucket_copy_obj_retry_sleep");
@@ -205,34 +212,36 @@ int bucket_copy::CopyObjTask::run()
                            << ", attempt=" << i
                            << dendl;
 
-    int r = store->fetch_remote_obj(obj_ctx,
-                                    user_id,
-                                    NULL,
-                                    BUCKET_COPY_SOURCE_ZONE_ID,
-                                    dest_obj,
-                                    src_obj,
-                                    dest_bucket_info,
-                                    src_bucket_info,
-                                    dest_placement_rule,
-                                    NULL, /* real_time* src_mtime, */
-                                    NULL, /* real_time* mtime, */
-                                    NULL, /* const real_time* mod_ptr, */
-                                    NULL, /* const real_time* unmod_ptr, */
-                                    false, /* high precision time */
-                                    NULL, /* const char *if_match, */
-                                    NULL, /* const char *if_nomatch, */
-                                    RGWRados::ATTRSMOD_NONE,
-                                    true, /* copy_if_newer*/
-                                    attrs,
-                                    RGWObjCategory::Main,
-                                    versioned_epoch,
-                                    real_time(), /* delete_at */
-                                    NULL, /* string *ptag, */
-                                    NULL, /* string *petag, */
-                                    NULL, /* void (*progress_cb)(off_t, void *), */
-                                    NULL, /* void *progress_data*); */
-                                    NULL, /* rgw_zone_set *zones_trace */
-                                    &bytes_transferred);
+    int r = store->getRados()->fetch_remote_obj(obj_ctx,
+                                                user_id,
+                                                NULL,
+                                                BUCKET_COPY_SOURCE_ZONE_ID,
+                                                &dest_sal_obj,
+                                                &src_sal_obj,
+                                                &dest_sal_bucket,
+                                                nullptr,
+                                                dest_placement_rule,
+                                                NULL, /* real_time* src_mtime, */
+                                                NULL, /* real_time* mtime, */
+                                                NULL, /* const real_time* mod_ptr, */
+                                                NULL, /* const real_time* unmod_ptr, */
+                                                false, /* high precision time */
+                                                NULL, /* const char *if_match, */
+                                                NULL, /* const char *if_nomatch, */
+                                                RGWRados::ATTRSMOD_NONE,
+                                                true, /* copy_if_newer*/
+                                                attrs,
+                                                RGWObjCategory::Main,
+                                                versioned_epoch,
+                                                real_time(), /* delete_at */
+                                                NULL, /* string *ptag, */
+                                                NULL, /* string *petag, */
+                                                NULL, /* void (*progress_cb)(off_t, void *), */
+                                                NULL, /* void *progress_data*); */
+                                                dpp,
+                                                NULL, /* RGWFetchObjFilter *filter */
+                                                NULL, /* rgw_zone_set *zones_trace */
+                                                &bytes_transferred);
 
     stats.count_copy(r, *bytes_transferred);
 
@@ -246,7 +255,11 @@ int bucket_copy::CopyObjTask::run()
       // Make an attempt to delete local object when it is listed in the
       // remote bucket but not found when fetching.
       if (r == -ENOENT) {
-        r = store->delete_obj(obj_ctx, dest_bucket_info, dest_obj, dest_bucket_info.versioning_status());
+        r = store->getRados()->delete_obj(dpp,
+                                          obj_ctx,
+                                          dest_bucket_info,
+                                          dest_rgw_obj,
+                                          dest_bucket_info.versioning_status());
         if (r == 0) {
           ldout(store->ctx(), 1) << "INFO: deleted local object " << obj_key
                                  << ", bucket=" << src_bucket.name
@@ -274,7 +287,7 @@ int bucket_copy::CopyObjTask::run()
   return 0;
 }
 
-int bucket_copy::make_conn(RGWRados *store,
+int bucket_copy::make_conn(rgw::sal::RGWRadosStore *store,
                            const list<string> &endpoints,
                            const RGWAccessKey &key,
                            RGWRESTConn **conn)
@@ -283,8 +296,8 @@ int bucket_copy::make_conn(RGWRados *store,
   // RGWSI_Zone::zone_conn_map, so that RGWRados::fetch_remote_obj can be
   // reused, where it looks for the RGWRESTConn by source_zone when fetching
   // remote objects.
-  auto& zone_conn_map = store->svc.zone->get_zone_conn_map();
-  map<string, RGWRESTConn *>::const_iterator it = zone_conn_map.find(BUCKET_COPY_SOURCE_ZONE_ID);
+  auto& zone_conn_map = store->svc()->zone->get_zone_conn_map();
+  auto it = std::as_const(zone_conn_map).find(BUCKET_COPY_SOURCE_ZONE_ID);
 
   // Though this should never happen, we need to ensure it does not exist in
   // the zone_conn_map before injecting the new RGWRESTConn.
@@ -308,7 +321,8 @@ int bucket_copy::make_conn(RGWRados *store,
   return 0;
 }
 
-int bucket_copy::do_copy_remote_bucket(RGWRados *store,
+int bucket_copy::do_copy_remote_bucket(const DoutPrefixProvider *dpp,
+                                       rgw::sal::RGWRadosStore *store,
                                        RGWRESTConn *conn,
                                        Stats &stats,
                                        RGWBucketInfo &dest_bucket_info,
@@ -318,7 +332,7 @@ int bucket_copy::do_copy_remote_bucket(RGWRados *store,
 {
   auto num_threads = g_conf().get_val<uint64_t>("rgw_bucket_copy_obj_threads");
   bucket_copy::Runner<CopyObjTask> runner(num_threads);
-  bucket_copy::BucketObjLister lister(store->ctx(), conn, src_bucket.name, object_prefix);
+  bucket_copy::BucketObjLister lister(dpp, store->ctx(), conn, src_bucket.name, object_prefix);
 
   while (true) {
     auto batch_num = g_conf().get_val<uint64_t>("rgw_bucket_copy_list_batch_num");
@@ -361,7 +375,8 @@ int bucket_copy::do_copy_remote_bucket(RGWRados *store,
     }
 
     for (const auto &obj : listResp.contents) {
-      runner.submit(CopyObjTask(store,
+      runner.submit(CopyObjTask(dpp,
+                                store,
                                 stats,
                                 dest_bucket_info,
                                 dest_bucket,
@@ -384,7 +399,8 @@ int bucket_copy::do_copy_remote_bucket(RGWRados *store,
   return 0;
 }
 
-int bucket_copy::copy_remote_bucket(RGWRados *store,
+int bucket_copy::copy_remote_bucket(const DoutPrefixProvider *dpp,
+                                    rgw::sal::RGWRadosStore *store,
                                     RGWBucketInfo &dest_bucket_info,
                                     const rgw_bucket &dest_bucket,
                                     const rgw_bucket &src_bucket,
@@ -401,7 +417,8 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
 
   bucket_copy::Stats stats(g_ceph_context);
 
-  r = do_copy_remote_bucket(store,
+  r = do_copy_remote_bucket(dpp,
+                            store,
                             conn,
                             stats,
                             dest_bucket_info,
@@ -414,7 +431,8 @@ int bucket_copy::copy_remote_bucket(RGWRados *store,
   return r;
 }
 
-int bucket_copy::copy_remote_objects(RGWRados *store,
+int bucket_copy::copy_remote_objects(const DoutPrefixProvider *dpp,
+                                     rgw::sal::RGWRadosStore *store,
                                      RGWBucketInfo &dest_bucket_info,
                                      const rgw_bucket &dest_bucket,
                                      const rgw_bucket &src_bucket,
@@ -445,7 +463,8 @@ int bucket_copy::copy_remote_objects(RGWRados *store,
   while (std::getline(ifs, obj_key)) {
     boost::algorithm::trim(obj_key);
 
-    runner.submit(CopyObjTask(store,
+    runner.submit(CopyObjTask(dpp,
+                              store,
                               stats,
                               dest_bucket_info,
                               dest_bucket,

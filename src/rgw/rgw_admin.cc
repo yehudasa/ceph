@@ -6275,7 +6275,8 @@ int main(int argc, const char **argv)
     src_bucket.name = bucket_name;
 
     if (infile.empty()) {
-      ret = bucket_copy::copy_remote_bucket(store,
+      ret = bucket_copy::copy_remote_bucket(dpp(),
+                                            store,
                                             dest_bucket_info,
                                             dest_bucket,
                                             src_bucket,
@@ -6283,7 +6284,8 @@ int main(int argc, const char **argv)
                                             endpoints,
                                             key);
     } else {
-      ret = bucket_copy::copy_remote_objects(store,
+      ret = bucket_copy::copy_remote_objects(dpp(),
+                                             store,
                                              dest_bucket_info,
                                              dest_bucket,
                                              src_bucket,

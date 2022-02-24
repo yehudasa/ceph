@@ -11,7 +11,7 @@
 #include "common/perf_counters_collection.h"
 
 // It can be any non-existing zone ID.
-#define BUCKET_COPY_SOURCE_ZONE_ID "bucket-copy-source-zone"
+#define BUCKET_COPY_SOURCE_ZONE_ID rgw_zone_id("bucket-copy-source-zone")
 
 #define RUNNER_BUFFER_SIZE 1000
 
@@ -73,6 +73,9 @@ public:
 };
 
 class BucketObjLister {
+private:
+  const DoutPrefixProvider *dpp;
+
 protected:
   CephContext *cct{nullptr};
   RGWRESTConn *conn{nullptr};
@@ -90,13 +93,15 @@ private:
   string last_obj_key;
 
 public:
-  BucketObjLister(CephContext *_cct,
+  BucketObjLister(const DoutPrefixProvider *_dpp,
+                  CephContext *_cct,
                   RGWRESTConn *_conn,
                   const string &_bucket_name,
                   const string &_prefix = "",
                   const string &_delimiter = "",
                   bool _fetch_owner = false,
                   bool _allow_unordered = false):
+    dpp(_dpp),
     cct(_cct),
     conn(_conn),
     bucket_name(_bucket_name),
@@ -218,7 +223,8 @@ public:
 
 class CopyObjTask {
 private:
-  RGWRados *store = nullptr;
+  const DoutPrefixProvider *dpp;
+  rgw::sal::RGWRadosStore *store = nullptr;
   Stats &stats;
   RGWBucketInfo &dest_bucket_info;
   const rgw_bucket &dest_bucket;
@@ -226,13 +232,15 @@ private:
   string obj_key;
 
 public:
-  CopyObjTask(RGWRados *_store,
+  CopyObjTask(const DoutPrefixProvider *_dpp,
+              rgw::sal::RGWRadosStore *_store,
               Stats &_stats,
               RGWBucketInfo &_dest_bucket_info,
               const rgw_bucket &_dest_bucket,
               const rgw_bucket &_src_bucket,
               string _obj_key)
-    : store(_store),
+    : dpp(_dpp),
+      store(_store),
       stats(_stats),
       dest_bucket_info(_dest_bucket_info),
       dest_bucket(_dest_bucket),
@@ -327,12 +335,13 @@ private:
   }
 };
 
-int make_conn(RGWRados *store,
+int make_conn(rgw::sal::RGWRadosStore *store,
               const list<string> &endpoints,
               const RGWAccessKey &key,
               RGWRESTConn **conn);
 
-int do_copy_remote_bucket(RGWRados *store,
+int do_copy_remote_bucket(const DoutPrefixProvider *dpp,
+                          rgw::sal::RGWRadosStore *store,
                           RGWRESTConn *conn,
                           Stats &stats,
                           RGWBucketInfo &dest_bucket_info,
@@ -340,7 +349,8 @@ int do_copy_remote_bucket(RGWRados *store,
                           const rgw_bucket &src_bucket,
                           const string &object_prefix);
 
-int copy_remote_bucket(RGWRados *store,
+int copy_remote_bucket(const DoutPrefixProvider *dpp,
+                       rgw::sal::RGWRadosStore *store,
                        RGWBucketInfo &dest_bucket_info,
                        const rgw_bucket &dest_bucket,
                        const rgw_bucket &src_bucket,
@@ -348,7 +358,8 @@ int copy_remote_bucket(RGWRados *store,
                        const list<string> &endpoints,
                        const RGWAccessKey &key);
 
-int copy_remote_objects(RGWRados *store,
+int copy_remote_objects(const DoutPrefixProvider *dpp,
+                        rgw::sal::RGWRadosStore *store,
                         RGWBucketInfo &dest_bucket_info,
                         const rgw_bucket &dest_bucket,
                         const rgw_bucket &src_bucket,
