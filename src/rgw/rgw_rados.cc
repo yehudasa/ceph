@@ -9144,24 +9144,20 @@ int RGWRados::check_bucket_shards(const RGWBucketInfo& bucket_info,
       cct->_conf.get_val<uint64_t>("rgw_dynamic_resharding_versioning_index_factor");
   }
 
-  int ret = 0;
   if (static_shards > 0 &&
       min_index_records_count > 0 &&
       max_index_records_count >= min_index_records_count) {
-    ret =
-      quota_handler->check_bucket_shards_static(min_index_records_count, max_index_records_count,
-                                         num_source_shards, bucket_info.owner, bucket, bucket_quota,
-                                         need_resharding, static_shards, versioning_index_factor,
-                                         reshard_percentage);
-      suggested_num_shards = static_shards;
-    if (ret < 0) {
-      return ret;
-    }
+    quota_handler->check_bucket_shards_static(min_index_records_count, max_index_records_count,
+                                              num_source_shards, bucket, num_objs, need_resharding,
+                                              static_shards, versioning_index_factor,
+                                              reshard_percentage, &suggested_num_shards);
   } else {
     quota_handler->check_bucket_shards(max_objs_per_shard, num_source_shards,
-          			     num_objs, need_resharding, &suggested_num_shards);
-    if (! need_resharding) {
-      return 0;
+                                       num_objs, need_resharding, &suggested_num_shards);
+  }
+
+  if (! need_resharding) {
+    return 0;
   }
 
   const uint32_t final_num_shards =

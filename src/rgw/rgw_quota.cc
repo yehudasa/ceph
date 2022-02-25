@@ -959,20 +959,15 @@ public:
     }
   }
 
-  int check_bucket_shards_static(uint64_t min_index_records, uint64_t max_index_records, uint64_t num_shards,
-			  const rgw_user& user, const rgw_bucket& bucket, RGWQuotaInfo& bucket_quota,
-			  bool& need_resharding, uint64_t configured_shards, uint64_t versioning_index_factor,
-			  uint64_t reshard_percentage) override
+  void check_bucket_shards_static(uint64_t min_index_records, uint64_t max_index_records,
+                                  uint64_t num_shards, const rgw_bucket& bucket, uint64_t num_objs,
+                                  bool& need_resharding, uint64_t configured_shards,
+                                  uint64_t versioning_index_factor, uint64_t reshard_percentage,
+                                  uint32_t *suggested_num_shards) override
   {
-    RGWStorageStats bucket_stats;
-    int ret = bucket_stats_cache.get_stats(user, bucket, bucket_stats,
-                                           bucket_quota);
-    if (ret < 0) {
-      return ret;
-    }
+    uint64_t index_records = num_objs * versioning_index_factor;
 
-    uint64_t index_records = bucket_stats.num_objects * versioning_index_factor;
-
+    need_resharding = false;
     if (index_records >= min_index_records && index_records <= max_index_records) {
       uint32_t hash = ceph_str_hash_linux(bucket.name.c_str(), bucket.name.size());
       uint32_t modulo = hash % 100;
@@ -981,15 +976,14 @@ public:
         ldout(store->ctx(), 15) << __func__ << ": skipping bucket=" << bucket.name
                                 << " modulo=" << modulo
                                 << " reshard percentage=" << reshard_percentage << dendl;
-        return 0;
+        return;
       }
 
       need_resharding = num_shards != configured_shards;
-    } else {
-      need_resharding = false;
+      if (need_resharding) {
+        *suggested_num_shards = configured_shards;
+      }
     }
-
-    return 0;
   }
 };
 
