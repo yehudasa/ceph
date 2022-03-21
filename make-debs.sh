@@ -18,6 +18,7 @@ set -xe
 
 . /etc/os-release
 base=${1:-/tmp/release}
+shift
 releasedir=$base/$NAME/WORKDIR
 rm -fr $(dirname $releasedir)
 mkdir -p $releasedir
@@ -33,7 +34,8 @@ git clean -dxf
 # c) compares higher than any previous commit
 # d) contains the short hash of the commit
 #
-vers=$(git describe --match "v*" | sed s/^v//)
+vers=$1
+[ -z "$vers" ] && vers=`git describe --match 'v*' | sed 's/^v//'`
 ./make-dist $vers
 #
 # rename the tarbal to match debian conventions and extract it
