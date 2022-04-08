@@ -94,6 +94,7 @@ class UsageLogger : public DoutPrefixProvider {
   RGWRados *store;
   map<rgw_user_bucket, RGWUsageBatch> usage_map;
   ceph::mutex lock = ceph::make_mutex("UsageLogger");
+  ceph::mutex flush_lock = ceph::make_mutex("UsageLogger::flush_lock");
   int32_t num_entries;
   ceph::mutex timer_lock = ceph::make_mutex("UsageLogger::timer_lock");
   SafeTimer timer;
@@ -104,7 +105,7 @@ class UsageLogger : public DoutPrefixProvider {
   public:
     explicit C_UsageLogTimeout(UsageLogger *_l) : logger(_l) {}
     void finish(int r) override {
-      logger->flush();
+      logger->prompt_flush();
       logger->set_timer();
     }
   };
@@ -145,10 +146,9 @@ public:
     usage_map[ub].insert(rt, entry, &account);
     if (account)
       num_entries++;
-    bool need_flush = (num_entries > cct->_conf->rgw_usage_log_flush_threshold);
+    bool need_flush = (num_entries >= cct->_conf->rgw_usage_log_flush_threshold);
     lock.unlock();
     if (need_flush) {
-      std::lock_guard l{timer_lock};
       flush();
     }
   }
@@ -168,7 +168,14 @@ public:
     num_entries = 0;
     lock.unlock();
 
+    std::lock_guard l{flush_lock};
     store->log_usage(this, old_map);
+  }
+
+
+  void prompt_flush() {
+    std::lock_guard l{lock};
+    num_entries = cct->_conf->rgw_usage_log_flush_threshold;
   }
 
   CephContext *get_cct() const override { return cct; }
