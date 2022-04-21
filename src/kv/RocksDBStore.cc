@@ -1482,19 +1482,74 @@ void RocksDBStore::get_statistics(Formatter *f)
   }
 
   if (cct->_conf->rocksdb_collect_compaction_stats) {
-    std::string stat_str;
-    bool status = db->GetProperty("rocksdb.stats", &stat_str);
-    if (status) {
-      f->open_object_section("rocksdb_statistics");
-      f->dump_string("rocksdb_compaction_statistics", "");
-      vector<string> stats;
-      split_stats(stat_str, '\n', stats);
-      for (auto st :stats) {
-        f->dump_string("", st);
+    f->open_array_section("rocksdb_statistics");
+    for (auto& cf : cf_handles) {
+      for (int i = 0; i < static_cast<int>(cf.second.handles.size()); i++) {
+        std::map<std::string, std::string> stats;
+        auto status = db->GetMapProperty(cf.second.handles[i], "rocksdb.cfstats", &stats);
+        if (status) {
+          std::ostringstream cfname;
+          // if there's only one handle, cf isn't sharded
+          if (cf.second.handles.size() == 1) {
+            cfname << cf.first;
+          } else {
+            cfname << cf.first << "-" << i;
+          }
+          f->open_object_section("rocksdb_cf_statistics");
+          f->dump_string("cf", cfname.str());
+
+          std::map<std::string, map<std::string, std::string>> compaction_stats;
+          std::map<std::string, std::string> iostalls_stats;
+          for (auto& stat : stats) {
+            // Compaction stats look like:
+            // compaction.<level|Sum>.<Key>,<Value>
+            auto fpos = stat.first.find("compaction.");
+            if (fpos != string::npos) {
+              auto levelStart = stat.first.find(".");
+              auto levelEnd = stat.first.rfind(".");
+              if (levelStart != levelEnd) {
+                auto level = stat.first.substr(levelStart + 1, levelEnd - levelStart - 1);
+                auto key = stat.first.substr(levelEnd + 1);
+                auto value = stat.second;
+                compaction_stats[level].insert(make_pair(key, value));
+              }
+              continue;
+            }
+
+            fpos = stat.first.find("io_stalls.");
+            if (fpos != string::npos) {
+              auto keyStart = stat.first.find(".");
+              auto key = stat.first.substr(keyStart + 1);
+              iostalls_stats.insert(make_pair(key, stat.second));
+            }
+          }
+
+          f->open_array_section("compaction");
+          for (auto& compaction_stat : compaction_stats) {
+            f->open_object_section("level");
+            f->dump_string("level", compaction_stat.first);
+            f->open_object_section("stats");
+            for (auto level_compaction_stats : compaction_stat.second) {
+              f->dump_string(level_compaction_stats.first, level_compaction_stats.second);
+            }
+            f->close_section(); // closes stats
+            f->close_section(); // closes level
+          }
+          f->close_section(); // closes compaction
+
+          f->open_object_section("io_stalls");
+          for (auto& iostall_stat : iostalls_stats) {
+            f->dump_string(iostall_stat.first, iostall_stat.second);
+          }
+          f->close_section(); //closes io_stalls
+
+          f->close_section(); //closes rocksdb_cf_statistics
+        }
       }
-      f->close_section();
     }
+    f->close_section(); // closes rocksdb_statistics
   }
+
   if (cct->_conf->rocksdb_collect_extended_stats) {
     if (dbstats) {
       f->open_object_section("rocksdb_extended_statistics");
