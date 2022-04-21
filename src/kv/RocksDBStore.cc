@@ -1475,12 +1475,6 @@ int64_t RocksDBStore::estimate_prefix_size(const string& prefix,
 
 void RocksDBStore::get_statistics(Formatter *f)
 {
-  if (!cct->_conf->rocksdb_perf)  {
-    dout(20) << __func__ << " RocksDB perf is disabled, can't probe for stats"
-	     << dendl;
-    return;
-  }
-
   if (cct->_conf->rocksdb_collect_compaction_stats) {
     f->open_array_section("rocksdb_statistics");
     for (auto& cf : cf_handles) {
@@ -1548,6 +1542,12 @@ void RocksDBStore::get_statistics(Formatter *f)
       }
     }
     f->close_section(); // closes rocksdb_statistics
+  }
+
+  if (!cct->_conf->rocksdb_perf)  {
+    dout(20) << __func__ << " RocksDB perf is disabled, can't probe for stats"
+	     << dendl;
+    return;
   }
 
   if (cct->_conf->rocksdb_collect_extended_stats) {
