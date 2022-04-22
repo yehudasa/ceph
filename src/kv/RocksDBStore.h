@@ -332,6 +332,7 @@ public:
 
   int repair(std::ostream &out) override;
   void split_stats(const std::string &s, char delim, std::vector<std::string> &elems);
+  void format_stats(const std::map<std::string, std::string> &stats, Formatter *f);
   void get_statistics(ceph::Formatter *f) override;
 
   PerfCounters *get_perf_counters() override

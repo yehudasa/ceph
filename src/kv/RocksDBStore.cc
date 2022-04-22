@@ -1440,6 +1440,53 @@ void RocksDBStore::split_stats(const std::string &s, char delim, std::vector<std
     }
 }
 
+void RocksDBStore::format_stats(const std::map<std::string, std::string> &stats, Formatter *f) {
+  std::map<std::string, map<std::string, std::string>> compaction_stats;
+  std::map<std::string, std::string> iostalls_stats;
+  for (auto& stat : stats) {
+    // Compaction stats look like:
+    // compaction.<level|Sum>.<Key>,<Value>
+    auto fpos = stat.first.find("compaction.");
+    if (fpos != string::npos) {
+      auto levelStart = stat.first.find(".");
+      auto levelEnd = stat.first.rfind(".");
+      if (levelStart != levelEnd) {
+        auto level = stat.first.substr(levelStart + 1, levelEnd - levelStart - 1);
+        auto key = stat.first.substr(levelEnd + 1);
+        auto value = stat.second;
+        compaction_stats[level].insert(make_pair(key, value));
+      }
+      continue;
+    }
+
+    fpos = stat.first.find("io_stalls.");
+    if (fpos != string::npos) {
+      auto keyStart = stat.first.find(".");
+      auto key = stat.first.substr(keyStart + 1);
+      iostalls_stats.insert(make_pair(key, stat.second));
+    }
+  }
+
+  f->open_array_section("compaction");
+  for (auto& compaction_stat : compaction_stats) {
+    f->open_object_section("level");
+    f->dump_string("level", compaction_stat.first);
+    f->open_object_section("stats");
+    for (auto& level_compaction_stats : compaction_stat.second) {
+      f->dump_string(level_compaction_stats.first, level_compaction_stats.second);
+    }
+    f->close_section(); // closes stats
+    f->close_section(); // closes level
+  }
+  f->close_section(); // closes compaction
+
+  f->open_object_section("io_stalls");
+  for (auto& iostall_stat : iostalls_stats) {
+    f->dump_string(iostall_stat.first, iostall_stat.second);
+  }
+  f->close_section(); //closes io_stalls
+}
+
 bool RocksDBStore::get_property(
   const std::string &property,
   uint64_t *out)
@@ -1491,56 +1538,23 @@ void RocksDBStore::get_statistics(Formatter *f)
           }
           f->open_object_section("rocksdb_cf_statistics");
           f->dump_string("cf", cfname.str());
-
-          std::map<std::string, map<std::string, std::string>> compaction_stats;
-          std::map<std::string, std::string> iostalls_stats;
-          for (auto& stat : stats) {
-            // Compaction stats look like:
-            // compaction.<level|Sum>.<Key>,<Value>
-            auto fpos = stat.first.find("compaction.");
-            if (fpos != string::npos) {
-              auto levelStart = stat.first.find(".");
-              auto levelEnd = stat.first.rfind(".");
-              if (levelStart != levelEnd) {
-                auto level = stat.first.substr(levelStart + 1, levelEnd - levelStart - 1);
-                auto key = stat.first.substr(levelEnd + 1);
-                auto value = stat.second;
-                compaction_stats[level].insert(make_pair(key, value));
-              }
-              continue;
-            }
-
-            fpos = stat.first.find("io_stalls.");
-            if (fpos != string::npos) {
-              auto keyStart = stat.first.find(".");
-              auto key = stat.first.substr(keyStart + 1);
-              iostalls_stats.insert(make_pair(key, stat.second));
-            }
-          }
-
-          f->open_array_section("compaction");
-          for (auto& compaction_stat : compaction_stats) {
-            f->open_object_section("level");
-            f->dump_string("level", compaction_stat.first);
-            f->open_object_section("stats");
-            for (auto level_compaction_stats : compaction_stat.second) {
-              f->dump_string(level_compaction_stats.first, level_compaction_stats.second);
-            }
-            f->close_section(); // closes stats
-            f->close_section(); // closes level
-          }
-          f->close_section(); // closes compaction
-
-          f->open_object_section("io_stalls");
-          for (auto& iostall_stat : iostalls_stats) {
-            f->dump_string(iostall_stat.first, iostall_stat.second);
-          }
-          f->close_section(); //closes io_stalls
-
+          format_stats(stats, f);
           f->close_section(); //closes rocksdb_cf_statistics
         }
       }
     }
+    
+    if (default_cf != nullptr) {
+      std::map<std::string, std::string> stats;
+      auto status = db->GetMapProperty(default_cf, "rocksdb.cfstats", &stats);
+      if (status) {
+        f->open_object_section("rocksdb_cf_statistics");
+        f->dump_string("cf", "default");
+        format_stats(stats, f);
+        f->close_section(); //closes rocksdb_cf_statistics
+      }
+    }
+
     f->close_section(); // closes rocksdb_statistics
   }
 
