@@ -1522,8 +1522,9 @@ int64_t RocksDBStore::estimate_prefix_size(const string& prefix,
 
 void RocksDBStore::get_statistics(Formatter *f)
 {
+  f->open_object_section("rocksdb_statistics");
   if (cct->_conf->rocksdb_collect_compaction_stats) {
-    f->open_array_section("rocksdb_statistics");
+    f->open_array_section("rocksdb_compaction_stats");
     for (auto& cf : cf_handles) {
       for (int i = 0; i < static_cast<int>(cf.second.handles.size()); i++) {
         std::map<std::string, std::string> stats;
@@ -1539,7 +1540,7 @@ void RocksDBStore::get_statistics(Formatter *f)
           f->open_object_section("rocksdb_cf_statistics");
           f->dump_string("cf", cfname.str());
           format_stats(stats, f);
-          f->close_section(); //closes rocksdb_cf_statistics
+          f->close_section(); // closes rocksdb_cf_statistics
         }
       }
     }
@@ -1555,31 +1556,9 @@ void RocksDBStore::get_statistics(Formatter *f)
       }
     }
 
-    f->close_section(); // closes rocksdb_statistics
+    f->close_section(); // closes rocksdb_compaction_stats
   }
 
-  if (!cct->_conf->rocksdb_perf)  {
-    dout(20) << __func__ << " RocksDB perf is disabled, can't probe for stats"
-	     << dendl;
-    return;
-  }
-
-  if (cct->_conf->rocksdb_collect_extended_stats) {
-    if (dbstats) {
-      f->open_object_section("rocksdb_extended_statistics");
-      string stat_str = dbstats->ToString();
-      vector<string> stats;
-      split_stats(stat_str, '\n', stats);
-      f->dump_string("rocksdb_extended_statistics", "");
-      for (auto st :stats) {
-        f->dump_string(".", st);
-      }
-      f->close_section();
-    }
-    f->open_object_section("rocksdbstore_perf_counters");
-    logger->dump_formatted(f,0);
-    f->close_section();
-  }
   if (cct->_conf->rocksdb_collect_memory_stats) {
     f->open_object_section("rocksdb_memtable_statistics");
     std::string str;
@@ -1598,6 +1577,24 @@ void RocksDBStore::get_statistics(Formatter *f)
     f->dump_string("rocksdb_index_filter_blocks_usage", str);
     f->close_section();
   }
+
+  if (cct->_conf->rocksdb_collect_extended_stats && cct->_conf->rocksdb_perf) {
+    if (dbstats) {
+      f->open_object_section("rocksdb_extended_statistics");
+      string stat_str = dbstats->ToString();
+      vector<string> stats;
+      split_stats(stat_str, '\n', stats);
+      f->dump_string("rocksdb_extended_statistics", "");
+      for (auto st : stats) {
+        f->dump_string(".", st);
+      }
+      f->close_section();
+    }
+    f->open_object_section("rocksdbstore_perf_counters");
+    logger->dump_formatted(f, 0);
+    f->close_section();
+  }
+  f->close_section(); // closes rocksdb_statistics
 }
 
 struct RocksDBStore::RocksWBHandler: public rocksdb::WriteBatch::Handler {
