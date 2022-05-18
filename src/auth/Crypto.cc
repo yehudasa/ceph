@@ -33,6 +33,12 @@
 #include "common/debug.h"
 #include <errno.h>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
 // use getentropy() if available. it uses the same source of randomness
 // as /dev/urandom without the filesystem overhead
 #ifdef HAVE_GETENTROPY
@@ -603,3 +609,6 @@ CryptoHandler *CryptoHandler::create(int type)
     return NULL;
   }
 }
+
+#pragma clang diagnostic pop
+#pragma GCC diagnostic pop
