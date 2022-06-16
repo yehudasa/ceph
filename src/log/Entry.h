@@ -90,6 +90,7 @@ public:
     str.assign(strv.begin(), strv.end());
     return *this;
   }
+  ConcreteEntry(ConcreteEntry& e) = default;
   ConcreteEntry(ConcreteEntry&& e) : Entry(e), str(std::move(e.str)) {}
   ConcreteEntry& operator=(ConcreteEntry&& e) {
     Entry::operator=(e);

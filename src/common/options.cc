@@ -595,6 +595,7 @@ std::vector<Option> get_global_options() {
     .add_see_also("log_max_recent"),
 
     Option("log_max_recent", Option::TYPE_INT, Option::LEVEL_ADVANCED)
+    .set_min(1)
     .set_default(500)
     .set_daemon_default(10000)
     .set_description("recent log entries to keep in memory to dump in the event of a crash")
