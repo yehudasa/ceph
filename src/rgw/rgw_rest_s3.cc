@@ -4952,6 +4952,9 @@ int RGWHandler_REST_S3Website::retarget(RGWOp* op, RGWOp** new_op, optional_yiel
   if (!(s->prot_flags & RGW_REST_WEBSITE))
     return 0;
 
+  if (s->bucket == nullptr)
+    return -ERR_NO_SUCH_BUCKET;
+
   if (!s->bucket->get_info().has_website) {
       // TODO-FUTURE: if the bucket has no WebsiteConfig, expose it here
       return -ERR_NO_SUCH_WEBSITE_CONFIGURATION;
