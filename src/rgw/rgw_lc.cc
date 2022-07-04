@@ -1980,7 +1980,7 @@ int RGWLC::process(const string& shard_oid, int max_lock_secs, LCWorker* worker,
 
     if (bucket) {
       string marker = get_lc_shard_name(*bucket);
-      ret = sal_lc->get_next_entry(shard_oid, marker, entry);
+      ret = sal_lc->get_entry(shard_oid, marker, entry);
       if (ret < 0) {
         ldpp_dout(this, 0) << "RGWLC::process() failed to get obj entry "
             << shard_oid << " for bucket " << bucket->name << dendl;
