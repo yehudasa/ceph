@@ -507,7 +507,11 @@ if(WITH_TESTS)
     DESTINATION bin)
 endif(WITH_TESTS)
 
+configure_file(${CMAKE_SOURCE_DIR}/src/rgw/rgwam.py.in
+  ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/rgwam @ONLY)
+
 install(PROGRAMS
+  ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/rgwam
   rgw-gap-list
   rgw-gap-list-comparator
   rgw-orphan-list
