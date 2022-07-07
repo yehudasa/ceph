@@ -510,8 +510,12 @@ endif(WITH_TESTS)
 configure_file(${CMAKE_SOURCE_DIR}/src/rgw/rgwam.py.in
   ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/rgwam @ONLY)
 
+configure_file(${CMAKE_SOURCE_DIR}/src/rgw/rgwam-sqlite
+  ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/rgwam-sqlite @ONLY)
+
 install(PROGRAMS
   ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/rgwam
+  ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/rgwam-sqlite
   rgw-gap-list
   rgw-gap-list-comparator
   rgw-orphan-list

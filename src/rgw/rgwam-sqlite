@@ -1,0 +1,2 @@
+#!/bin/sh
+rgwam --prog-suffix=-sqlite --no-mon-config "$@"
