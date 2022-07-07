@@ -40,12 +40,8 @@ class RGWAMCLIMgr(RGWAMEnvMgr):
         if common_args.no_mon_config:
             args += [ '--no-mon-config' ]
 
-        print(self.prog_suffix)
-
     def tool_exec(self, prog, args):
         run_cmd = [ prog + self.prog_suffix ] + self.args_prefix + args
-
-        print(run_cmd)
 
         result = subprocess.run(run_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
