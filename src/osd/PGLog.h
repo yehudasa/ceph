@@ -1399,7 +1399,7 @@ public:
     bool debug_verify_stored_missing = false
     ) {
     return read_log_and_missing(
-      store, ch, pgmeta_oid, info,
+      cct, store, ch, pgmeta_oid, info,
       log, missing, oss,
       tolerate_divergent_missing_log,
       &clear_divergent_priors,
@@ -1410,6 +1410,7 @@ public:
 
   template <typename missing_type>
   static void read_log_and_missing(
+    CephContext *cct,
     ObjectStore *store,
     ObjectStore::CollectionHandle &ch,
     ghobject_t pgmeta_oid,
