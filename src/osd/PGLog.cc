@@ -653,7 +653,8 @@ void PGLog::write_log_and_missing(
       dirty_from_dups,
       write_from_dups,
       &may_include_deletes_in_missing_dirty,
-      (pg_log_debug ? &log_keys_debug : nullptr));
+      (pg_log_debug ? &log_keys_debug : nullptr),
+      this);
     undirty();
   } else {
     dout(10) << "log is not dirty" << dendl;
@@ -667,14 +668,15 @@ void PGLog::write_log_and_missing_wo_missing(
     pg_log_t &log,
     const coll_t& coll, const ghobject_t &log_oid,
     map<eversion_t, hobject_t> &divergent_priors,
-    bool require_rollback
+    bool require_rollback,
+    const DoutPrefixProvider *dpp
     )
 {
   _write_log_and_missing_wo_missing(
     t, km, log, coll, log_oid,
     divergent_priors, eversion_t::max(), eversion_t(), eversion_t(),
     true, true, require_rollback,
-    eversion_t::max(), eversion_t(), eversion_t(), nullptr);
+    eversion_t::max(), eversion_t(), eversion_t(), nullptr, dpp);
 }
 
 // static
@@ -686,7 +688,8 @@ void PGLog::write_log_and_missing(
     const ghobject_t &log_oid,
     const pg_missing_tracker_t &missing,
     bool require_rollback,
-    bool *may_include_deletes_in_missing_dirty)
+    bool *may_include_deletes_in_missing_dirty,
+    const DoutPrefixProvider *dpp)
 {
   _write_log_and_missing(
     t, km, log, coll, log_oid,
@@ -700,7 +703,7 @@ void PGLog::write_log_and_missing(
     eversion_t::max(),
     eversion_t(),
     eversion_t(),
-    may_include_deletes_in_missing_dirty, nullptr);
+    may_include_deletes_in_missing_dirty, nullptr, dpp);
 }
 
 // static
@@ -719,7 +722,8 @@ void PGLog::_write_log_and_missing_wo_missing(
   eversion_t dirty_to_dups,
   eversion_t dirty_from_dups,
   eversion_t write_from_dups,
-  set<string> *log_keys_debug
+  set<string> *log_keys_debug,
+  const DoutPrefixProvider *dpp
   )
 {
   ldpp_dout(dpp, 10) << "_write_log_and_missing_wo_missing, clearing up to " << dirty_to
@@ -852,7 +856,8 @@ void PGLog::_write_log_and_missing(
   eversion_t dirty_from_dups,
   eversion_t write_from_dups,
   bool *may_include_deletes_in_missing_dirty, // in/out param
-  set<string> *log_keys_debug
+  set<string> *log_keys_debug,
+  const DoutPrefixProvider *dpp
   ) {
   ldpp_dout(dpp, 10) << __func__ << " clearing up to " << dirty_to
 		     << " dirty_to_dups=" << dirty_to_dups
