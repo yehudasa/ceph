@@ -200,7 +200,12 @@ The commands are:
 
         args = sys.argv[1:]
         if len(args) > 0:
-            if hasattr(self, args[0]):
+            pos = 0
+            for arg in args: # find first command arg
+                if arg[0] != '-':
+                    break
+                pos += 1
+            if hasattr(self, args[pos]):
                 # remove -h/--help if top command is not empty so that top level help
                 # doesn't override subcommand, we'll add it later
                 help_args = [ '-h', '--help' ]
