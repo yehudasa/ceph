@@ -244,6 +244,7 @@ def main():
             print(out)
     except RGWAMException as e:
         print('ERROR: ' + e.message)
+        sys.exit(-e.retcode)
 
     sys.exit(0)
 
