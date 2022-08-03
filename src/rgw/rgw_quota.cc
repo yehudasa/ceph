@@ -965,6 +965,10 @@ public:
                                   uint64_t versioning_index_factor, uint64_t reshard_percentage,
                                   uint32_t *suggested_num_shards) override
   {
+    if (num_shards > configured_shards) {
+      return;
+    }
+
     uint64_t index_records = num_objs * versioning_index_factor;
 
     need_resharding = false;
