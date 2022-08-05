@@ -65,7 +65,7 @@ function(distutils_add_cython_module target name src)
   # This little bit of magic wipes out __Pyx_check_single_interpreter()
   # Note: this is reproduced in distutils_install_cython_module
   list(APPEND cflags -D'void0=dead_function\(void\)')
-  list(APPEND cflags -D'__Pyx_check_single_interpreter\(ARG\)=ARG \#\# 0')
+  list(APPEND cflags -D'__Pyx_check_single_interpreter\(ARG\)=ARG\#\#0')
   cmake_parse_arguments(DU "DISABLE_VTA" "" "" ${ARGN})
   if(DU_DISABLE_VTA AND HAS_VTA)
     list(APPEND cflags -fno-var-tracking-assignments)
@@ -121,7 +121,7 @@ function(distutils_install_cython_module name)
     set(ENV{LDSHARED} \"${PY_LDSHARED}\")
     set(ENV{CPPFLAGS} \"-iquote${CMAKE_SOURCE_DIR}/src/include
                         -D'void0=dead_function\(void\)' \
-                        -D'__Pyx_check_single_interpreter\(ARG\)=ARG \#\# 0' \
+                        -D'__Pyx_check_single_interpreter\(ARG\)=ARG\#\#0' \
                         ${CFLAG_DISABLE_VTA}\")
     set(ENV{LDFLAGS} \"-L${CMAKE_LIBRARY_OUTPUT_DIRECTORY}\")
     set(ENV{CYTHON_BUILD_DIR} \"${CMAKE_CURRENT_BINARY_DIR}\")
