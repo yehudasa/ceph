@@ -148,12 +148,25 @@ int extract_spec(const std::string &spec, std::string *pool_name,
   }
 
 
-  if (match[2].matched) {
-    if (!g_ceph_context->_conf.get_val<bool>("rbd_validate_namespace")) {
+  if (!g_ceph_context->_conf.get_val<bool>("rbd_validate_namespace")) {
+    // XXX DO-specific logic - our externally-facing volumes take the form <user_id>/<volume_id>,
+    // and thus the "namespace" is actually the user_id. When namespace support is disabled we
+    // assume that this is what we're dealing with if a "namespace" is given.
+    if (match[2].matched) {
       if (name != nullptr) {
         *name = match[2];
       }
-    } else {
+    }
+
+    if (name != nullptr) {
+      if (spec_validation == SPEC_VALIDATION_NONE) {
+        *name = *name + "/";
+      }
+      *name = *name + match.str(3);
+    }
+  } else {
+    // Original upstream logic
+    if (match[2].matched) {
       if (namespace_name != nullptr) {
         *namespace_name = match[2];
       } else {
@@ -162,13 +175,10 @@ int extract_spec(const std::string &spec, std::string *pool_name,
         return -EINVAL;
       }
     }
-  }
 
-  if (name != nullptr) {
-    if (spec_validation == SPEC_VALIDATION_NONE) {
-      *name = *name + "/";
+    if (name != nullptr) {
+      *name = match[3];
     }
-    *name = *name + match.str(3);
   }
 
   if (match[4].matched) {
