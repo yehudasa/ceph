@@ -152,13 +152,10 @@ int extract_spec(const std::string &spec, std::string *pool_name,
     // XXX DO-specific logic - our externally-facing volumes take the form <user_id>/<volume_id>,
     // and thus the "namespace" is actually the user_id. When namespace support is disabled we
     // assume that this is what we're dealing with if a "namespace" is given.
-    if (match[2].matched) {
-      if (name != nullptr) {
+    if (name != nullptr) {
+      if (match[2].matched) {
         *name = match[2];
       }
-    }
-
-    if (name != nullptr) {
       if (spec_validation == SPEC_VALIDATION_NONE) {
         *name = *name + "/";
       }
