@@ -86,6 +86,9 @@ download_boost() {
         --exclude="$boost_version_underscore/tools/auto_index" \
         --exclude='doc' --exclude='more' --exclude='status'
     mv src/boost_${boost_version_underscore} src/boost
+    # Newer versions of boost have adapted to Python 3.10 by the following replacement.
+    # https://github.com/boostorg/python/pull/344
+    sed -i -e 's/_Py_fopen/fopen/' src/boost/libs/python/src/exec.cpp
     tar cf ${outfile}.boost.tar ${outfile}/src/boost
     rm -rf src/boost
 }

@@ -1,3 +1,4 @@
 rpm centos-8
 deb ubuntu-18.04
 deb ubuntu-20.04
+deb ubuntu-22.04
