@@ -2045,9 +2045,9 @@ int RGWLC::process(const string& shard_oid, int max_lock_secs, LCWorker* worker,
       bucket_lc_post(shard_oid, max_lock_secs, entry, ret, worker);
       ldpp_dout(this, 20) << "RGWLC::process() finished processing entry: "
 	<< entry.bucket << " " << entry.status << dendl;
-      if (bucket) {
-        break;
-      }
+    }
+    if (bucket) {
+      break;
     }
   } while(1 && !once);
 
