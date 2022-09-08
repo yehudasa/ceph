@@ -1964,7 +1964,7 @@ int RGWLC::process(const string& shard_oid, int max_lock_secs, LCWorker* worker,
     }
 
     if(!if_already_run_today(head.start_date) ||
-       once) {
+       (!bucket && once)) {
       ldpp_dout(this, 20) << "RGWLC::process() initialize lc processing" << dendl;
       head.start_date = now;
       head.marker.clear();
@@ -2045,9 +2045,9 @@ int RGWLC::process(const string& shard_oid, int max_lock_secs, LCWorker* worker,
       bucket_lc_post(shard_oid, max_lock_secs, entry, ret, worker);
       ldpp_dout(this, 20) << "RGWLC::process() finished processing entry: "
 	<< entry.bucket << " " << entry.status << dendl;
-      if (bucket) {
-        break;
-      }
+    }
+    if (bucket) {
+      break;
     }
   } while(1 && !once);
 
