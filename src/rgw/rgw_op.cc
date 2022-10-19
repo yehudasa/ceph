@@ -2320,9 +2320,8 @@ void RGWListBuckets::execute(optional_yield y)
     }
   }
 
-  is_truncated = false;
+  rgw::sal::RGWBucketList buckets;
   do {
-    rgw::sal::RGWBucketList buckets;
     uint64_t read_count;
     if (limit >= 0) {
       read_count = min(limit - total_count, max_buckets);
@@ -2381,7 +2380,7 @@ void RGWListBuckets::execute(optional_yield y)
 
       handle_listing_chunk(std::move(buckets));
     }
-  } while (is_truncated && !done);
+  } while (buckets.is_truncated() && !done);
 
 send_end:
   if (!started) {
