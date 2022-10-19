@@ -2305,6 +2305,7 @@ void RGWListBuckets::execute(optional_yield y)
   bool done;
   bool started = false;
   uint64_t total_count = 0;
+  rgw::sal::RGWBucketList buckets;
 
   const uint64_t max_buckets = s->cct->_conf->rgw_list_buckets_max_chunk;
 
@@ -2320,7 +2321,6 @@ void RGWListBuckets::execute(optional_yield y)
     }
   }
 
-  rgw::sal::RGWBucketList buckets;
   do {
     uint64_t read_count;
     if (limit >= 0) {
