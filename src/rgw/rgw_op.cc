@@ -2305,7 +2305,6 @@ void RGWListBuckets::execute(optional_yield y)
   bool done;
   bool started = false;
   uint64_t total_count = 0;
-  rgw::sal::RGWBucketList buckets;
 
   const uint64_t max_buckets = s->cct->_conf->rgw_list_buckets_max_chunk;
 
@@ -2321,7 +2320,9 @@ void RGWListBuckets::execute(optional_yield y)
     }
   }
 
+  is_truncated = false;
   do {
+    rgw::sal::RGWBucketList buckets;
     uint64_t read_count;
     if (limit >= 0) {
       read_count = min(limit - total_count, max_buckets);
@@ -2338,6 +2339,8 @@ void RGWListBuckets::execute(optional_yield y)
 			<< s->user->get_id() << dendl;
       break;
     }
+
+    is_truncated = buckets.is_truncated();
 
     /* We need to have stats for all our policies - even if a given policy
      * isn't actually used in a given account. In such situation its usage
@@ -2380,7 +2383,7 @@ void RGWListBuckets::execute(optional_yield y)
 
       handle_listing_chunk(std::move(buckets));
     }
-  } while (buckets.is_truncated() && !done);
+  } while (is_truncated && !done);
 
 send_end:
   if (!started) {
