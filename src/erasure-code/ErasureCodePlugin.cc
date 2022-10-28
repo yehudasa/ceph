@@ -131,6 +131,7 @@ int ErasureCodePluginRegistry::load(const std::string &plugin_name,
     return -EIO;
   }
 
+#ifndef DO_SKIP_PLUGIN_VERSION_VERIFY
   const char * (*erasure_code_version)() =
     (const char *(*)())dlsym(library, PLUGIN_VERSION_FUNCTION);
   if (erasure_code_version == NULL)
@@ -141,6 +142,7 @@ int ErasureCodePluginRegistry::load(const std::string &plugin_name,
     dlclose(library);
     return -EXDEV;
   }
+#endif
 
   int (*erasure_code_init)(const char *, const char *) =
     (int (*)(const char *, const char *))dlsym(library, PLUGIN_INIT_FUNCTION);

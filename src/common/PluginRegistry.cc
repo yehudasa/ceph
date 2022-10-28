@@ -156,6 +156,7 @@ int PluginRegistry::load(const std::string &type,
     }
   }
 
+#ifndef DO_SKIP_PLUGIN_VERSION_VERIFY
   const char * (*code_version)() =
     (const char *(*)())dlsym(library, PLUGIN_VERSION_FUNCTION);
   if (code_version == NULL) {
@@ -169,6 +170,7 @@ int PluginRegistry::load(const std::string &type,
     dlclose(library);
     return -EXDEV;
   }
+#endif
 
   int (*code_init)(CephContext *,
 		   const std::string& type,

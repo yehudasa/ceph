@@ -710,4 +710,6 @@ add_tags(ctags
   EXCLUDES "*.js" "*.css" ".tox" "python-common/build")
 add_custom_target(tags DEPENDS ctags)
 
+option(DO_SKIP_PLUGIN_VERSION_VERIFY "[DO extension] disable plugin version verification for dev purposes" OFF)
+
 set(VERSION 16.2.5)
