@@ -384,4 +384,7 @@
 /* libexec directory path */
 #cmakedefine CMAKE_INSTALL_LIBEXECDIR "@CMAKE_INSTALL_LIBEXECDIR@"
 
+/* Define if plugin version verification should be disabled */
+#cmakedefine DO_SKIP_PLUGIN_VERSION_VERIFY
+
 #endif /* CONFIG_H */
