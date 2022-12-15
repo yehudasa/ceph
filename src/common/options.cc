@@ -5853,6 +5853,10 @@ std::vector<Option> get_rgw_options() {
     .set_default(0)
     .set_description("The maximum number of metadata items that can be put via single request"),
 
+    Option("rgw_allow_auto_pool_create", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    .set_default(1)
+    .set_description("Prevents RGW init from automatically create the RGW pools if not present"),
+
     Option("rgw_override_bucket_index_max_shards", Option::TYPE_UINT, Option::LEVEL_DEV)
     .set_default(0)
     .set_description("The default number of bucket index shards for newly-created "
