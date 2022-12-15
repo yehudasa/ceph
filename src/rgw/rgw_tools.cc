@@ -41,7 +41,7 @@ int rgw_init_ioctx(const DoutPrefixProvider *dpp,
 		   bool mostly_omap)
 {
   int r = rados->ioctx_create(pool.name.c_str(), ioctx);
-  if (r == -ENOENT && create) {
+  if (r == -ENOENT && create && g_conf().get_val<bool>("rgw_allow_auto_pool_create")) {
     r = rados->pool_create(pool.name.c_str());
     if (r == -ERANGE) {
       ldpp_dout(dpp, 0)
