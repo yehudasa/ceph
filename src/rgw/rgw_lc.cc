@@ -1840,7 +1840,7 @@ int RGWLC::prune_set(string shard_oid, vector<rgw::sal::Lifecycle::LCEntry> &ent
       return ret;
     }
 
-    if (bucket->get_marker() != bucket_marker) {
+    if (ret == -ENOENT || bucket->get_marker() != bucket_marker) {
       ret = sal_lc->rm_entry(shard_oid, *iter);
       if (ret < 0) {
         ldpp_dout(this, 0) << "RGWLC::prune_shard_entries() failed to remove entry "
