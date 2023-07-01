@@ -883,7 +883,12 @@ static void fuse_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off,
         bufv->buf[i].mem = v.iov_base;
         bufv->buf[i++].size = v.iov_len;
       }
+#warning REMOVE THIS
+#if 0
       fuse_reply_data(req, bufv, FUSE_BUF_SPLICE_MOVE);
+#else
+      fuse_reply_data(req, bufv, FUSE_BUF_NO_SPLICE);
+#endif
       free(bufv);
       return;
     }
