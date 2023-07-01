@@ -613,7 +613,7 @@ int FSCryptFNameDenc::get_decrypted_fname(const std::string& b64enc, std::string
   return r;
 }
 
-int FSCryptFDataDenc::decrypt_bl(uint64_t off, uint64_t len, uint64_t pos, bufferlist *bl)
+int FSCryptFDataDenc::decrypt_bl(uint64_t off, uint64_t len, uint64_t pos, const std::vector<Segment>& holes, bufferlist *bl)
 {
   auto data_len = bl->length();
 
@@ -625,23 +625,58 @@ int FSCryptFDataDenc::decrypt_bl(uint64_t off, uint64_t len, uint64_t pos, buffe
   uint64_t cur_block = fscrypt_block_from_ofs(pos);
   uint64_t block_off = fscrypt_block_start(pos);
 
+  auto hiter = holes.begin();
+
   while (pos < target_end) {
+    bool has_hole = false;
+
+    while (hiter != holes.end()) {
+      uint64_t hofs = hiter->first;
+      uint64_t hlen = hiter->second;
+      uint64_t hend = hofs + hlen - 1;
+
+      if (hend < pos) {
+        ++hiter;
+        continue;
+      }
+
+      if (hofs >= target_end) {
+        hiter = holes.end();
+        break;
+      }
+
+      has_hole = true;
+      break;
+    }
+#warning is this the way to do it?
+    void *data_pos = bl->c_str() + pos - off;
+    if (!has_hole && *(uint64_t *)data_pos == 0) {
+      has_hole = true;
+    }
+
     uint64_t read_end = std::min(end, block_off + FSCRYPT_BLOCK_SIZE);
     uint64_t read_end_aligned = fscrypt_align_ofs(read_end);
     auto chunk_len = read_end_aligned - block_off;
 
-    int r = calc_fdata_key(cur_block);
-    if (r  < 0) {
-      break;
-    }
-
     bufferlist chunk;
-    chunk.append_hole(chunk_len);
 
-    r = decrypt(bl->c_str() + pos - off, chunk_len,
-                chunk.c_str(), chunk_len);
-    if (r < 0) {
-      return r;
+    if (!has_hole) {
+      int r = calc_fdata_key(cur_block);
+      if (r  < 0) {
+        break;
+      }
+
+      /* since writes are aligned to block size, if there is a hole then it covers the whole block */
+
+      chunk.append_hole(chunk_len);
+
+      r = decrypt(bl->c_str() + pos - off, chunk_len,
+                  chunk.c_str(), chunk_len);
+      if (r < 0) {
+        return r;
+      }
+    } else {
+      chunk.append_zero(chunk_len);
     }
 
     uint64_t needed_end = std::min(target_end, read_end);
