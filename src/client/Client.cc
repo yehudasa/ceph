@@ -11131,7 +11131,10 @@ success:
 
   // extend file?
   if (request_size + request_offset > in->effective_size()) {
-    in->set_effective_size(request_size + request_offset);
+    if (denc) {
+      in->set_effective_size(request_size + request_offset);
+      in->mark_caps_dirty(CEPH_CAP_FILE_EXCL);
+    }
     ldout(cct, 7) << "in->effective_size()=" << in->effective_size() << dendl;
     in->size = offset + size;
     in->mark_caps_dirty(CEPH_CAP_FILE_WR);
