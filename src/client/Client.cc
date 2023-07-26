@@ -7747,7 +7747,21 @@ int Client::_readlink(Inode *in, char *buf, size_t size)
   int r = in->symlink.length();
   if (r > (int)size)
     r = size;
-  memcpy(buf, in->symlink.c_str(), r);
+
+  auto fscrypt_denc = fscrypt->get_fname_denc(in->fscrypt_ctx, &in->fscrypt_key_validator, true);
+ldout(cct, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << dendl;
+  if (fscrypt_denc) {
+    string dname;
+    int ret = fscrypt_denc->get_decrypted_symlink(in->symlink, &dname);
+    if (ret < 0) {
+      ldout(cct, 0) << __FILE__ << ":" << __LINE__ << ": failed to decrypt symlink (r=" << ret << ")" << dendl;
+    }
+    memcpy(buf, dname.c_str(), dname.size());
+    r = dname.size();
+  } else {
+    memcpy(buf, in->symlink.c_str(), r);
+  }
+
   return r;
 }
 
