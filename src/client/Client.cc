@@ -14236,9 +14236,24 @@ int Client::_symlink(Inode *dir, const char *name, const char *target,
     return r;
   }
 
+  req->fscrypt_file = dir->fscrypt_file;
+
+  dir->gen_inherited_fscrypt_auth(&req->fscrypt_auth);
+  auto fscrypt_ctx = FSCrypt::init_ctx(req->fscrypt_auth);
+
+  if (fscrypt_ctx) {
+    auto fscrypt_denc = fscrypt->get_fname_denc(fscrypt_ctx, nullptr, true);
+
+    string enc_target;
+    int r = fscrypt_denc->get_encrypted_symlink(target,&enc_target);
+
+    req->set_string2(enc_target.c_str());
+  } else {
+    req->set_string2(target); 
+  }
+
   req->set_alternate_name(std::move(alternate_name));
   req->set_inode(dir);
-  req->set_string2(target); 
   req->dentry_drop = CEPH_CAP_FILE_SHARED;
   req->dentry_unless = CEPH_CAP_FILE_EXCL;
 
