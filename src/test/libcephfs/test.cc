@@ -32,6 +32,8 @@
 
 #include "common/Clock.h"
 
+#include "client/FSCrypt.h"
+
 #ifdef __linux__
 #include <limits.h>
 #include <sys/xattr.h>
@@ -3622,6 +3624,7 @@ TEST(LibCephFS, SetMountTimeout) {
   ceph_shutdown(cmount);
 }
 
+#if 0
 TEST(LibCephFS, FsCrypt) {
   struct ceph_mount_info *cmount;
   ASSERT_EQ(ceph_create(&cmount, NULL), 0);
@@ -3652,6 +3655,86 @@ TEST(LibCephFS, FsCrypt) {
 
   ASSERT_EQ(0, ceph_close(cmount, fd));
   ASSERT_EQ(0, ceph_unmount(cmount));
+  ceph_shutdown(cmount);
+}
+#endif
+
+TEST(LibCephFS, FsCrypt) {
+  struct ceph_mount_info *cmount;
+  ASSERT_EQ(ceph_create(&cmount, NULL), 0);
+  ASSERT_EQ(ceph_conf_read_file(cmount, NULL), 0);
+  ASSERT_EQ(0, ceph_conf_parse_env(cmount, NULL));
+  ASSERT_EQ(ceph_mount(cmount, NULL), 0);
+
+  char dir_name[128];
+  char dir_path[256];
+
+  pid_t mypid = getpid();
+  sprintf(dir_name, "fscrypt_dir_%d", mypid);
+  sprintf(dir_path, "/%s", dir_name);
+
+  Inode *dir, *root;
+  struct ceph_statx stx_dir;
+  struct ceph_statx stx_snap_dir;
+  struct ceph_statx stx_root_snap_dir;
+  UserPerm *perms = ceph_mount_perms(cmount);
+
+  ASSERT_EQ(ceph_ll_lookup_root(cmount, &root), 0);
+  ASSERT_EQ(ceph_ll_mkdir(cmount, root, dir_name, 0755, &dir, &stx_dir, 0, 0, perms), 0);
+
+  char key[64];
+
+  struct ceph_fscrypt_key_identifier kid;
+
+  for (int i = 0; i < sizeof(key); ++i) {
+    key[i] = (char)rand();
+  }
+
+  ASSERT_EQ(0, ceph_add_fscrypt_key(cmount, key, sizeof(key), &kid));
+
+  struct fscrypt_policy_v2 policy;
+  policy.version = 2;
+  policy.contents_encryption_mode = FSCRYPT_MODE_AES_256_XTS;
+  policy.filenames_encryption_mode = FSCRYPT_MODE_AES_256_CTS;
+  policy.flags = FSCRYPT_POLICY_FLAGS_PAD_32;
+  memcpy(policy.master_key_identifier, kid.raw, FSCRYPT_KEY_IDENTIFIER_SIZE);
+
+  int fd = ceph_open(cmount, dir_path, O_DIRECTORY, 0);
+  ASSERT_GT(fd, 0);
+
+  ASSERT_EQ(0, ceph_set_fscrypt_policy_v2(cmount, fd, &policy));
+
+  char test_file[NAME_MAX];
+  sprintf(test_file, "%s/test_fscrypt_%d", dir_path, getpid());
+  int file_fd = ceph_open(cmount, test_file, O_RDWR|O_CREAT, 0666);
+  ASSERT_GT(file_fd, 0);
+
+
+#if 0
+  char test_xattr_file[NAME_MAX];
+  sprintf(test_xattr_file, "test_fscrypt_%d", getpid());
+  int fd = ceph_open(cmount, test_xattr_file, O_RDWR|O_CREAT, 0666);
+  ASSERT_GT(fd, 0);
+
+  ASSERT_EQ(0, ceph_fsetxattr(cmount, fd, "ceph.fscrypt.auth", "foo", 3, CEPH_XATTR_CREATE));
+  ASSERT_EQ(0, ceph_fsetxattr(cmount, fd, "ceph.fscrypt.file", "foo", 3, CEPH_XATTR_CREATE));
+
+  char buf[64];
+  ASSERT_EQ(3, ceph_fgetxattr(cmount, fd, "ceph.fscrypt.auth", buf, sizeof(buf)));
+  ASSERT_EQ(3, ceph_fgetxattr(cmount, fd, "ceph.fscrypt.file", buf, sizeof(buf)));
+  ASSERT_EQ(0, ceph_close(cmount, fd));
+
+  ASSERT_EQ(0, ceph_unmount(cmount));
+  ASSERT_EQ(0, ceph_mount(cmount, NULL));
+
+  fd = ceph_open(cmount, test_xattr_file, O_RDWR, 0666);
+  ASSERT_GT(fd, 0);
+  ASSERT_EQ(3, ceph_fgetxattr(cmount, fd, "ceph.fscrypt.auth", buf, sizeof(buf)));
+  ASSERT_EQ(3, ceph_fgetxattr(cmount, fd, "ceph.fscrypt.file", buf, sizeof(buf)));
+
+  ASSERT_EQ(0, ceph_close(cmount, fd));
+  ASSERT_EQ(0, ceph_unmount(cmount));
+#endif
   ceph_shutdown(cmount);
 }
 
