@@ -2925,6 +2925,18 @@ int RGWBucketInstanceMetadataHandler::remove(std::string& entry, RGWObjVersionTr
     return ret;
   }
 
+  RGWBucketEnt stats;
+  ret = svc_bi->read_stats(dpp, bci.info, &stats, y);
+  if (ret < 0) {
+    return ret;
+  }
+  if (stats.count > 0) {
+    ldpp_dout(dpp, 20) << __func__
+                       << " not removing bucket instance as it's not empty"
+                       << " (bucket=" << bci.info.bucket << ", count=" << stats.count << ")" << dendl;
+    return -ENOTEMPTY;
+  }
+
   ret = svc_bucket->remove_bucket_instance_info(
       entry, bci.info, &bci.info.objv_tracker, y, dpp);
   if (ret < 0)
