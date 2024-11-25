@@ -249,6 +249,10 @@ struct RGWBucketAdminOpState {
     if (!user_id.empty())
       uid = user_id;
   }
+  void set_account_id(const rgw_account_id& id) {
+    if (!id.empty())
+      account_id = id;
+  }
   void set_tenant(const std::string& tenant_str) {
     uid.tenant = tenant_str;
   }

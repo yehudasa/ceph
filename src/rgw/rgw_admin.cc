@@ -9265,6 +9265,82 @@ next:
 
   if (opt_cmd == OPT::METADATA_RM) {
     int ret = static_cast<rgw::sal::RadosStore*>(driver)->ctl()->meta.mgr->remove(metadata_key, null_yield, dpp());
+    if (ret == -ENOTEMPTY) {
+      string key_type;
+      string entry;
+
+      static_cast<rgw::sal::RadosStore*>(driver)->ctl()->meta.mgr->parse_metadata_key(metadata_key, key_type, entry);
+      if (key_type == "bucket.instance") {
+        RGWBucketInfo bucket_info;
+        map<string, bufferlist> attrs;
+
+        int r = static_cast<rgw::sal::RadosStore*>(driver)->svc()->bucket->read_bucket_instance_info(entry, &bucket_info, nullptr,
+                                                                                                   &attrs, null_yield, dpp());
+        if (r == -ENOENT) {
+          /* probably raced with removal, success */
+          return 0;
+        }
+        if (r < 0) {
+          cerr << "ERROR: failed to read metadata entry: err=" << -r << std::endl;
+          return -r;
+        }
+
+        /* check to see if entrypoint exists */
+        RGWBucketEntryPoint ep;
+        r = static_cast<rgw::sal::RadosStore*>(driver)->ctl()->bucket->read_bucket_entrypoint_info(bucket_info.bucket, &ep, null_yield, dpp(), RGWBucketCtl::Bucket::GetParams());
+        if (r < 0 && r != -ENOENT) {
+          cerr << "ERROR: can't read bucket entrypoiny" << cpp_strerror(-r) << std::endl;
+          return -r;
+        }
+        if (r == 0) {
+          cerr << "ERROR: can't remove bucket instance as it's linked and not empty" << std::endl;
+          return ENOTEMPTY;
+        }
+
+        if (new_bucket_name.empty()) {
+          new_bucket_name = "delete-" + gen_rand_alphanumeric_lower(cct.get(), 16) + "-" + bucket_info.bucket.name;
+        }
+
+        rgw_bucket new_bucket = bucket_info.bucket;
+        new_bucket.name = new_bucket_name;
+
+        RGWBucketEntryPoint entry_point;
+        entry_point.bucket = bucket_info.bucket;
+        entry_point.owner = bucket_info.owner;
+        entry_point.creation_time = bucket_info.creation_time;
+        entry_point.linked = true;
+
+        RGWObjVersionTracker ot;
+        ot.generate_new_write_ver(cct.get());
+
+        auto mtime = ceph::real_clock::now();
+
+        r = static_cast<rgw::sal::RadosStore*>(driver)->svc()->bucket->store_bucket_entrypoint_info(RGWSI_Bucket::get_entrypoint_meta_key(new_bucket),
+                                                  entry_point,
+                                                  true /* exclusie */,
+                                                  mtime,
+                                                  &attrs,
+                                                  &ot,
+                                                  null_yield,
+                                                  dpp());
+        if (r < 0) {
+          cerr << "Failed creating new bucket entrypoint: " << cpp_strerror(-r) << std::endl;
+          return -r;
+        }
+
+        r = static_cast<rgw::sal::RadosStore*>(driver)->ctl()->bucket->link_bucket(*(static_cast<rgw::sal::RadosStore*>(driver)->getRados()->get_rados_handle()),
+                              bucket_info.owner,
+                              new_bucket,
+                              bucket_info.creation_time,
+                              null_yield,
+                              dpp(),
+                              false); /* don't update entrypoint! */
+        if (r < 0) {
+          cerr << "Failed linking new bucket entrypoint: " << cpp_strerror(-r) << std::endl;
+          return -r;
+        }
+      }
+    }
     if (ret < 0) {
       cerr << "ERROR: can't remove key: " << cpp_strerror(-ret) << std::endl;
       return -ret;
