@@ -704,6 +704,7 @@ enum class OPT {
   BUCKET_SHARD_OBJECTS,
   BUCKET_OBJECT_SHARD,
   BUCKET_RESYNC_ENCRYPTED_MULTIPART,
+  BUCKET_SNAP_ENABLE,
   BUCKET_SNAP_CREATE,
   BUCKET_SNAP_LIST,
   POLICY,
@@ -944,6 +945,7 @@ static SimpleCmd::Commands all_cmds = {
   { "bucket shard object", OPT::BUCKET_SHARD_OBJECTS },
   { "bucket object shard", OPT::BUCKET_OBJECT_SHARD },
   { "bucket resync encrypted multipart", OPT::BUCKET_RESYNC_ENCRYPTED_MULTIPART },
+  { "bucket snap enable", OPT::BUCKET_SNAP_ENABLE },
   { "bucket snap create", OPT::BUCKET_SNAP_CREATE },
   { "bucket snap list", OPT::BUCKET_SNAP_LIST },
   { "policy", OPT::POLICY },
@@ -7556,6 +7558,47 @@ int main(int argc, const char **argv)
     int r = RGWBucketAdminOp::chown(driver, bucket_op, marker, dpp(), null_yield, &err);
     if (r < 0) {
       cerr << "failure: " << cpp_strerror(-r) << ": " << err << std::endl;
+      return -r;
+    }
+  }
+
+  if (opt_cmd == OPT::BUCKET_SNAP_ENABLE) {
+    if (bucket_name.empty()) {
+      cerr << "ERROR: bucket name not specified" << std::endl;
+      return EINVAL;
+    }
+
+    int r = init_bucket(tenant, bucket_name, bucket_id, &bucket);
+    if (r < 0) {
+      cerr << "init_bucket failure: " << cpp_strerror(-r) << ": " << err << std::endl;
+      return r;
+    }
+
+    r = retry_raced_bucket_write(dpp(), bucket.get(), [&] {
+      auto& bucket_info = bucket->get_info();
+      auto& snap_mgr = bucket_info.local.snap_mgr;
+
+      if (snap_mgr.is_enabled()) {
+        cerr << "bucket already has snapshots enabled" << std::endl;
+        return -EINVAL;
+      }
+
+      snap_mgr.set_enabled(true);
+
+      if ((bucket_info.flags & BUCKET_VERSIONED) == 0) {
+        /* need to enable bucket versioning for snapshotsi,
+         * we're setting it to suspended, which means that the
+         * objects will be handled as versioned object but version IDs
+         * will not be generated for them
+         */
+
+        bucket_info.flags |= (BUCKET_VERSIONED | BUCKET_VERSIONS_SUSPENDED);
+      }
+
+      return bucket->put_info(dpp(), false, real_time(), null_yield);
+    }, null_yield);
+
+    if (r < 0) {
       return -r;
     }
   }
