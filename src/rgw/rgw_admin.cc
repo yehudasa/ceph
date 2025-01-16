@@ -7902,7 +7902,7 @@ next:
     {
       Formatter::ObjectSection os(*formatter, "result");
       encode_json("olh", olh, formatter.get());
-      encode_json("olh_snap_info", olh, formatter.get());
+      encode_json("olh_snap_info", snap_info, formatter.get());
     }
     formatter->flush(cout);
   }
