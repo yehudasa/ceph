@@ -118,6 +118,7 @@ using ceph::crypto::MD5;
 #define RGW_ATTR_PG_VER 	RGW_ATTR_PREFIX "pg_ver"
 #define RGW_ATTR_SOURCE_ZONE    RGW_ATTR_PREFIX "source_zone"
 #define RGW_ATTR_TAGS           RGW_ATTR_PREFIX RGW_AMZ_PREFIX "tagging"
+#define RGW_ATTR_SNAP_ID             RGW_ATTR_PREFIX "snap_id"
 
 #define RGW_ATTR_CLOUDTIER_STORAGE_CLASS  RGW_ATTR_PREFIX "cloudtier_storage_class"
 #define RGW_ATTR_RESTORE_STATUS   RGW_ATTR_PREFIX "restore-status"
@@ -311,6 +312,7 @@ inline constexpr const char* RGW_REST_STS_XMLNS =
 #define ERR_INVALID_RETENTION_PERIOD 2047
 #define ERR_NO_SUCH_BUCKET_ENCRYPTION_CONFIGURATION 2048
 #define ERR_NO_SUCH_PUBLIC_ACCESS_BLOCK_CONFIGURATION 2049
+#define ERR_FORBIDDEN            2050
 #define ERR_USER_SUSPENDED       2100
 #define ERR_INTERNAL_ERROR       2200
 #define ERR_NOT_IMPLEMENTED      2201

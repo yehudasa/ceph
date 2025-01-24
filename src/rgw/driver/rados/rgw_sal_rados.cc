@@ -2241,6 +2241,11 @@ int RadosObject::load_obj_state(const DoutPrefixProvider* dpp, optional_yield y,
 
   /* Don't overwrite obj, atomic, or prefetch */
   rgw_obj obj = get_obj();
+
+  if (state.obj.key.snap_id != obj.key.snap_id) {
+    obj.key.snap_id = state.obj.key.snap_id;
+  }
+
   bool is_atomic = state.is_atomic;
   bool prefetch_data = state.prefetch_data;
 
@@ -2249,6 +2254,7 @@ int RadosObject::load_obj_state(const DoutPrefixProvider* dpp, optional_yield y,
   state.obj = obj;
   state.is_atomic = is_atomic;
   state.prefetch_data = prefetch_data;
+
   return ret;
 }
 
@@ -2763,7 +2769,7 @@ int RadosObject::handle_obj_expiry(const DoutPrefixProvider* dpp, optional_yield
           attrs[RGW_ATTR_STORAGE_CLASS] = bl;
 
           const req_context rctx{dpp, y, nullptr};
-          return obj_op.write_meta(0, 0, attrs, rctx, head_obj->get_trace());
+          return obj_op.write_meta(0, 0, attrs, rctx, head_obj->get_trace(), nullptr);
         } catch (const buffer::end_of_buffer&) {
           // ignore empty manifest; it's not cloud-tiered
         } catch (const std::exception& e) {
@@ -2849,7 +2855,7 @@ int RadosObject::write_cloud_tier(const DoutPrefixProvider* dpp,
   attrs.erase(RGW_ATTR_CLOUDTIER_STORAGE_CLASS);
 
   const req_context rctx{dpp, y, nullptr};
-  return obj_op.write_meta(0, 0, attrs, rctx, head_obj->get_trace());
+  return obj_op.write_meta(0, 0, attrs, rctx, head_obj->get_trace(), nullptr);
 }
 
 int RadosObject::get_max_chunk_size(const DoutPrefixProvider* dpp, rgw_placement_rule placement_rule, uint64_t* max_chunk_size, uint64_t* alignment)
@@ -3426,7 +3432,7 @@ int RadosMultipartUpload::init(const DoutPrefixProvider *dpp, optional_yield y, 
     encode(upload_info, bl);
     obj_op.meta.data = &bl;
 
-    ret = obj_op.write_meta(bl.length(), 0, attrs, rctx, get_trace(), false);
+    ret = obj_op.write_meta(bl.length(), 0, attrs, rctx, get_trace(), nullptr, false);
   } while (ret == -EEXIST);
 
   return ret;
@@ -3738,7 +3744,7 @@ int RadosMultipartUpload::complete(const DoutPrefixProvider *dpp,
   obj_op.meta.olh_epoch = olh_epoch;
 
   const req_context rctx{dpp, y, nullptr};
-  ret = obj_op.write_meta(ofs, accounted_size, attrs, rctx, get_trace());
+  ret = obj_op.write_meta(ofs, accounted_size, attrs, rctx, get_trace(), nullptr);
   if (ret < 0)
     return ret;
 
@@ -4079,13 +4085,14 @@ int RadosAtomicWriter::complete(size_t accounted_size, const std::string& etag,
                        ceph::real_time delete_at,
                        const char *if_match, const char *if_nomatch,
                        const std::string *user_data,
-                       rgw_zone_set *zones_trace, bool *canceled,
+                       rgw_zone_set *zones_trace, rgw_bucket_snap_id *psnap_id,
+                       bool *canceled,
                        const req_context& rctx,
                        uint32_t flags)
 {
   return processor.complete(accounted_size, etag, mtime, set_mtime, attrs,
 			    cksum, delete_at, if_match, if_nomatch,
-			    user_data, zones_trace, canceled, rctx, flags);
+			    user_data, zones_trace, psnap_id, canceled, rctx, flags);
 }
 
 int RadosAppendWriter::prepare(optional_yield y)
@@ -4105,13 +4112,14 @@ int RadosAppendWriter::complete(size_t accounted_size, const std::string& etag,
                        ceph::real_time delete_at,
                        const char *if_match, const char *if_nomatch,
                        const std::string *user_data,
-                       rgw_zone_set *zones_trace, bool *canceled,
+                       rgw_zone_set *zones_trace, rgw_bucket_snap_id *psnap_id,
+                       bool *canceled,
                        const req_context& rctx,
                        uint32_t flags)
 {
   return processor.complete(accounted_size, etag, mtime, set_mtime, attrs,
 			    cksum, delete_at, if_match, if_nomatch,
-			    user_data, zones_trace, canceled, rctx, flags);
+			    user_data, zones_trace, psnap_id, canceled, rctx, flags);
 }
 
 int RadosMultipartWriter::prepare(optional_yield y)
@@ -4133,13 +4141,14 @@ int RadosMultipartWriter::complete(
                        ceph::real_time delete_at,
                        const char *if_match, const char *if_nomatch,
                        const std::string *user_data,
-                       rgw_zone_set *zones_trace, bool *canceled,
+                       rgw_zone_set *zones_trace, rgw_bucket_snap_id *psnap_id,
+                       bool *canceled,
                        const req_context& rctx,
                        uint32_t flags)
 {
   return processor.complete(accounted_size, etag, mtime, set_mtime, attrs,
 			    cksum, delete_at, if_match, if_nomatch,
-			    user_data, zones_trace, canceled, rctx, flags);
+			    user_data, zones_trace, psnap_id, canceled, rctx, flags);
 }
 
 bool RadosZoneGroup::placement_target_exists(std::string& target) const

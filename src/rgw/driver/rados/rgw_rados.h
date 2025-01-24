@@ -868,12 +868,15 @@ public:
       int _do_write_meta(uint64_t size, uint64_t accounted_size,
                      std::map<std::string, bufferlist>& attrs,
                      bool modify_tail, bool assume_noent,
-                     void *index_op, const req_context& rctx,
+                     const req_context& rctx,
                      jspan_context& trace,
+                     rgw_bucket_snap_id *psnap_id,
                      bool log_op = true);
       int write_meta(uint64_t size, uint64_t accounted_size,
                      std::map<std::string, bufferlist>& attrs,
-                     const req_context& rctx, jspan_context& trace, bool log_op = true);
+                     const req_context& rctx, jspan_context& trace,
+                     rgw_bucket_snap_id *psnap_id,
+                     bool log_op = true);
       int write_data(const char *data, uint64_t ofs, uint64_t len, bool exclusive);
       const req_state* get_req_state() {
         return nullptr;  /* XXX dang Only used by LTTng, and it handles null anyway */
@@ -1335,6 +1338,7 @@ int restore_obj_from_cloud(RGWLCCloudTierCtx& tier_ctx,
 
   /** Remove an object from the bucket index */
   int delete_obj_index(const rgw_obj& obj, ceph::real_time mtime,
+                       rgw_bucket_snap_id snap_id,
 		       const DoutPrefixProvider *dpp, optional_yield y);
 
   /**
@@ -1456,6 +1460,7 @@ int restore_obj_from_cloud(RGWLCCloudTierCtx& tier_ctx,
 	      bool delete_marker,
 	      rgw_bucket_dir_entry_meta *meta,
               uint64_t olh_epoch,
+              rgw_bucket_snap_id snap_id,
 	      ceph::real_time unmod_since,
 	      bool high_precision_time,
               optional_yield y,

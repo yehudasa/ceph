@@ -2954,6 +2954,7 @@ static int rgw_bi_get_op(cls_method_context_t hctx, bufferlist *in, bufferlist *
     return -EINVAL;
   }
 
+CLS_LOG(0, "%s:%d snap_id=%d", __FILE__, __LINE__, (int)op.key.snap_id);
   string idx;
 
   switch (op.type) {
@@ -2971,6 +2972,7 @@ static int rgw_bi_get_op(cls_method_context_t hctx, bufferlist *in, bufferlist *
 	      __func__, int(op.type));
       return -EINVAL;
   }
+CLS_LOG(0, "%s:%d idx=%s", __FILE__, __LINE__, escape_str(idx).c_str());
 
   rgw_cls_bi_get_ret op_ret;
 

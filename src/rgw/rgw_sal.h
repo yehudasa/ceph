@@ -25,6 +25,7 @@
 #include "rgw_lua.h"
 #include "rgw_notify_event_type.h"
 #include "rgw_req_context.h"
+#include "rgw_bucket_snap_types.h"
 #include "include/random.h"
 
 // FIXME: following subclass dependencies
@@ -201,7 +202,9 @@ class ObjectProcessor : public DataProcessor {
                        ceph::real_time delete_at,
                        const char *if_match, const char *if_nomatch,
                        const std::string *user_data,
-                       rgw_zone_set *zones_trace, bool *canceled,
+                       rgw_zone_set *zones_trace,
+                       rgw_bucket_snap_id *psnap_id,
+                       bool *canceled,
                        const req_context& rctx,
                        uint32_t flags) = 0;
 };
@@ -1643,7 +1646,9 @@ public:
                        ceph::real_time delete_at,
                        const char *if_match, const char *if_nomatch,
                        const std::string *user_data,
-                       rgw_zone_set *zones_trace, bool *canceled,
+                       rgw_zone_set *zones_trace,
+                       rgw_bucket_snap_id *psnap_id,
+                       bool *canceled,
                        const req_context& rctx,
                        uint32_t flags) = 0;
 };
