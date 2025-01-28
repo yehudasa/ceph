@@ -5418,7 +5418,9 @@ void RGWDeleteObj::execute(optional_yield y)
     return;
   }
 
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << dendl;
   if (!rgw::sal::Object::empty(s->object.get())) {
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << dendl;
     uint64_t obj_size = 0;
     std::string etag;
     bool null_verid;
@@ -5428,12 +5430,14 @@ void RGWDeleteObj::execute(optional_yield y)
       null_verid = (s->object->get_instance() == "null");
 
       op_ret = state_loaded = s->object->load_obj_state(this, s->yield, true);
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << dendl;
       if (op_ret < 0) {
         if (need_object_expiration() || multipart_delete) {
           return;
         }
 
         if (check_obj_lock) {
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << dendl;
           /* check if obj exists, read orig attrs */
           if (op_ret == -ENOENT) {
             /* object maybe delete_marker, skip check_obj_lock*/
@@ -5443,6 +5447,7 @@ void RGWDeleteObj::execute(optional_yield y)
           }
         }
       } else {
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << dendl;
         obj_size = s->object->get_size();
         etag = s->object->get_attrs()[RGW_ATTR_ETAG].to_str();
       }
@@ -5450,6 +5455,7 @@ void RGWDeleteObj::execute(optional_yield y)
       // ignore return value from get_obj_attrs in all other cases
       op_ret = 0;
       if (check_obj_lock) {
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << dendl;
         ceph_assert(state_loaded == 0);
         int object_lock_response = verify_object_lock(this, s->object->get_attrs(), bypass_perm, bypass_governance_mode);
         if (object_lock_response != 0) {
@@ -5498,6 +5504,7 @@ void RGWDeleteObj::execute(optional_yield y)
     s->object->set_atomic();
     
     bool ver_restored = false;
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << dendl;
     op_ret = s->object->swift_versioning_restore(s->owner, s->user->get_id(),
                                                  ver_restored, this, y);
     if (op_ret < 0) {
@@ -5525,7 +5532,9 @@ void RGWDeleteObj::execute(optional_yield y)
       del_op->params.marker_version_id = version_id;
       del_op->params.null_verid = null_verid;
 
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << dendl;
       op_ret = del_op->delete_obj(this, y, rgw::sal::FLAG_LOG_OP);
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << dendl;
       if (op_ret >= 0) {
 	delete_marker = del_op->result.delete_marker;
 	version_id = del_op->result.version_id;

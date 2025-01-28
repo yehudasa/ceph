@@ -2242,10 +2242,6 @@ int RadosObject::load_obj_state(const DoutPrefixProvider* dpp, optional_yield y,
   /* Don't overwrite obj, atomic, or prefetch */
   rgw_obj obj = get_obj();
 
-  if (state.obj.key.snap_id != obj.key.snap_id) {
-    obj.key.snap_id = state.obj.key.snap_id;
-  }
-
   bool is_atomic = state.is_atomic;
   bool prefetch_data = state.prefetch_data;
 
@@ -2254,6 +2250,11 @@ int RadosObject::load_obj_state(const DoutPrefixProvider* dpp, optional_yield y,
   state.obj = obj;
   state.is_atomic = is_atomic;
   state.prefetch_data = prefetch_data;
+
+ldout(store->ctx(), 0) << __FILE__ << ":" << __LINE__ << ":" <<  __func__ << "(): follow_olh=" << follow_olh << "obj=" << obj << " state.snap_id=" << state.snap_id << dendl;
+  if (state.snap_id != state.obj.key.snap_id) {
+    state.obj.key.snap_id = state.snap_id;
+  }
 
   return ret;
 }

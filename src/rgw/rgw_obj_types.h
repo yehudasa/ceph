@@ -54,18 +54,23 @@ struct rgw_obj_index_key { // cls_rgw_obj_key now aliases this type
 
   bool operator==(const rgw_obj_index_key& k) const {
     return (name.compare(k.name) == 0) &&
-           (instance.compare(k.instance) == 0);
+           (instance.compare(k.instance) == 0) &&
+           (snap_id == k.snap_id);
   }
 
   bool operator!=(const rgw_obj_index_key& k) const {
     return (name.compare(k.name) != 0) ||
-           (instance.compare(k.instance) != 0);
+           (instance.compare(k.instance) != 0) ||
+           (snap_id != k.snap_id);
   }
 
   bool operator<(const rgw_obj_index_key& k) const {
     int r = name.compare(k.name);
     if (r == 0) {
       r = instance.compare(k.instance);
+    }
+    if (r == 0) {
+      return snap_id < k.snap_id;
     }
     return (r < 0);
   }

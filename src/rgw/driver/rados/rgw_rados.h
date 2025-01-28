@@ -136,13 +136,15 @@ WRITE_CLASS_ENCODER(RGWOLHSnapInfo)
 struct RGWOLHInfo {
   rgw_obj target;
   bool removed;
+  rgw_bucket_snap_id snap_id = RGW_BUCKET_SNAP_NOSNAP;
 
   RGWOLHInfo() : removed(false) {}
 
   void encode(bufferlist& bl) const {
-    ENCODE_START(1, 1, bl);
+    ENCODE_START(2, 1, bl);
     encode(target, bl);
     encode(removed, bl);
+    encode(snap_id, bl);
     ENCODE_FINISH(bl);
   }
 
@@ -150,6 +152,10 @@ struct RGWOLHInfo {
      DECODE_START(1, bl);
      decode(target, bl);
      decode(removed, bl);
+
+     if (struct_v >= 2) {
+       decode(snap_id, bl);
+     }
      DECODE_FINISH(bl);
   }
   static void generate_test_instances(std::list<RGWOLHInfo*>& o);
@@ -1420,7 +1426,8 @@ int restore_obj_from_cloud(RGWLCCloudTierCtx& tier_ctx,
   int olh_init_modification_impl(const DoutPrefixProvider *dpp, const RGWBucketInfo& bucket_info, RGWObjState& state, const rgw_obj& olh_obj, std::string *op_tag, optional_yield y);
   int bucket_index_link_olh(const DoutPrefixProvider *dpp,
                             RGWBucketInfo& bucket_info, RGWObjState& olh_state,
-                            const rgw_obj& obj_instance, bool delete_marker,
+                            const rgw_obj& obj_instance, rgw_bucket_snap_id snap_id,
+                            bool delete_marker,
                             const std::string& op_tag, struct rgw_bucket_dir_entry_meta *meta,
                             uint64_t olh_epoch,
                             ceph::real_time unmod_since, bool high_precision_time,
