@@ -205,7 +205,7 @@ struct rgw_obj_key {
   }
 
   void try_set_snap_id(rgw_bucket_snap_id sid) {
-    if (ns.empty() && instance.empty()) {
+    if (ns.empty() && !have_non_null_instance()) {
       snap_id = sid;
     }
   }
@@ -267,8 +267,12 @@ struct rgw_obj_key {
     return !instance.empty();
   }
 
+  bool have_non_null_instance() const {
+    return !instance.empty() && !have_null_instance();
+  }
+
   bool need_to_encode_instance() const {
-    return (have_instance() && !have_null_instance()) ||
+    return have_non_null_instance() ||
       snap_id != RGW_BUCKET_SNAP_NOSNAP;
   }
 

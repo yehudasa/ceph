@@ -2253,7 +2253,7 @@ int RadosObject::load_obj_state(const DoutPrefixProvider* dpp, optional_yield y,
 
 ldout(store->ctx(), 0) << __FILE__ << ":" << __LINE__ << ":" <<  __func__ << "(): follow_olh=" << follow_olh << "obj=" << obj << " state.snap_id=" << state.snap_id << dendl;
   if (state.snap_id != state.obj.key.snap_id) {
-    state.obj.key.snap_id = state.snap_id;
+    state.obj.key.try_set_snap_id(state.snap_id);
   }
 
   return ret;

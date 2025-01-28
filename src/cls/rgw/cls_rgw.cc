@@ -1654,9 +1654,6 @@ public:
 CLS_LOG(0, "%s next_entry.key=%s next_snap_id=%d", __func__, escape_str(key.to_string()).c_str(), (int)next_entry.meta.snap_id);
       *next_key = next_entry.key;
       *next_snap_id = next_entry.meta.snap_id;
-      if (next_entry.key.instance.empty()) {
-        next_key->snap_id = next_entry.meta.snap_id;
-      }
     }
 
     return 0;
@@ -1926,9 +1923,11 @@ static int rgw_bucket_link_olh(cls_method_context_t hctx, bufferlist *in, buffer
     return rc;
   }
 
+CLS_LOG(0, "%s:%d:%s() key.snap_id=%d", __FILE__, __LINE__, __func__, op.key.snap_id);
   /* read instance entry */
-  BIVerObjEntry obj(hctx, op.key, op.meta.snap_id);
+  BIVerObjEntry obj(hctx, op.key);
   int ret = obj.init(op.delete_marker);
+CLS_LOG(0, "%s:%d:%s()", __FILE__, __LINE__, __func__);
 
   /* NOTE: When a delete is issued, a key instance is always provided,
    * either the one for which the delete is requested or a new random
@@ -1940,11 +1939,14 @@ static int rgw_bucket_link_olh(cls_method_context_t hctx, bufferlist *in, buffer
    * as that would better allow a typo in the instance id. This code
    * should be audited and possibly cleaned up. */
 
+CLS_LOG(0, "%s:%d:%s()", __FILE__, __LINE__, __func__);
   bool existed = (ret == 0);
   if (ret == -ENOENT && op.delete_marker) {
     ret = 0;
   }
+CLS_LOG(0, "%s:%d:%s()", __FILE__, __LINE__, __func__);
   if (ret < 0) {
+CLS_LOG(0, "%s:%d:%s()", __FILE__, __LINE__, __func__);
     return ret;
   }
 
@@ -1955,6 +1957,7 @@ static int rgw_bucket_link_olh(cls_method_context_t hctx, bufferlist *in, buffer
     /* read olh */
     ret = olh.init(&olh_found);
     if (ret < 0) {
+CLS_LOG(0, "%s:%d:%s()", __FILE__, __LINE__, __func__);
       return ret;
     }
     olh_read_attempt = true;
@@ -1993,7 +1996,8 @@ static int rgw_bucket_link_olh(cls_method_context_t hctx, bufferlist *in, buffer
    * its list entry.
    */
   if (op.key.instance.empty()) {
-    BIVerObjEntry other_obj(hctx, op.key, op.meta.snap_id);
+CLS_LOG(0, "%s:%d:%s()", __FILE__, __LINE__, __func__);
+    BIVerObjEntry other_obj(hctx, op.key);
     ret = other_obj.init(!op.delete_marker); /* try reading the other
 					      * null versioned
 					      * entry */
@@ -2001,6 +2005,7 @@ static int rgw_bucket_link_olh(cls_method_context_t hctx, bufferlist *in, buffer
     if (ret >= 0 && other_obj.is_delete_marker() != op.delete_marker) {
       ret = other_obj.unlink_list_entry(header);
       if (ret < 0) {
+CLS_LOG(0, "%s:%d:%s()", __FILE__, __LINE__, __func__);
         return ret;
       }
     }
@@ -2009,6 +2014,7 @@ static int rgw_bucket_link_olh(cls_method_context_t hctx, bufferlist *in, buffer
     if (!removing) {
       ret = other_obj.unlink(header, op.key);
       if (ret < 0) {
+CLS_LOG(0, "%s:%d:%s()", __FILE__, __LINE__, __func__);
         return ret;
       }
     }
@@ -2025,6 +2031,7 @@ static int rgw_bucket_link_olh(cls_method_context_t hctx, bufferlist *in, buffer
   if (!olh_read_attempt) { // only read if we didn't attempt earlier
     ret = olh.init(&olh_found);
     if (ret < 0) {
+CLS_LOG(0, "%s:%d:%s()", __FILE__, __LINE__, __func__);
       return ret;
     }
     olh_read_attempt = true;
@@ -2060,11 +2067,13 @@ CLS_LOG(20, "%s(): ZZZ op.meta.snap_id=%d", __func__, (int)op.meta.snap_id);
       /* if pending removal, this is a new olh instance */
       olh.set_tag(op.olh_tag);
     }
+CLS_LOG(0, "%s:%d:%s()", __FILE__, __LINE__, __func__);
     if (promote && olh.exists()) {
       rgw_bucket_olh_entry& olh_entry = olh.get_entry();
       /* found olh, previous instance is no longer the latest, need to update */
       if (!(olh_entry.key == op.key)) {
-        BIVerObjEntry old_obj(hctx, olh_entry.key, olh_entry.snap_id);
+CLS_LOG(0, "%s key=%s key.snap_id=%d", __func__, olh_entry.key.to_string().c_str(), (int)olh_entry.key.snap_id);
+        BIVerObjEntry old_obj(hctx, olh_entry.key);
 
         ret = old_obj.demote_current(header);
         if (ret < 0) {
@@ -2194,7 +2203,8 @@ CLS_LOG(10, "%s() op.key.snap_id=%d", __func__, (int)op.key.snap_id);
     return ret;
   }
 
-  BIVerObjEntry obj(hctx, dest_key, dest_key.snap_id);
+CLS_LOG(0, "%s key=%s key.snap_id=%d", __func__, dest_key.to_string().c_str(), (int)dest_key.snap_id);
+  BIVerObjEntry obj(hctx, dest_key);
   BIOLHEntry olh(hctx, dest_key);
 
   ret = obj.init();
@@ -2253,13 +2263,12 @@ CLS_LOG(20, "%s(): ZZZ op.snap_id=%d", __func__, (int)op.key.snap_id);
     rgw_bucket_snap_id next_snap_id;
     ret = obj.find_next_key(&next_key, &next_snap_id, &found);
     if (ret < 0) {
-      CLS_LOG(0, "ERROR: obj.find_next_key() returned ret=%d", ret);
       return ret;
     }
 
     if (found) {
-CLS_LOG(0, "%s next_snap_id=%d", __func__, (int)next_snap_id);
-      BIVerObjEntry next(hctx, next_key, next_snap_id);
+CLS_LOG(0, "%s key=%s key.snap_id=%d", __func__, next_key.to_string().c_str(), (int)next_key.snap_id);
+      BIVerObjEntry next(hctx, next_key);
       ret = next.write(olh.get_epoch(), true, header);
       if (ret < 0) {
         CLS_LOG(0, "ERROR: next.write() returned ret=%d", ret);
@@ -2269,7 +2278,6 @@ CLS_LOG(0, "%s next_snap_id=%d", __func__, (int)next_snap_id);
       CLS_LOG(20, "%s: updating olh log: link olh -> %s[%s] (is_delete=%d)", __func__,
               next_key.name.c_str(), next_key.instance.c_str(), (int)next.is_delete_marker());
 
-CLS_LOG(20, "%s(): ZZZ next.snap_id=%d", __func__, (int)next_snap_id);
       olh.update(next_key, next.is_delete_marker());
       olh.update_log(CLS_RGW_OLH_OP_LINK_OLH, op.op_tag, next_key, next_snap_id, next.is_delete_marker());
     } else {
