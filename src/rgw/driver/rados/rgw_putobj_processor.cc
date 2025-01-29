@@ -352,6 +352,7 @@ int AtomicObjectProcessor::complete(
 				const char *if_nomatch,
 				const std::string *user_data,
 				rgw_zone_set *zones_trace,
+                                rgw_bucket_snap_id *snap_id, /* snap id that was set for this object instance */
 				bool *pcanceled, 
 				const req_context& rctx,
 				uint32_t flags)
@@ -393,7 +394,8 @@ int AtomicObjectProcessor::complete(
   read_cloudtier_info_from_attrs(attrs, obj_op.meta.category, manifest);
 
   r = obj_op.write_meta(actual_size, accounted_size, attrs, rctx,
-                        writer.get_trace(), flags & rgw::sal::FLAG_LOG_OP);
+                        writer.get_trace(), snap_id,
+                        flags & rgw::sal::FLAG_LOG_OP);
   if (r < 0) {
     if (r == -ETIMEDOUT) {
       // The head object write may eventually succeed, clear the set of objects for deletion. if it
@@ -502,6 +504,7 @@ int MultipartObjectProcessor::complete(
 			       const char *if_nomatch,
 			       const std::string *user_data,
 			       rgw_zone_set *zones_trace,
+                               rgw_bucket_snap_id *psnap_id,
 			       bool *pcanceled, 
 			       const req_context& rctx,
 			       uint32_t flags)
@@ -530,7 +533,7 @@ int MultipartObjectProcessor::complete(
   obj_op.meta.modify_tail = true;
 
   r = obj_op.write_meta(actual_size, accounted_size, attrs, rctx,
-                        writer.get_trace(), flags & rgw::sal::FLAG_LOG_OP);
+                        writer.get_trace(), psnap_id, flags & rgw::sal::FLAG_LOG_OP);
   if (r < 0)
     return r;
 
@@ -720,6 +723,7 @@ int AppendObjectProcessor::complete(
 			    ceph::real_time delete_at, const char *if_match,
 			    const char *if_nomatch,
 			    const string *user_data, rgw_zone_set *zones_trace,
+                            rgw_bucket_snap_id *psnap_id,
 			    bool *pcanceled,
 			    const req_context& rctx, uint32_t flags)
 {
@@ -781,7 +785,7 @@ int AppendObjectProcessor::complete(
   r = obj_op.write_meta(actual_size + cur_size,
 			accounted_size + *cur_accounted_size,
 			attrs, rctx, writer.get_trace(),
-			flags & rgw::sal::FLAG_LOG_OP);
+                        psnap_id, flags & rgw::sal::FLAG_LOG_OP);
   if (r < 0) {
     return r;
   }
