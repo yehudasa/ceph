@@ -817,7 +817,7 @@ static int is_versioned_instance_listable(const DoutPrefixProvider *dpp,
   do {
     librados::ObjectReadOperation op;
     cls_rgw_bucket_list_op(op, marker, key.name, empty_delim, 1000,
-                           true, &result);
+                           true, RGW_BUCKET_SNAP_NOSNAP, &result);
     bufferlist ibl;
     int r = bs.bucket_obj.operate(dpp, &op, &ibl, y);
     if (r < 0) {
