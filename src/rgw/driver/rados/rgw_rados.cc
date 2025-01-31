@@ -9184,35 +9184,51 @@ int RGWRados::follow_olh(const DoutPrefixProvider *dpp, RGWBucketInfo& bucket_in
   if (iter == state->attrset.end()) {
     return -EINVAL;
   }
-  if (snap_id != RGW_BUCKET_SNAP_NOSNAP) {
-    iter = state->attrset.find(RGW_ATTR_OLH_SNAP_INFO);
-    if (iter == state->attrset.end()) {
-      return -ENOENT;
+  auto& snap_mgr = bucket_info.local.snap_mgr;
+  if (snap_id != RGW_BUCKET_SNAP_NOSNAP ||
+     !snap_mgr.get_revert_map().empty()) {
+    if (snap_id == RGW_BUCKET_SNAP_NOSNAP) {
+      snap_id = snap_mgr.get_cur_snap_id();
     }
+    auto effective_snap_id = snap_mgr.effective_snap_id(snap_id);
+    do {
+      snap_id = effective_snap_id;
+      iter = state->attrset.find(RGW_ATTR_OLH_SNAP_INFO);
+      if (iter == state->attrset.end()) {
+        return -ENOENT;
+      }
 
-    RGWOLHSnapInfo snap_info;
-    int ret = decode_olh_snap_info(dpp, iter->second, &snap_info);
-    if (ret < 0) {
-      return ret;
-    }
+      RGWOLHSnapInfo snap_info;
+      int ret = decode_olh_snap_info(dpp, iter->second, &snap_info);
+      if (ret < 0) {
+        return ret;
+      }
 
-    if (snap_info.snap_map.empty()) {
-      return -ENOENT;
-    }
+      if (snap_info.snap_map.empty()) {
+        return -ENOENT;
+      }
 
-    auto siter = snap_info.snap_map.upper_bound(snap_id);
-    if (siter == snap_info.snap_map.begin()) {
-      return -ENOENT;
-    }
-    --siter;
+      auto siter = snap_info.snap_map.upper_bound(snap_id);
+      if (siter == snap_info.snap_map.begin()) {
+        return -ENOENT;
+      }
+      --siter;
 
+      /* check again, because we might have skipped an earlier snap too */
+      snap_id = siter->first;
+      effective_snap_id = snap_mgr.effective_snap_id(snap_id);
+      if (snap_id != effective_snap_id) {
+        continue;
+      }
 
-    auto& entry = siter->second;
+      auto& entry = siter->second;
 
-    *delete_marker = entry.delete_marker;
-    state->snap_id = entry.key.snap_id;
+      *delete_marker = entry.delete_marker;
+      state->snap_id = siter->first;
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << "(): effective_snap_id=" << state->snap_id << dendl;
 
-    *target = rgw_obj(bucket_info.bucket, entry.key);
+      *target = rgw_obj(bucket_info.bucket, entry.key);
+    } while (effective_snap_id != snap_id);
     return 0;
   }
 

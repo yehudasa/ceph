@@ -358,8 +358,11 @@ public:
   int get_policy(RGWBucketAdminOpState& op_state, RGWAccessControlPolicy& policy, optional_yield y, const DoutPrefixProvider *dpp);
   int sync(RGWBucketAdminOpState& op_state, const DoutPrefixProvider *dpp, optional_yield y, std::string *err_msg = NULL);
 
-  int snap_create(RGWBucketAdminOpState& op_state, const rgw_bucket_snap_info& snap_info,
+  int snap_create(RGWBucketAdminOpState& op_state, const rgw_bucket_snap_info& snap_info, rgw_bucket_snap_id *snap_id,
                   optional_yield y, const DoutPrefixProvider *dpp, std::string *err_msg = NULL);
+
+  int snap_revert(RGWBucketAdminOpState& op_state, rgw_bucket_snap_id from_snap, rgw_bucket_snap_id to_snap,
+                  const std::string& description, optional_yield y, const DoutPrefixProvider *dpp, std::string *err_msg = NULL);
 
   void clear_failure() { failure = false; }
 
@@ -409,7 +412,12 @@ public:
 
   static int sync_bucket(rgw::sal::Driver* driver, RGWBucketAdminOpState& op_state, const DoutPrefixProvider *dpp, optional_yield y, std::string *err_msg = NULL);
 
-  static int snap_create(rgw::sal::Driver* driver, RGWBucketAdminOpState& op_state, const rgw_bucket_snap_info& snap_info, const DoutPrefixProvider *dpp, optional_yield y, std::string *err_msg = NULL);
+  static int snap_create(rgw::sal::Driver* driver, RGWBucketAdminOpState& op_state, const rgw_bucket_snap_info& snap_info, rgw_bucket_snap_id *snap_id,
+                         const DoutPrefixProvider *dpp, optional_yield y, std::string *err_msg = NULL);
+  static int snap_revert(rgw::sal::Driver* driver, RGWBucketAdminOpState& op_state,
+                         rgw_bucket_snap_id from_snap, rgw_bucket_snap_id to_snap,
+                         const std::string& description,
+                         const DoutPrefixProvider *dpp, optional_yield y, std::string *err_msg = NULL);
 };
 
 struct rgw_ep_info {

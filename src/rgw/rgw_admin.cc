@@ -707,6 +707,7 @@ enum class OPT {
   BUCKET_SNAP_ENABLE,
   BUCKET_SNAP_CREATE,
   BUCKET_SNAP_LIST,
+  BUCKET_SNAP_REVERT,
   POLICY,
   LOG_LIST,
   LOG_SHOW,
@@ -948,6 +949,7 @@ static SimpleCmd::Commands all_cmds = {
   { "bucket snap enable", OPT::BUCKET_SNAP_ENABLE },
   { "bucket snap create", OPT::BUCKET_SNAP_CREATE },
   { "bucket snap list", OPT::BUCKET_SNAP_LIST },
+  { "bucket snap revert", OPT::BUCKET_SNAP_REVERT },
   { "policy", OPT::POLICY },
   { "log list", OPT::LOG_LIST },
   { "log show", OPT::LOG_SHOW },
@@ -3605,6 +3607,9 @@ int main(int argc, const char **argv)
   std::optional<rgw_zone_id> opt_effective_zone_id;
   
   std::optional<string> opt_snap_name;
+  int from_new_snap = false;
+  std::optional<rgw_bucket_snap_id> opt_from_snap;
+  std::optional<rgw_bucket_snap_id> opt_to_snap;
 
   std::optional<string> opt_prefix;
   std::optional<string> opt_prefix_rm;
@@ -3881,6 +3886,12 @@ int main(int argc, const char **argv)
       }
     } else if (ceph_argparse_witharg(args, i, &val, "--snap-name", (char*)NULL)) {
       opt_snap_name = val;
+    } else if (ceph_argparse_binary_flag(args, i, &from_new_snap, NULL, "--from-new-snap", (char*)NULL)) {
+      // do nothing
+    } else if (ceph_argparse_witharg(args, i, &val, "--from-snap", (char*)NULL)) {
+      opt_from_snap = std::stoll(val);
+    } else if (ceph_argparse_witharg(args, i, &val, "--to-snap", (char*)NULL)) {
+      opt_to_snap = std::stoll(val);
     } else if (ceph_argparse_binary_flag(args, i, &delete_child_objects, NULL, "--purge-objects", (char*)NULL)) {
       // do nothing
     } else if (ceph_argparse_binary_flag(args, i, &pretty_format, NULL, "--pretty-format", (char*)NULL)) {
@@ -7622,11 +7633,78 @@ int main(int argc, const char **argv)
     snap_info.description = description;
     snap_info.creation_time = real_clock::now();
 
-    int r = RGWBucketAdminOp::snap_create(driver, bucket_op, snap_info, dpp(), null_yield, &err);
+    rgw_bucket_snap_id snap_id;
+
+    int r = RGWBucketAdminOp::snap_create(driver, bucket_op, snap_info, &snap_id, dpp(), null_yield, &err);
     if (r < 0) {
       cerr << "failure: " << cpp_strerror(-r) << ": " << err << std::endl;
       return -r;
     }
+
+    {
+      Formatter::ObjectSection os(*formatter, "result");
+      encode_json("snap_id", snap_id, formatter.get());
+      encode_json("snap_info", snap_info, formatter.get());
+    }
+    formatter->flush(cout);
+  }
+
+  if (opt_cmd == OPT::BUCKET_SNAP_REVERT) {
+    if (bucket_name.empty()) {
+      cerr << "ERROR: bucket name not specified" << std::endl;
+      return EINVAL;
+    }
+
+    if (!opt_from_snap && !from_new_snap) {
+      cerr << "ERROR: one of --from-snap or --from-new-snap need to be specified" << std::endl;
+      return EINVAL;
+    }
+
+    if (!opt_to_snap) {
+      cerr << "ERROR: --to-snap needs to be specified" << std::endl;
+      return EINVAL;
+    }
+
+    if (opt_from_snap && from_new_snap) {
+      cerr << "ERROR: only one of --from-snap or --from-new-snap need to be specified" << std::endl;
+      return EINVAL;
+    }
+
+    if (from_new_snap && !opt_snap_name) {
+      cerr << "ERROR: --snap-name needs to be specified in order to create a new snapshot" << std::endl;
+      return EINVAL;
+    }
+
+
+    rgw_bucket_snap_id from_snap_id;
+
+    if (from_new_snap) {
+      rgw_bucket_snap_info snap_info;
+      snap_info.name = *opt_snap_name;
+      snap_info.description = description;
+      snap_info.creation_time = real_clock::now();
+
+      int r = RGWBucketAdminOp::snap_create(driver, bucket_op, snap_info, &from_snap_id, dpp(), null_yield, &err);
+      if (r < 0) {
+        cerr << "failed to create a new snapshot: " << cpp_strerror(-r) << ": " << err << std::endl;
+        return -r;
+      }
+    } else {
+      from_snap_id = *opt_from_snap;
+    }
+
+    if (from_snap_id <= *opt_to_snap) {
+      cerr << "ERROR: to_snap should be lower than from_snap" << std::endl;
+      return EINVAL;
+    }
+
+    int r = RGWBucketAdminOp::snap_revert(driver, bucket_op, from_snap_id, *opt_to_snap,
+                                          description, dpp(), null_yield, &err);
+    if (r < 0) {
+      cerr << "failed to create a new snapshot: " << cpp_strerror(-r) << ": " << err << std::endl;
+      return -r;
+    }
+
   }
 
   if (opt_cmd == OPT::BUCKET_SNAP_LIST) {
@@ -7640,9 +7718,13 @@ int main(int argc, const char **argv)
     }
 
     auto& bucket_info = bucket->get_info();
-    const auto& snaps = bucket_info.local.snap_mgr.get_snaps();
+    auto& snap_mgr = bucket_info.local.snap_mgr;
 
-    encode_json("snaps", snaps, formatter.get());
+    {
+      Formatter::ObjectSection os(*formatter, "result");
+      encode_json("snaps", snap_mgr.get_snaps(), formatter.get());
+      encode_json("revert", snap_mgr.get_revert_map(), formatter.get());
+    }
     formatter->flush(cout);
   }
 

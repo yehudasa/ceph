@@ -21,6 +21,8 @@ class RGWBucketSnapMgr
 
   std::map<std::string, rgw_bucket_snap_id> names_to_ids;
 
+  std::map<rgw_bucket_snap_id, rgw_bucket_snap_revert_info> revert_snaps;
+
 public:
   RGWBucketSnapMgr();
 
@@ -30,6 +32,7 @@ public:
     encode(cur_snap, bl);
     encode(snaps, bl);
     encode(names_to_ids, bl);
+    encode(revert_snaps, bl);
     ENCODE_FINISH(bl);
   }
 
@@ -39,6 +42,7 @@ public:
     decode(cur_snap, bl);
     decode(snaps, bl);
     decode(names_to_ids, bl);
+    decode(revert_snaps, bl);
     DECODE_FINISH(bl);
   }
 
@@ -48,7 +52,7 @@ public:
     return cur_snap;
   }
 
-  int create_snap(const rgw_bucket_snap_info& info);
+  int create_snap(const rgw_bucket_snap_info& info, rgw_bucket_snap_id *snap_id);
 
   const std::map<rgw_bucket_snap_id, rgw_bucket_snap>& get_snaps() const {
     return snaps;
@@ -64,6 +68,15 @@ public:
     if (enabled && cur_snap == RGW_BUCKET_SNAP_NOSNAP) {
       cur_snap = RGW_BUCKET_SNAP_START;
     }
+  }
+
+  rgw_bucket_snap_id effective_snap_id(rgw_bucket_snap_id snap_id);
+  int set_revert(rgw_bucket_snap_id from, rgw_bucket_snap_id to,
+                 const std::string& description,
+                 const ceph::real_time& creation_time);
+
+  const std::map<rgw_bucket_snap_id, rgw_bucket_snap_revert_info>& get_revert_map() {
+    return revert_snaps;
   }
 };
 WRITE_CLASS_ENCODER(RGWBucketSnapMgr)

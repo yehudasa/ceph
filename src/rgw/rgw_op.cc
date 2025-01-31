@@ -3206,6 +3206,12 @@ void RGWListBucket::execute(optional_yield y)
   params.allow_unordered = allow_unordered;
   params.shard_id = shard_id;
 
+  if (max_snap != RGW_BUCKET_SNAP_NOSNAP) {
+    auto& bucket_info = s->bucket->get_info();
+
+    params.max_snap = bucket_info.local.snap_mgr.effective_snap_id(max_snap);
+  }
+
   rgw::sal::Bucket::ListResults results;
 
   op_ret = s->bucket->list(this, params, max, results, y);
