@@ -8719,6 +8719,7 @@ int RGWRados::apply_olh_log(const DoutPrefixProvider *dpp,
     RGWOLHInfo info;
     info.target = target;
     info.removed = delete_marker;
+    info.snap_id = snap_id;
     bufferlist bl;
     encode(info, bl);
     op.setxattr(RGW_ATTR_OLH_INFO, bl);
@@ -9226,7 +9227,7 @@ int RGWRados::follow_olh(const DoutPrefixProvider *dpp, RGWBucketInfo& bucket_in
     return ret;
   }
 
-  state->snap_id = olh.target.key.snap_id;
+  state->snap_id = olh.snap_id;
 
   *delete_marker = olh.removed;
   *target = olh.target;
@@ -11221,6 +11222,7 @@ void RGWOLHInfo::dump(Formatter *f) const
 {
   encode_json("target", target, f);
   encode_json("removed", removed, f);
+  encode_json("snap_id", snap_id, f);
 }
 
 void RGWOLHPendingInfo::dump(Formatter *f) const
