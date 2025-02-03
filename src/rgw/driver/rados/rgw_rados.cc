@@ -9213,22 +9213,22 @@ int RGWRados::follow_olh(const DoutPrefixProvider *dpp, RGWBucketInfo& bucket_in
         return -ENOENT;
       }
       --siter;
-
+#if 0
       /* check again, because we might have skipped an earlier snap too */
       snap_id = siter->first;
       effective_snap_id = snap_mgr.effective_snap_id(snap_id);
       if (snap_id != effective_snap_id) {
         continue;
       }
+#endif
 
       auto& entry = siter->second;
 
       *delete_marker = entry.delete_marker;
       state->snap_id = siter->first;
-ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << "(): effective_snap_id=" << state->snap_id << dendl;
 
       *target = rgw_obj(bucket_info.bucket, entry.key);
-    } while (effective_snap_id != snap_id);
+    } while (0);
     return 0;
   }
 
