@@ -9709,7 +9709,8 @@ int RGWRados::bi_get(const DoutPrefixProvider *dpp, const RGWBucketInfo& bucket_
     return ret;
   }
 
-  cls_rgw_obj_key key(obj.key.get_index_key_name(), obj.key.instance);
+  cls_rgw_obj_key key;
+  obj.key.get_index_key(&key);
 
   auto& ref = bs.bucket_obj;
 
