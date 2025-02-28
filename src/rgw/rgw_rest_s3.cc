@@ -1736,34 +1736,28 @@ static int parse_snap_id(const string& s, rgw_bucket_snap_id *snap_id, string& e
 
 static int parse_snap_range(const string& s, rgw_bucket_snap_range *result, string& err)
 {
-  vector<string> args;
-  get_str_vec(s, "-", args);
-
-  if (args.size() > 2) {
-    err = "bad snapshout range provided";
-    return -EINVAL;
-  }
-
-  if (args.empty()) {
-    return 0;
-  }
-
-  rgw_bucket_snap_id snap_id;
-  int r = parse_snap_id(args[0], &snap_id, err);
-  if (r < 0) {
-    return r;
-  }
-
-  if (args.size() == 1) {
-    /* if only one value was provided, it is a only the specific snapshot */
+  auto p = s.find('-');
+  if (p == string::npos) {
+    /* only one param */
+    rgw_bucket_snap_id snap_id;
+    int r = parse_snap_id(s, &snap_id, err);
+    if (r < 0) {
+      return r;
+    }
     result->end = snap_id;
     result->start.init(snap_id.snap_id - 1);
     return 0;
   }
 
-  /* we have two values (at least we have a hyphen as a divider */
-  result->start = snap_id;
-  r = parse_snap_id(args[1], &result->end, err);
+  auto start_s = s.substr(0, p);
+  auto end_s = s.substr(p + 1);
+
+  int r = parse_snap_id(start_s, &result->start, err);
+  if (r < 0) {
+    return r;
+  }
+
+  r = parse_snap_id(end_s, &result->end, err);
   if (r < 0) {
     return r;
   }
