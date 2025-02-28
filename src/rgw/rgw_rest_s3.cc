@@ -1948,6 +1948,9 @@ void RGWListBucket_ObjStore_S3::send_versioned_response()
 
     vector<rgw_bucket_dir_entry>::iterator iter;
     for (iter = objs.begin(); iter != objs.end(); ++iter) {
+      if (!snap_mgr.check_range(iter->meta.snap_id, iter->removed_at_snap())) {
+        continue;
+      }
       const char *section_name = (iter->is_delete_marker() ? "DeleteMarker"
           : "Version");
       s->formatter->open_object_section(section_name);
