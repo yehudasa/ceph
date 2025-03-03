@@ -1942,7 +1942,9 @@ void RGWListBucket_ObjStore_S3::send_versioned_response()
 
     vector<rgw_bucket_dir_entry>::iterator iter;
     for (iter = objs.begin(); iter != objs.end(); ++iter) {
-      if (!snap_mgr.check_range(iter->meta.snap_id, iter->removed_at_snap())) {
+      auto removed_at = iter->removed_at_snap();
+      if (removed_at.is_set() &&
+          !snap_mgr.check_range(iter->meta.snap_id, removed_at)) {
         continue;
       }
       const char *section_name = (iter->is_delete_marker() ? "DeleteMarker"
