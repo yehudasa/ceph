@@ -389,7 +389,11 @@ static void _append_obj_versioned_data_key(string *index_key, const cls_rgw_obj_
   if (key.snap_id.is_set()) {
     string dm("\0s", 2);
     index_key->append(dm);
-    index_key->append(key.snap_id.to_string());
+
+    /* keep snapshot in index key as uint64, and have it sort from higher to lower */
+    uint64_t reverse_sid = (uint64_t)-1 - (uint64_t)key.snap_id;
+    string snap_id_s((const char *)&reverse_sid, sizeof(reverse_sid));
+    index_key->append(snap_id_s);
   }
 }
 
