@@ -1931,7 +1931,7 @@ void RGWListBucket_ObjStore_S3::send_versioned_response()
   if (op_ret >= 0) {
     auto& snap_mgr = s->bucket->get_info().local.snap_mgr;
     auto check_snap = snap_mgr.get_cur_snap_id();
-    if (snap_range.is_set() &&
+    if (snap_range.end.is_set() &&
         snap_range.end < check_snap) {
       check_snap = snap_range.end;
     }
@@ -1942,9 +1942,8 @@ void RGWListBucket_ObjStore_S3::send_versioned_response()
 
     vector<rgw_bucket_dir_entry>::iterator iter;
     for (iter = objs.begin(); iter != objs.end(); ++iter) {
-      auto removed_at = iter->removed_at_snap();
-      if (removed_at.is_set() &&
-          !snap_mgr.check_range(iter->meta.snap_id, removed_at)) {
+      if (!snap_mgr.live_snapshot_at_range(iter->meta.snap_id, iter->removed_at_snap())) {
+        ldpp_dout(this, 20) << __func__ << "(): skipping entry key=" << iter->key << " meta.snap_id=" << iter->meta.snap_id << " removed_at=" << iter->removed_at_snap() << dendl;
         continue;
       }
       const char *section_name = (iter->is_delete_marker() ? "DeleteMarker"
