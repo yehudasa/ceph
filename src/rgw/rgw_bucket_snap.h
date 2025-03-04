@@ -59,7 +59,7 @@ public:
    * exist, when min would be the snapshot where it was
    * created and max would be the one it was removed
    */
-  bool check_range(rgw_bucket_snap_id min, rgw_bucket_snap_id max) const;
+  bool live_snapshot_at_range(rgw_bucket_snap_id min, rgw_bucket_snap_id max) const;
 
   bool find_snap(const std::string& snap_name, rgw_bucket_snap_id *snap_id) const {
     auto iter = names_to_ids.find(snap_name);
