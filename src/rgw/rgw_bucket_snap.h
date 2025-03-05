@@ -61,6 +61,14 @@ public:
    */
   bool live_snapshot_at_range(rgw_bucket_snap_id min, rgw_bucket_snap_id max) const;
 
+  /*
+   * returns true if object was created in this range
+   * and it still exists at the end of this range
+   */
+  bool check_object_in_range_diff(const rgw_bucket_snap_range& range,
+                                  rgw_bucket_snap_id obj_snap_id,
+                                  rgw_bucket_snap_id obj_removed_at) const;
+
   bool find_snap(const std::string& snap_name, rgw_bucket_snap_id *snap_id) const {
     auto iter = names_to_ids.find(snap_name);
     if (iter == names_to_ids.end()) {

@@ -72,3 +72,19 @@ bool RGWBucketSnapMgr::live_snapshot_at_range(rgw_bucket_snap_id min, rgw_bucket
 
   return !max.is_set() || (iter->first < max);
 }
+
+bool RGWBucketSnapMgr::check_object_in_range_diff(const rgw_bucket_snap_range& range,
+                                                  rgw_bucket_snap_id obj_snap_id,
+                                                  rgw_bucket_snap_id obj_removed_at) const
+{
+  if (!range.contains(obj_snap_id)) {
+    return false;
+  }
+
+  if (obj_removed_at.is_set() &&
+      range.contains(obj_removed_at)) {
+    return false;
+  }
+
+  return true;
+}
