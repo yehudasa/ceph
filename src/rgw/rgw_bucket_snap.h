@@ -83,6 +83,10 @@ public:
     return snaps;
   }
 
+  const std::map<rgw_bucket_snap_id, rgw_bucket_snap>& get_removed_snaps() const {
+    return rm_snaps;
+  }
+
   bool is_enabled() const {
     return enabled;
   }

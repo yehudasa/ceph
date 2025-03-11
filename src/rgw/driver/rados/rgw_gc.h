@@ -28,6 +28,7 @@ class RGWGC : public DoutPrefixProvider {
 
   int tag_index(const std::string& tag);
   int send_chain(const cls_rgw_obj_chain& chain, const std::string& tag, optional_yield y);
+  int send_bucket_snap(const rgw_bucket& bucket, rgw_bucket_snap_id snap_id, optional_yield y);
 
   class GCWorker : public Thread {
     const DoutPrefixProvider *dpp;

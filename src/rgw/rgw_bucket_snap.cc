@@ -2,6 +2,10 @@
 #include "common/ceph_json.h"
 
 
+std::string rgw_bucket_snap_id::to_str() const {
+  return std::to_string((int64_t)snap_id);
+}
+
 void rgw_bucket_snap_info::dump(Formatter *f) const {
   encode_json("name", name, f);
   encode_json("description", description, f);
@@ -13,7 +17,6 @@ void rgw_bucket_snap::dump(Formatter *f) const {
   encode_json("id", id, f);
   encode_json("info", info, f);
 }
-
 
 RGWBucketSnapMgr::RGWBucketSnapMgr() {}
 

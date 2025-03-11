@@ -672,6 +672,9 @@ public:
   int handle_multipart_expiration(rgw::sal::Bucket* target,
 				  const std::multimap<std::string, lc_op>& prefix_map,
 				  LCWorker* worker, time_t stop_at, bool once);
+
+  int handle_snapshot_collection(rgw::sal::Bucket* target,
+				  LCWorker* worker, time_t stop_at, bool once);
 };
 
 namespace rgw::lc {

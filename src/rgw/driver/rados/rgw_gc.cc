@@ -121,8 +121,39 @@ int RGWGC::send_chain(const cls_rgw_obj_chain& chain, const string& tag, optiona
 {
   ObjectWriteOperation op;
   cls_rgw_gc_obj_info info;
+  info.op = CLS_RGW_GC_DEL_OBJ;
   info.chain = chain;
   info.tag = tag;
+  gc_log_enqueue2(op, cct->_conf->rgw_gc_obj_min_wait, info);
+
+  int i = tag_index(tag);
+
+  ldpp_dout(this, 20) << "RGWGC::send_chain - on object name: " << obj_names[i] << "tag is: " << tag << dendl;
+
+  auto ret = store->gc_operate(this, obj_names[i], &op, y);
+  if (ret != -ECANCELED && ret != -EPERM) {
+    return ret;
+  }
+  ObjectWriteOperation set_entry_op;
+  cls_rgw_gc_set_entry(set_entry_op, cct->_conf->rgw_gc_obj_min_wait, info);
+  return store->gc_operate(this, obj_names[i], &set_entry_op, y);
+}
+
+int RGWGC::send_bucket_snap(const rgw_bucket& bucket, rgw_bucket_snap_id snap_id, optional_yield y)
+{
+  ObjectWriteOperation op;
+  cls_rgw_gc_bucket_snap_info snap_info;
+  snap_info.bucket_key = bucket.get_key();
+  snap_info.snap_id = snap_id;
+
+  cls_rgw_gc_obj_info info;
+  info.op = CLS_RGW_GC_DEL_SNAPSHOT;
+  info.snap_info = snap_info;
+
+  string tag = snap_info.bucket_key + string("/") + snap_id.to_str();
+
+  info.tag = tag;
+  
   gc_log_enqueue2(op, cct->_conf->rgw_gc_obj_min_wait, info);
 
   int i = tag_index(tag);

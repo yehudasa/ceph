@@ -1273,8 +1273,8 @@ struct rgw_user_bucket {
 WRITE_CLASS_ENCODER(rgw_user_bucket)
 
 enum cls_rgw_gc_op {
-  CLS_RGW_GC_DEL_OBJ,
-  CLS_RGW_GC_DEL_BUCKET,
+  CLS_RGW_GC_DEL_OBJ = 1,
+  CLS_RGW_GC_DEL_SNAPSHOT = 2,
 };
 
 struct cls_rgw_obj {
@@ -1383,27 +1383,89 @@ struct cls_rgw_obj_chain {
 };
 WRITE_CLASS_ENCODER(cls_rgw_obj_chain)
 
-struct cls_rgw_gc_obj_info
-{
-  std::string tag;
-  cls_rgw_obj_chain chain;
-  ceph::real_time time;
-
-  cls_rgw_gc_obj_info() {}
+struct cls_rgw_gc_bucket_snap_info {
+  std::string bucket_key;
+  rgw_bucket_snap_id snap_id;
+  std::string marker;
 
   void encode(ceph::buffer::list& bl) const {
-    ENCODE_START(1, 1, bl);
-    encode(tag, bl);
-    encode(chain, bl);
-    encode(time, bl);
+    ENCODE_START(2, 1, bl);
+    encode(bucket_key, bl);
+    encode(snap_id, bl);
+    encode(marker, bl);
     ENCODE_FINISH(bl);
   }
 
   void decode(ceph::buffer::list::const_iterator& bl) {
-    DECODE_START(1, bl);
+    DECODE_START(2, bl);
+    decode(bucket_key, bl);
+    decode(snap_id, bl);
+    decode(marker, bl);
+    DECODE_FINISH(bl);
+  }
+
+  void dump(ceph::Formatter *f) const {
+    encode_json("bucket_key", bucket_key, f);
+    encode_json("snap_id", snap_id, f);
+    encode_json("marker", marker, f);
+  }
+
+  static void generate_test_instances(std::list<cls_rgw_gc_bucket_snap_info*>& ls) {
+    ls.push_back(new cls_rgw_gc_bucket_snap_info);
+    ls.push_back(new cls_rgw_gc_bucket_snap_info);
+    ls.back()->bucket_key = "buck";
+    ls.back()->snap_id = 12;
+    ls.back()->marker = "aaa";
+  }
+
+  size_t estimate_encoded_size() const {
+    constexpr size_t start_overhead = sizeof(__u8) + sizeof(__u8) + sizeof(ceph_le32); // version and length prefix
+    constexpr size_t string_overhead = 2 * sizeof(__u32); // strings are encoded with 32-bit length prefix
+    constexpr size_t snap_overhead = sizeof(ceph_le64); // snap_id is 64 bits
+    return start_overhead + string_overhead +
+      bucket_key.size() + marker.size() +
+            snap_overhead;
+  }
+};
+WRITE_CLASS_ENCODER(cls_rgw_gc_bucket_snap_info)
+
+struct cls_rgw_gc_obj_info
+{
+  cls_rgw_gc_op op = CLS_RGW_GC_DEL_OBJ;
+  std::string tag;
+  cls_rgw_obj_chain chain;
+  ceph::real_time time;
+
+  std::optional<cls_rgw_gc_bucket_snap_info> snap_info;
+
+  cls_rgw_gc_obj_info() {}
+
+  void encode(ceph::buffer::list& bl) const {
+    ENCODE_START(2, 1, bl);
+    encode(tag, bl);
+    encode(chain, bl);
+    encode(time, bl);
+    encode((uint8_t)op, bl);
+    if (op == CLS_RGW_GC_DEL_SNAPSHOT) {
+      encode(snap_info, bl);
+    }
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(ceph::buffer::list::const_iterator& bl) {
+    DECODE_START(2, bl);
     decode(tag, bl);
     decode(chain, bl);
     decode(time, bl);
+    if (struct_v >= 2) {
+      decode((uint8_t&)op, bl);
+      if (op == CLS_RGW_GC_DEL_SNAPSHOT) {
+        decode(snap_info, bl);
+      }
+    } else {
+      op = CLS_RGW_GC_DEL_OBJ;
+    }
+
     DECODE_FINISH(bl);
   }
 
@@ -1426,8 +1488,12 @@ struct cls_rgw_gc_obj_info
     constexpr size_t start_overhead = sizeof(__u8) + sizeof(__u8) + sizeof(ceph_le32); // version and length prefix
     constexpr size_t string_overhead = sizeof(__u32); // strings are encoded with 32-bit length prefix
     constexpr size_t time_overhead = 2 * sizeof(ceph_le32); // time is stored as tv_sec and tv_nsec
+    constexpr size_t op_overhead = 1; /* uint8_t */
+    size_t snap_info_size = (snap_info ? sizeof(bool) + snap_info->estimate_encoded_size() : sizeof(bool)); // optional flag is encoded as bool
+    size_t snap_info_overhead = ((op != CLS_RGW_GC_DEL_SNAPSHOT) ? 0 : snap_info_size);
     return start_overhead + string_overhead + tag.size() +
-            time_overhead + chain.estimate_encoded_size();
+            time_overhead + chain.estimate_encoded_size() +
+            op_overhead + snap_info_overhead;
   }
 };
 WRITE_CLASS_ENCODER(cls_rgw_gc_obj_info)

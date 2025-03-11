@@ -40,6 +40,14 @@ struct rgw_bucket_snap_id {
     return snap_id++;
   }
 
+  rgw_bucket_snap_id operator+(int n) const {
+    return rgw_bucket_snap_id(snap_id + n);
+  }
+
+  rgw_bucket_snap_id operator-(int n) const {
+    return rgw_bucket_snap_id(snap_id - n);
+  }
+
   void encode(bufferlist& bl) const {
     /* no version control for this type */
     ceph::encode(snap_id, bl);
@@ -74,6 +82,8 @@ struct rgw_bucket_snap_id {
   bool is_set() const {
     return snap_id != SNAP_UNDEFINED;
   }
+
+  std::string to_str() const;
 };
 WRITE_CLASS_ENCODER(rgw_bucket_snap_id)
 

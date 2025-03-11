@@ -996,6 +996,92 @@ int RGWLC::handle_multipart_expiration(rgw::sal::Bucket* target,
   return 0;
 } /* RGWLC::handle_multipart_expiration */
 
+int RGWLC::handle_snapshot_collection(rgw::sal::Bucket* target,
+                                      LCWorker* worker, time_t stop_at, bool once)
+{
+  int ret;
+  rgw::sal::Bucket::ListResults results;
+  auto delay_ms = cct->_conf.get_val<int64_t>("rgw_lc_thread_delay");
+
+  auto& snap_mgr = target->get_info().local.snap_mgr;
+  const auto& rm_snaps = snap_mgr.get_removed_snaps();
+
+  if (rm_snaps.empty()) {
+    return 0;
+  }
+
+  auto pf = [&](RGWLC::LCWorker *wk, WorkQ *wq, WorkItem &wi) {
+    int ret{0};
+    auto obj = boost::get<rgw_bucket_dir_entry>(wi);
+
+    ldpp_dout(wk->get_lc(), 20) << __func__ << "(): object needs to be removed as it's not in any live snapshot: " << obj.key << dendl;
+
+    return ret;
+  };
+
+  worker->workpool->setf(pf);
+
+  for (const auto& snap_entry : rm_snaps) {
+
+    if (worker_should_stop(stop_at, once)) {
+      ldpp_dout(this, 5) << __func__ << " interval budget EXPIRED worker="
+		     << worker->ix << " bucket=" << target->get_name()
+		     << dendl;
+      return 0;
+    }
+    rgw::sal::Bucket::ListParams params;
+    rgw::sal::Bucket::ListResults results;
+
+    rgw_bucket_snap_id snap_id = snap_entry.first;
+
+    params.snap_range.end = snap_id;
+    params.snap_range.start = snap_id - 1; /* all the changes after this */
+    params.list_versions = true;
+
+    /* we do not depend on total order */
+    params.allow_unordered = true;
+
+    do {
+      auto offset = 0;
+      results.objs.clear();
+      ret = target->list(this, params, 1000, results, null_yield);
+      if (ret < 0) {
+          if (ret == (-ENOENT))
+            return 0;
+          ldpp_dout(this, 0) << "ERROR: driver->list_objects():" <<dendl;
+          return ret;
+      }
+
+      for (auto obj_iter = results.objs.begin(); obj_iter != results.objs.end(); ++obj_iter, ++offset) {
+
+        /* check if object is still in another live snapshot */
+        if (snap_mgr.live_snapshot_at_range(obj_iter->meta.snap_id, obj_iter->removed_at_snap())) {
+          continue;
+        }
+
+        worker->workpool->enqueue(WorkItem{*obj_iter});
+        if (going_down()) {
+          return 0;
+        }
+      } /* for objs */
+
+      if ((offset % 100) == 0) {
+	if (worker_should_stop(stop_at, once)) {
+	  ldpp_dout(this, 5) << __func__ << " interval budget EXPIRED worker="
+			     << worker->ix << " bucket=" << target->get_name()
+			     << dendl;
+	  return 0;
+	}
+      }
+
+      std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+    } while(results.is_truncated);
+  }
+
+  worker->workpool->drain();
+  return 0;
+} /* RGWLC::handle_snapshot_collection */
+
 static int read_obj_tags(const DoutPrefixProvider *dpp, rgw::sal::Object* obj, bufferlist& tags_bl)
 {
   std::unique_ptr<rgw::sal::Object::ReadOp> rop = obj->get_read_op();
@@ -1703,6 +1789,11 @@ int RGWLC::bucket_lc_process(string& shard_id, LCWorker* worker,
     ldpp_dout(this, 0) << "WARNING: bucket_attrs.find(RGW_ATTR_LC) failed for "
 		       << bucket_name << " (terminates bucket_lc_process(...))"
 		       << dendl;
+    /* no lifecycle rules, let's just try to clean deleted snapshots */
+    ret = handle_snapshot_collection(bucket.get(), worker, stop_at, once);
+    if (ret < 0) {
+      return ret;
+    }
     return 0;
   }
 
@@ -1806,7 +1897,14 @@ int RGWLC::bucket_lc_process(string& shard_id, LCWorker* worker,
   }
 
   ret = handle_multipart_expiration(bucket.get(), prefix_map, worker, stop_at, once);
-  return ret;
+  if (ret < 0) {
+    return ret;
+  }
+  ret = handle_snapshot_collection(bucket.get(), worker, stop_at, once);
+  if (ret < 0) {
+    return ret;
+  }
+  return 0;
 }
 
 class SimpleBackoff
@@ -1987,7 +2085,14 @@ int RGWLC::process(LCWorker* worker,
     auto bucket_lc_key = get_bucket_lc_key(optional_bucket->get_key());
     auto index = get_lc_index(driver->ctx(), bucket_lc_key);
     ret = process_bucket(index, max_secs, worker, bucket_lc_key, once);
-    return ret;
+    int r = handle_snapshot_collection(optional_bucket.get(), worker, thread_stop_at(), once);
+    if (ret < 0) {
+      return ret;
+    }
+    if (r < 0) {
+      return r;
+    }
+    return 0;
   } else {
     /* generate an index-shard sequence unrelated to any other
      * that might be running in parallel */
@@ -2061,6 +2166,7 @@ int RGWLC::process_bucket(int index, int max_lock_secs, LCWorker* worker,
 		       << obj_names[index] << dendl;
     return -EBUSY;
   }
+ldpp_dout(this, 5) << __FILE__ << ":" << __LINE__ << "(): ret=" << ret << ret << dendl;
   if (ret < 0)
     return 0;
 
@@ -2087,6 +2193,7 @@ int RGWLC::process_bucket(int index, int max_lock_secs, LCWorker* worker,
       }
     }
   }
+ldpp_dout(this, 5) << __FILE__ << ":" << __LINE__ << "(): ret=" << ret << " entry.bucket=" << entry.bucket << dendl;
 
   /* do nothing if no bucket */
   if ((ret < 0) || entry.bucket.empty()) {
