@@ -406,10 +406,15 @@ static void encode_obj_versioned_data_key(const cls_rgw_obj_key& key, string *in
 
 static void encode_obj_index_key(const cls_rgw_obj_key& key, string *index_key, bool delete_marker = false)
 {
+CLS_LOG(0, "%s:%d instance.empty=%d key.snap_id.is_set()=%d", __FILE__, __LINE__, (int)key.instance.empty(), (int)key.snap_id.is_set());
+CLS_LOG(0, "%s:%d key.snap_id=%d", __FILE__, __LINE__, (int)key.snap_id.snap_id);
   if (key.instance.empty() &&
-      !key.snap_id.is_set()) {
+      (!key.snap_id.is_set() ||
+       key.snap_id.snap_id == rgw_bucket_snap_id::SNAP_MIN)) {
+CLS_LOG(0, "%s:%d", __FILE__, __LINE__);
     *index_key = key.name;
   } else {
+CLS_LOG(0, "%s:%d", __FILE__, __LINE__);
     encode_obj_versioned_data_key(key, index_key, delete_marker);
   }
 }
@@ -698,9 +703,12 @@ int rgw_bucket_list(cls_method_context_t hctx, bufferlist *in, bufferlist *out)
         continue;
       }
 
+CLS_LOG(20, "%s: entry %s[%s] (%d) xxxxx: snap_range.start=%d snap_range.end=%d snap_id=%d",
+        __func__, key.name.c_str(), key.instance.c_str(),
+        (int)entry.meta.snap_id, (int)op.snap_range.start, (int)op.snap_range.end,
+        (int)entry.meta.snap_id.get_or(rgw_bucket_snap_id::SNAP_MIN).snap_id);
       if (op.snap_range.is_set()) {
-        if (entry.meta.snap_id.is_set() &&
-            !op.snap_range.contains(entry.meta.snap_id)) {
+        if (!op.snap_range.contains(entry.meta.snap_id.get_or(rgw_bucket_snap_id::SNAP_MIN))) { /* treat undefined snaps as SNAP_MIN */
           CLS_LOG(20, "%s: entry %s[%s] (%d) skipping: snap_range.start=%d snap_range.end=%d",
                   __func__, key.name.c_str(), key.instance.c_str(),
                   (int)entry.meta.snap_id, (int)op.snap_range.start, (int)op.snap_range.end);
