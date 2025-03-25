@@ -279,11 +279,13 @@ struct rgw_obj_key {
 
   bool need_to_encode_instance() const {
     return have_non_null_instance() ||
+      (snap_id.is_set() && !snap_id.is_min());
+
       snap_id.is_set();
   }
 
   std::string instance_oid_str() const {
-    if (!instance.empty()) {
+    if (have_non_null_instance()) {
       return instance;
     }
 
@@ -350,6 +352,7 @@ struct rgw_obj_key {
     if (field[0] == '#') {
       snap_id = std::stoll(field.substr(1));
     } else if (field.starts_with("null#")) {
+      instance = "null";
       snap_id = std::stoll(field.substr(5));
     } else {
       instance = field;

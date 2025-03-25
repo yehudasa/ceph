@@ -1638,7 +1638,7 @@ int rgw_bucket_complete_op(cls_method_context_t hctx, bufferlist *in, bufferlist
 		 "INFO: %s: add op, key=%s",
 		 __func__, escape_str(idx).c_str());
     // unaccount overwritten entry if the old entry belongs to the same snapshot
-    if (entry.meta.snap_id == op.meta.snap_id) {
+    if (entry.meta.snap_id.get_or(rgw_bucket_snap_id::SNAP_MIN) == op.meta.snap_id) {
       unaccount_entry(hctx, header, entry);
     }
 

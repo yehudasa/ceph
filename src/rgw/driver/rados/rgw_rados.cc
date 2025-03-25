@@ -6481,11 +6481,14 @@ int RGWRados::get_obj_state_impl(const DoutPrefixProvider *dpp, RGWObjectCtx *oc
   RGWObjStateManifest *sm = octx->get_state(obj);
   RGWObjState *s = &(sm->state);
 
+ldpp_dout(dpp, 20) << __FILE__ << ":" << __LINE__ << "XXX obj.key.instance_id=" << obj.key.instance << dendl;
   ldpp_dout(dpp, 20) << "get_obj_state: octx=" << (void *)octx << " obj=" << obj << " state=" << (void *)s << " s->prefetch_data=" << s->prefetch_data << dendl;
+ldpp_dout(dpp, 20) << "XXX obj.key.snap_id=" << obj.key.snap_id.snap_id << " is_set=" << obj.key.snap_id.is_set() << dendl;
   *psm = sm;
   if (s->has_attrs) {
     bool has_snap_info = s->attrset.find(RGW_ATTR_OLH_SNAP_INFO) != s->attrset.end();
-    bool need_follow_olh = follow_olh && (obj.key.instance.empty() || has_snap_info);
+    bool avoid_snap_olh = obj.key.snap_id.is_min();
+    bool need_follow_olh = follow_olh && (obj.key.instance.empty() || has_snap_info) && !avoid_snap_olh;
     if (s->is_olh && need_follow_olh) {
       return get_olh_target_state(dpp, *octx, bucket_info, obj, snap_id,
                                   delete_marker_enoent, follow_snap, s, psm, y);
@@ -6500,9 +6503,12 @@ int RGWRados::get_obj_state_impl(const DoutPrefixProvider *dpp, RGWObjectCtx *oc
 
   int r = -ENOENT;
 
+ldpp_dout(dpp, 20) << __FILE__ << ":" << __LINE__ << "XXX assume_noent=" << assume_noent << " follow_snap=" << follow_snap << dendl;
   if (!assume_noent) {
     r = RGWRados::raw_obj_stat(dpp, raw_obj, &s->size, &s->mtime, &s->epoch, &s->attrset, (s->prefetch_data ? &s->data : NULL), &s->objv_tracker, y);
   }
+ldpp_dout(dpp, 20) << __FILE__ << ":" << __LINE__ << "XXX r=" << r << " bucket_info.versioned()=" << bucket_info.versioned() << " obj.key.get_snap_id().is_set()=" << obj.key.get_snap_id().is_set() << " obj.key.snap_id=" << obj.key.snap_id << dendl;
+
 
   if (r == -ENOENT &&
       bucket_info.versioned() &&
@@ -6541,7 +6547,9 @@ int RGWRados::get_obj_state_impl(const DoutPrefixProvider *dpp, RGWObjectCtx *oc
   s->accounted_size = s->size;
 
   bool has_snap_info = s->attrset.find(RGW_ATTR_OLH_SNAP_INFO) != s->attrset.end();
-  bool need_follow_olh = follow_olh && (obj.key.instance.empty() || has_snap_info);
+  bool avoid_snap_olh = obj.key.snap_id.is_min();
+  bool need_follow_olh = follow_olh && (obj.key.instance.empty() || has_snap_info) && !avoid_snap_olh;
+ldpp_dout(dpp, 20) << __FILE__ << ":" << __LINE__ << "XXX need_follow_olh=" << (int)need_follow_olh << " obj.key.instance.empty()=" << obj.key.instance.empty() << dendl;
 
   auto iter = s->attrset.find(RGW_ATTR_ETAG);
   if (iter != s->attrset.end()) {
@@ -6660,6 +6668,8 @@ int RGWRados::get_obj_state_impl(const DoutPrefixProvider *dpp, RGWObjectCtx *oc
   if (iter = s->attrset.find(RGW_ATTR_OLH_ID_TAG); iter != s->attrset.end()) {
     s->olh_tag = iter->second;
   }
+
+  s->has_data = !!sm->manifest;
 
   if (is_olh(s->attrset)) {
     s->is_olh = true;
@@ -8791,6 +8801,17 @@ int RGWRados::apply_olh_log(const DoutPrefixProvider *dpp,
     if (r < 0) {
       return r;
     }
+  } else { // if (state.has_data) {
+for (auto& iter : state.attrset) {
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << " attr=" << iter.first << " len=" << iter.second.length() << dendl;
+}
+    /* plainn object exists, update the snap_info to reflect that */
+    rgw_bucket_snap_id snap_id;
+    snap_id = rgw_bucket_snap_id::SNAP_MIN;
+    auto& snap_entry = snap_info.snap_map[snap_id];
+    snap_entry.key = obj.key;
+    snap_entry.key.snap_id = snap_id;
+    snap_entry.delete_marker = false;
   }
 
   for (iter = log.begin(); iter != log.end(); ++iter) {
@@ -9326,6 +9347,7 @@ int RGWRados::follow_olh(const DoutPrefixProvider *dpp, RGWBucketInfo& bucket_in
   if (iter == state->attrset.end()) {
     return -EINVAL;
   }
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __FILE__ << " snap_id=" << snap_id << " .is_set=" << snap_id.is_set() << dendl;
   if (snap_id.is_set()) {
     iter = state->attrset.find(RGW_ATTR_OLH_SNAP_INFO);
     if (iter == state->attrset.end()) {
