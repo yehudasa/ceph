@@ -352,7 +352,6 @@ struct rgw_obj_key {
     if (field[0] == '#') {
       snap_id = std::stoll(field.substr(1));
     } else if (field.starts_with("null#")) {
-      instance = "null";
       snap_id = std::stoll(field.substr(5));
     } else {
       instance = field;
