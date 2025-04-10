@@ -626,6 +626,7 @@ public:
 
   int process(LCWorker* worker,
 	      const std::unique_ptr<rgw::sal::Bucket>& optional_bucket,
+              std::optional<rgw_bucket_snap_id> snap_id,
 	      bool once);
   int advance_head(const std::string& lc_shard,
 		   rgw::sal::LCHead& head,
@@ -657,6 +658,9 @@ public:
                         rgw::sal::Bucket* bucket,
                         const rgw::sal::Attrs& bucket_attrs,
                         RGWLifecycleConfiguration *config);
+  int set_bucket_snap(const DoutPrefixProvider* dpp, optional_yield y,
+                      rgw::sal::Bucket* bucket,
+                      rgw_bucket_snap_id snap_id);
   int remove_bucket_config(const DoutPrefixProvider* dpp, optional_yield y,
                            rgw::sal::Bucket* bucket,
                            const rgw::sal::Attrs& bucket_attrs,
@@ -672,6 +676,9 @@ public:
   int handle_multipart_expiration(rgw::sal::Bucket* target,
 				  const std::multimap<std::string, lc_op>& prefix_map,
 				  LCWorker* worker, time_t stop_at, bool once);
+
+  int handle_snapshot_collection(rgw::sal::Bucket* target,
+				  LCWorker* worker, time_t stop_at, bool once);
 };
 
 namespace rgw::lc {
@@ -679,7 +686,8 @@ namespace rgw::lc {
 int fix_lc_shard_entry(const DoutPrefixProvider *dpp,
                        rgw::sal::Driver* driver,
 		       rgw::sal::Lifecycle* sal_lc,
-		       rgw::sal::Bucket* bucket);
+		       rgw::sal::Bucket* bucket,
+                       rgw_bucket_snap_id snap_id);
 
 std::string s3_expiration_header(
   DoutPrefixProvider* dpp,

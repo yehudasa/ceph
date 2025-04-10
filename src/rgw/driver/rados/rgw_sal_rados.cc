@@ -4388,6 +4388,7 @@ int RadosLifecycle::set_entry(const DoutPrefixProvider* dpp, optional_yield y,
   cls_rgw_lc_entry cls_entry;
 
   cls_entry.bucket = entry.bucket;
+  cls_entry.snap_id = entry.snap_id;
   cls_entry.start_time = entry.start_time;
   cls_entry.status = entry.status;
 

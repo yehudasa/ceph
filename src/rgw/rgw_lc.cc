@@ -204,7 +204,7 @@ void *RGWLC::LCWorker::entry() {
     utime_t start = ceph_clock_now();
     if (should_work(start)) {
       ldpp_dout(dpp, 2) << "life cycle: start worker=" << ix << dendl;
-      int r = lc->process(this, all_buckets, false /* once */);
+      int r = lc->process(this, all_buckets, std::nullopt, false /* once */);
       if (r < 0) {
         ldpp_dout(dpp, 0) << "ERROR: do life cycle process() returned error r="
 			  << r << " worker=" << ix << dendl;
@@ -1006,6 +1006,101 @@ int RGWLC::handle_multipart_expiration(rgw::sal::Bucket* target,
   return 0;
 } /* RGWLC::handle_multipart_expiration */
 
+int RGWLC::handle_snapshot_collection(rgw::sal::Bucket* target,
+                                      LCWorker* worker, time_t stop_at, bool once)
+{
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "()" << dendl;
+  int ret;
+  rgw::sal::Bucket::ListResults results;
+  auto delay_ms = cct->_conf.get_val<int64_t>("rgw_lc_thread_delay");
+
+  auto& snap_mgr = target->get_info().local.snap_mgr;
+  const auto& rm_snaps = snap_mgr.get_removed_snaps();
+
+  if (rm_snaps.empty()) {
+    return 0;
+  }
+
+  auto pf = [&](RGWLC::LCWorker *wk, WorkQ *wq, WorkItem &wi) {
+    int ret{0};
+    auto obj = boost::get<rgw_bucket_dir_entry>(wi);
+
+    ldpp_dout(wk->get_lc(), 20) << __func__ << "(): object needs to be removed as it's not in any live snapshot: " << obj.key << dendl;
+#if 0
+    ret = remove_expired_obj(oc.dpp, oc, true,
+                             {/* no delete notify expected */});
+        ldpp_dout(oc.dpp, 20)
+            << "deleting object from removed snapshot: Object(key:" << oc.o.key << ") not current "
+            << "versioned_epoch:  " << oc.o.versioned_epoch
+            << "flags: " << oc.o.flags << dendl;
+      }
+#endif
+
+    return ret;
+  };
+
+  worker->workpool->setf(pf);
+
+  for (const auto& snap_entry : rm_snaps) {
+
+    if (worker_should_stop(stop_at, once)) {
+      ldpp_dout(this, 5) << __func__ << " interval budget EXPIRED worker="
+		     << worker->ix << " bucket=" << target->get_name()
+		     << dendl;
+      return 0;
+    }
+    rgw::sal::Bucket::ListParams params;
+    rgw::sal::Bucket::ListResults results;
+
+    rgw_bucket_snap_id snap_id = snap_entry.first;
+
+    params.snap_range.end = snap_id;
+    params.list_versions = true;
+
+    /* we do not depend on total order */
+    params.allow_unordered = true;
+
+    do {
+      auto offset = 0;
+      results.objs.clear();
+      ret = target->list(this, params, 1000, results, null_yield);
+      if (ret < 0) {
+          if (ret == (-ENOENT))
+            return 0;
+          ldpp_dout(this, 0) << "ERROR: driver->list_objects():" <<dendl;
+          return ret;
+      }
+
+      for (auto obj_iter = results.objs.begin(); obj_iter != results.objs.end(); ++obj_iter, ++offset) {
+
+        /* check if object is still in another live snapshot */
+        if (snap_mgr.live_snapshot_at_range(obj_iter->meta.snap_id, obj_iter->removed_at_snap())) {
+          continue;
+        }
+
+        worker->workpool->enqueue(WorkItem{*obj_iter});
+        if (going_down()) {
+          return 0;
+        }
+      } /* for objs */
+
+      if ((offset % 100) == 0) {
+	if (worker_should_stop(stop_at, once)) {
+	  ldpp_dout(this, 5) << __func__ << " interval budget EXPIRED worker="
+			     << worker->ix << " bucket=" << target->get_name()
+			     << dendl;
+	  return 0;
+	}
+      }
+
+      std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+    } while(results.is_truncated);
+  }
+
+  worker->workpool->drain();
+  return 0;
+} /* RGWLC::handle_snapshot_collection */
+
 static int read_obj_tags(const DoutPrefixProvider *dpp, rgw::sal::Object* obj, bufferlist& tags_bl)
 {
   std::unique_ptr<rgw::sal::Object::ReadOp> rop = obj->get_read_op();
@@ -1730,6 +1825,10 @@ int RGWLC::bucket_lc_process(string& shard_id, LCWorker* worker,
   string bucket_tenant = result[0];
   string bucket_name = result[1];
   string bucket_marker = result[2];
+  rgw_bucket_snap_id snap_id;
+  if (result.size() > 3) {
+    snap_id.init_from_str(result[3]);
+  }
 
   ldpp_dout(this, 5) << "RGWLC::bucket_lc_process ENTER bucket=" << bucket_name << dendl;
   if (unlikely(cct->_conf->rgwlc_skip_bucket_step)) {
@@ -1765,6 +1864,11 @@ int RGWLC::bucket_lc_process(string& shard_id, LCWorker* worker,
     ldpp_dout(this, 0) << "WARNING: bucket_attrs.find(RGW_ATTR_LC) failed for "
 		       << bucket_name << " (terminates bucket_lc_process(...))"
 		       << dendl;
+    /* no lifecycle rules, let's just try to clean deleted snapshots */
+    ret = handle_snapshot_collection(bucket.get(), worker, stop_at, once);
+    if (ret < 0) {
+      return ret;
+    }
     return 0;
   }
 
@@ -1868,7 +1972,14 @@ int RGWLC::bucket_lc_process(string& shard_id, LCWorker* worker,
   }
 
   ret = handle_multipart_expiration(bucket.get(), prefix_map, worker, stop_at, once);
-  return ret;
+  if (ret < 0) {
+    return ret;
+  }
+  ret = handle_snapshot_collection(bucket.get(), worker, stop_at, once);
+  if (ret < 0) {
+    return ret;
+  }
+  return 0;
 }
 
 class SimpleBackoff
@@ -2030,12 +2141,21 @@ static inline void get_lc_oid(CephContext *cct,
   return;
 }
 
-static std::string get_bucket_lc_key(const rgw_bucket& bucket){
+static std::string _get_bucket_lc_key(const rgw_bucket& bucket) {
   return string_join_reserve(':', bucket.tenant, bucket.name, bucket.marker);
+}
+
+static std::string get_bucket_lc_key(const rgw_bucket& bucket, rgw_bucket_snap_id snap_id) {
+  if (!snap_id.is_set()) {
+    return _get_bucket_lc_key(bucket);
+  }
+
+  return string_join_reserve(':', bucket.tenant, bucket.name, bucket.marker, snap_id.to_string());
 }
 
 int RGWLC::process(LCWorker* worker,
 		   const std::unique_ptr<rgw::sal::Bucket>& optional_bucket,
+                   std::optional<rgw_bucket_snap_id> snap_id,
 		   bool once = false)
 {
   int ret = 0;
@@ -2046,7 +2166,7 @@ int RGWLC::process(LCWorker* worker,
      * can be processed without traversing any state entries (we
      * do need the entry {pro,epi}logue which update the state entry
      * for this bucket) */
-    auto bucket_lc_key = get_bucket_lc_key(optional_bucket->get_key());
+    auto bucket_lc_key = get_bucket_lc_key(optional_bucket->get_key(), snap_id.value_or(rgw_bucket_snap_id()));
     auto index = get_lc_index(driver->ctx(), bucket_lc_key);
     ret = process_bucket(index, max_secs, worker, bucket_lc_key, once);
     return ret;
@@ -2123,6 +2243,7 @@ int RGWLC::process_bucket(int index, int max_lock_secs, LCWorker* worker,
 		       << obj_names[index] << dendl;
     return -EBUSY;
   }
+ldpp_dout(this, 5) << __FILE__ << ":" << __LINE__ << "(): ret=" << ret << ret << dendl;
   if (ret < 0)
     return 0;
 
@@ -2149,6 +2270,7 @@ int RGWLC::process_bucket(int index, int max_lock_secs, LCWorker* worker,
       }
     }
   }
+ldpp_dout(this, 5) << __FILE__ << ":" << __LINE__ << "(): ret=" << ret << " entry.bucket=" << entry.bucket << dendl;
 
   /* do nothing if no bucket */
   if ((ret < 0) || entry.bucket.empty()) {
@@ -2637,17 +2759,20 @@ template<typename F>
 static int guard_lc_modify(const DoutPrefixProvider *dpp,
                            rgw::sal::Driver* driver,
 			   rgw::sal::Lifecycle* sal_lc,
-			   const rgw_bucket& bucket, const string& cookie,
+			   const rgw_bucket& bucket,
+                           rgw_bucket_snap_id snap_id,
+                           const string& cookie,
 			   const F& f) {
   CephContext *cct = driver->ctx();
 
-  auto bucket_lc_key = get_bucket_lc_key(bucket);
+  auto bucket_lc_key = get_bucket_lc_key(bucket, snap_id);
   string oid; 
   get_lc_oid(cct, bucket_lc_key, &oid);
 
   /* XXX it makes sense to take shard_id for a bucket_id? */
   rgw::sal::LCEntry entry;
   entry.bucket = bucket_lc_key;
+  entry.snap_id = snap_id;
   entry.status = lc_uninitial;
   int max_lock_secs = cct->_conf->rgw_lc_lock_max_time;
 
@@ -2709,7 +2834,23 @@ int RGWLC::set_bucket_config(const DoutPrefixProvider* dpp, optional_yield y,
   rgw_bucket& b = bucket->get_key();
 
 
-  ret = guard_lc_modify(dpp, driver, sal_lc.get(), b, cookie,
+  ret = guard_lc_modify(dpp, driver, sal_lc.get(), b, rgw_bucket_snap_id(), cookie,
+			[&](rgw::sal::Lifecycle* sal_lc, const string& oid,
+			    rgw::sal::LCEntry& entry) {
+    return sal_lc->set_entry(dpp, y, oid, entry);
+  });
+
+  return ret;
+}
+
+int RGWLC::set_bucket_snap(const DoutPrefixProvider* dpp, optional_yield y,
+                             rgw::sal::Bucket* bucket,
+                             rgw_bucket_snap_id snap_id)
+{
+  rgw_bucket& b = bucket->get_key();
+
+
+  int ret = guard_lc_modify(dpp, driver, sal_lc.get(), b, snap_id, cookie,
 			[&](rgw::sal::Lifecycle* sal_lc, const string& oid,
 			    rgw::sal::LCEntry& entry) {
     return sal_lc->set_entry(dpp, y, oid, entry);
@@ -2738,7 +2879,7 @@ int RGWLC::remove_bucket_config(const DoutPrefixProvider* dpp, optional_yield y,
     }
   }
 
-  ret = guard_lc_modify(dpp, driver, sal_lc.get(), b, cookie,
+  ret = guard_lc_modify(dpp, driver, sal_lc.get(), b, rgw_bucket_snap_id(), cookie,
 			[&](rgw::sal::Lifecycle* sal_lc, const string& oid,
 			    rgw::sal::LCEntry& entry) {
     return sal_lc->rm_entry(dpp, y, oid, entry);
@@ -2758,14 +2899,15 @@ namespace rgw::lc {
 int fix_lc_shard_entry(const DoutPrefixProvider *dpp,
                        rgw::sal::Driver* driver,
 		       rgw::sal::Lifecycle* sal_lc,
-		       rgw::sal::Bucket* bucket)
+		       rgw::sal::Bucket* bucket,
+                       rgw_bucket_snap_id snap_id)
 {
   if (auto aiter = bucket->get_attrs().find(RGW_ATTR_LC);
       aiter == bucket->get_attrs().end()) {
     return 0;    // No entry, nothing to fix
   }
 
-  auto bucket_lc_key = get_bucket_lc_key(bucket->get_key());
+  auto bucket_lc_key = get_bucket_lc_key(bucket->get_key(), snap_id);
   std::string lc_oid;
   get_lc_oid(driver->ctx(), bucket_lc_key, &lc_oid);
 
@@ -2790,7 +2932,7 @@ int fix_lc_shard_entry(const DoutPrefixProvider *dpp,
     std::string cookie = cookie_buf;
 
     ret = guard_lc_modify(dpp,
-      driver, sal_lc, bucket->get_key(), cookie,
+      driver, sal_lc, bucket->get_key(), snap_id, cookie,
       [dpp, &lc_oid](rgw::sal::Lifecycle* slc,
 			      const string& oid,
 			      rgw::sal::LCEntry& entry) {

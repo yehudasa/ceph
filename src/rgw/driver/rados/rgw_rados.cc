@@ -10008,12 +10008,13 @@ int RGWRados::process_gc(bool expired_only, optional_yield y)
   return gc->process(expired_only, y);
 }
 
-int RGWRados::process_lc(const std::unique_ptr<rgw::sal::Bucket>& optional_bucket)
+int RGWRados::process_lc(const std::unique_ptr<rgw::sal::Bucket>& optional_bucket,
+                         std::optional<rgw_bucket_snap_id> opt_snap_id)
 {
   RGWLC lc;
   lc.initialize(cct, this->driver);
   RGWLC::LCWorker worker(&lc, cct, &lc, 0);
-  auto ret = lc.process(&worker, optional_bucket, true /* once */);
+  auto ret = lc.process(&worker, optional_bucket, opt_snap_id, true /* once */);
   lc.stop_processor(); // sets down_flag, but returns immediately
   return ret;
 }

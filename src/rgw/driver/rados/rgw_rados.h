@@ -1662,7 +1662,7 @@ public:
   bool process_expired_objects(const DoutPrefixProvider *dpp, optional_yield y);
   int defer_gc(const DoutPrefixProvider *dpp, RGWObjectCtx* ctx, RGWBucketInfo& bucket_info, const rgw_obj& obj, optional_yield y);
 
-  int process_lc(const std::unique_ptr<rgw::sal::Bucket>& optional_bucket);
+  int process_lc(const std::unique_ptr<rgw::sal::Bucket>& optional_bucket, std::optional<rgw_bucket_snap_id> opt_snap_id);
 
   int bucket_check_index(const DoutPrefixProvider *dpp, RGWBucketInfo& bucket_info,
                          std::map<RGWObjCategory, RGWStorageStats> *existing_stats,

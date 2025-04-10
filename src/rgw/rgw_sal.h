@@ -1609,6 +1609,7 @@ struct LCHead {
  * buckets. */
 struct LCEntry {
   std::string bucket;
+  rgw_bucket_snap_id snap_id;
   uint64_t start_time = 0;
   uint32_t status = 0;
 };

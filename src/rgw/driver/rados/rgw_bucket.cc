@@ -2083,7 +2083,21 @@ static int fix_single_bucket_lc(rgw::sal::Driver* driver,
     return ret;
   }
 
-  return rgw::lc::fix_lc_shard_entry(dpp, driver, driver->get_rgwlc()->get_lc(), bucket.get());
+  ret = rgw::lc::fix_lc_shard_entry(dpp, driver, driver->get_rgwlc()->get_lc(), bucket.get(), rgw_bucket_snap_id());
+  if (ret < 0) {
+    return ret;
+  }
+
+  auto rm_snaps = bucket->get_info().local.snap_mgr.get_removed_snaps();
+  for (auto& e : rm_snaps) {
+    int r = rgw::lc::fix_lc_shard_entry(dpp, driver, driver->get_rgwlc()->get_lc(), bucket.get(), e.first);
+    if (r < 0) {
+      ldpp_dout(dpp, 5) << "WARNING: rgw::lc::fix_lc_shard_entry() on " << tenant_name << "/" << bucket_name << " (snap_id=" << e.first << ") returned r=" << r << dendl;
+      ret = r;
+    }
+  }
+
+  return ret;
 }
 
 static void format_lc_status(Formatter* formatter,
@@ -2989,6 +3003,17 @@ int RGWBucketInstanceMetadataHandler::put_post(
               << dendl;
           return ret;
         }
+      }
+    }
+
+    auto rm_snaps = bucket->get_info().local.snap_mgr.get_removed_snaps();
+    for (auto& e : rm_snaps) {
+      ret = lc->set_bucket_snap(dpp, y, bucket.get(), e.first);
+      if (ret < 0) {
+        ldpp_dout(dpp, 0) << __func__ << " failed to set lc entry for "
+            << bci.info.bucket.name << " snap_id=" << e.first
+            << dendl;
+        return ret;
       }
     }
   } /* update lc */

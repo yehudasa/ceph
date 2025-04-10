@@ -832,7 +832,7 @@
                     "shape":"SnapId",
                     "contextParam":{"name":"SnapId"},
                     "location":"querystring",
-                    "locationName":"SnapId"
+                    "locationName":"snapId"
                 },
                 "ChecksumSHA256":{
                         "shape":"ChecksumSHA256",

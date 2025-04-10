@@ -5186,6 +5186,19 @@ static int rgw_cls_gc_remove(cls_method_context_t hctx, bufferlist *in, bufferli
   return gc_remove(hctx, op.tags);
 }
 
+static string encode_lc_key(const cls_rgw_lc_entry& entry)
+{
+  if (!entry.snap_id.is_set()) {
+    return entry.bucket;
+  }
+
+  string s = entry.bucket;
+  s.append(":");
+  s.append(entry.snap_id.to_string());
+
+  return s;
+}
+
 static int rgw_cls_lc_get_entry(cls_method_context_t hctx, bufferlist *in, bufferlist *out)
 {
   CLS_LOG(10, "entered %s", __func__);
@@ -5226,7 +5239,7 @@ static int rgw_cls_lc_set_entry(cls_method_context_t hctx, bufferlist *in, buffe
   bufferlist bl;
   encode(op.entry, bl);
 
-  int ret = cls_cxx_map_set_val(hctx, op.entry.bucket, &bl);
+  int ret = cls_cxx_map_set_val(hctx, encode_lc_key(op.entry), &bl);
   return ret;
 }
 
@@ -5243,7 +5256,7 @@ static int rgw_cls_lc_rm_entry(cls_method_context_t hctx, bufferlist *in, buffer
     return -EINVAL;
   }
 
-  int ret = cls_cxx_map_remove_key(hctx, op.entry.bucket);
+  int ret = cls_cxx_map_remove_key(hctx, encode_lc_key(op.entry));
   return ret;
 }
 
@@ -5313,7 +5326,7 @@ static int rgw_cls_lc_list_entries(cls_method_context_t hctx, bufferlist *in,
       try {
 	iter = it->second.begin();
 	decode(oe, iter);
-	entry = {oe.first, 0 /* start */, uint32_t(oe.second)};
+	entry = {oe.first, rgw_bucket_snap_id(), 0 /* start */, uint32_t(oe.second)};
       } catch(buffer::error& err) {
 	CLS_LOG(
 	  1, "ERROR: rgw_cls_lc_list_entries(): failed to decode entry\n");
