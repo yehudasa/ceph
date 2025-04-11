@@ -649,6 +649,13 @@ public:
 		       int& index);
   int bucket_lc_process(std::string& shard_id, LCWorker* worker, time_t stop_at,
 			bool once);
+  int bucket_lc_process_snap(std::string& bucket_tenant,
+                             std::string& bucket_name,
+                             std::string& bucket_marker,
+                             rgw_bucket_snap_id snap_id,
+                             LCWorker* worker,
+                             time_t stop_at,
+                             bool once);
   int bucket_lc_post(int index, int max_lock_sec,
 		     rgw::sal::LCEntry& entry, int& result, LCWorker* worker);
   bool going_down();

@@ -315,7 +315,16 @@ int RGWBucket::snap_remove(RGWBucketAdminOpState& op_state, rgw_bucket_snap_id s
     set_err_msg(err_msg, "ERROR: failed writing bucket instance info: " + cpp_strerror(-r));
     return r;
   }
-  return r;
+
+  auto lc = driver->get_rgwlc();
+  r = lc->set_bucket_snap(dpp, y, bucket.get(), snap_id);
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "() r=" << r << dendl;
+  if (r < 0) {
+    ldpp_dout(dpp, 0) << __func__ << " failed to set lc entry for "
+            << bucket << " snap_id=" << snap_id << dendl;
+    return r;
+  }
+  return 0;
 }
 
 static void dump_bucket_index(const vector<rgw_bucket_dir_entry>& objs,  Formatter *f)
@@ -2971,7 +2980,9 @@ int RGWBucketInstanceMetadataHandler::put_post(
     const std::optional<RGWBucketCompleteInfo>& old_bci,
     RGWObjVersionTracker& objv_tracker)
 {
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "()" << dendl;
   int ret = svc_bi->init_index(dpp, bci.info, bci.info.layout.current_index);
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "() ret=" << ret << dendl;
   if (ret < 0) {
     return ret;
   }
@@ -3007,8 +3018,10 @@ int RGWBucketInstanceMetadataHandler::put_post(
     }
 
     auto rm_snaps = bucket->get_info().local.snap_mgr.get_removed_snaps();
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "() rm_snaps.size()=" << rm_snaps.size() << dendl;
     for (auto& e : rm_snaps) {
       ret = lc->set_bucket_snap(dpp, y, bucket.get(), e.first);
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "() ret=" << ret << dendl;
       if (ret < 0) {
         ldpp_dout(dpp, 0) << __func__ << " failed to set lc entry for "
             << bci.info.bucket.name << " snap_id=" << e.first

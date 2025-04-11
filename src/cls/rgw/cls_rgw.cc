@@ -5320,6 +5320,7 @@ static int rgw_cls_lc_list_entries(cls_method_context_t hctx, bufferlist *in,
     auto iter = it->second.cbegin();
     try {
       decode(entry, iter);
+CLS_LOG(0, "%s:%d snap_id=%d", __FILE__, __LINE__, (int)entry.snap_id.snap_id);
     } catch (buffer::error& err) {
       /* try backward compat */
       pair<string, int> oe;
@@ -5327,6 +5328,7 @@ static int rgw_cls_lc_list_entries(cls_method_context_t hctx, bufferlist *in,
 	iter = it->second.begin();
 	decode(oe, iter);
 	entry = {oe.first, rgw_bucket_snap_id(), 0 /* start */, uint32_t(oe.second)};
+CLS_LOG(0, "%s:%d (fallback) snap_id=%d", __FILE__, __LINE__, (int)entry.snap_id.snap_id);
       } catch(buffer::error& err) {
 	CLS_LOG(
 	  1, "ERROR: rgw_cls_lc_list_entries(): failed to decode entry\n");
@@ -5336,6 +5338,16 @@ static int rgw_cls_lc_list_entries(cls_method_context_t hctx, bufferlist *in,
    op_ret.entries.push_back(entry);
   }
   encode(op_ret, *out);
+{
+  bufferlist bl;
+  encode(op_ret, bl);
+  auto iter = bl.cbegin();
+  cls_rgw_lc_list_entries_ret op_ret2;
+  decode(op_ret2, iter);
+  for (auto& e : op_ret2.entries) {
+CLS_LOG(0, "%s:%d (test) snap_id=%d", __FILE__, __LINE__, (int)e.snap_id.snap_id);
+  }
+}
   return 0;
 }
 

@@ -9329,6 +9329,9 @@ next:
       for (const auto& entry : bucket_lc_map) {
         formatter->open_object_section("bucket_lc_info");
         formatter->dump_string("bucket", entry.bucket);
+        if (entry.snap_id.is_set()) {
+          encode_json("snap_id", entry.snap_id.to_string(), formatter.get());
+        }
 	char exp_buf[100];
         time_t t = entry.start_time;
 	if (std::strftime(
