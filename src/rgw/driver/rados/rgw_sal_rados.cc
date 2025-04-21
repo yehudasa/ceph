@@ -4396,7 +4396,7 @@ int RadosLifecycle::set_entry(const DoutPrefixProvider* dpp, optional_yield y,
   cls_rgw_lc_set_entry(op, cls_entry);
 
   auto& ioctx = *store->getRados()->get_lc_pool_ctx();
-ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): oid=" << oid << dendl;
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): oid=" << oid << " entry.bucket=" << entry.bucket << " entry.snap_id=" << entry.snap_id << dendl;
   return rgw_rados_operate(dpp, ioctx, oid, std::move(op), y);
 }
 

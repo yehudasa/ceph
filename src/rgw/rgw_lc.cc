@@ -1729,7 +1729,9 @@ public:
 
   bool check(lc_op_ctx& oc, ceph::real_time *exp_time, const DoutPrefixProvider *dpp) override {
     auto& snap_mgr = oc.bucket->get_info().local.snap_mgr;
-    bool need_removal = !snap_mgr.live_snapshot_at_range(oc.o.meta.snap_id, oc.o.removed_at_snap());
+    auto removed_at_snap = oc.o.removed_at_snap();
+    bool need_removal = removed_at_snap.is_set() &&
+                        !snap_mgr.live_snapshot_at_range(oc.o.meta.snap_id, removed_at_snap);
     ldpp_dout(dpp, 20) << __func__ << "(): key=" << oc.o.key
       << " snap_id=" << oc.o.meta.snap_id 
       << " need_removal=" << need_removal << dendl;
@@ -2421,7 +2423,7 @@ int RGWLC::process_bucket(int index, int max_lock_secs, LCWorker* worker,
 		       << obj_names[index] << dendl;
     return -EBUSY;
   }
-ldpp_dout(this, 5) << __FILE__ << ":" << __LINE__ << "(): ret=" << ret << ret << dendl;
+ldpp_dout(this, 5) << __FILE__ << ":" << __LINE__ << "(): marker=" << bucket_entry_marker << " ret=" << ret << dendl;
   if (ret < 0)
     return 0;
 

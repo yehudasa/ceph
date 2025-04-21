@@ -25,8 +25,20 @@ struct rgw_bucket_snap_id {
     return std::to_string(snap_id);
   }
 
+  void init() {
+    snap_id = SNAP_MIN;
+  }
+
   void init(uint64_t _snap_id) {
-    snap_id = _snap_id;
+    if (_snap_id != SNAP_UNDEFINED) {
+      snap_id = _snap_id;
+    } else {
+      snap_id = SNAP_MIN;
+    }
+  }
+
+  void init(rgw_bucket_snap_id _snap_id) {
+    init(_snap_id.snap_id);
   }
 
   bool init_from_str(const std::string& s);

@@ -353,6 +353,13 @@ void RGWRemoveBucketSnapshot_ObjStore_S3::execute(optional_yield y)
   if (op_ret < 0) {
     s->err.message = "Error";
   }
+  auto lc = driver->get_rgwlc();
+  op_ret = lc->set_bucket_snap(this, y, s->bucket.get(), snap_id);
+ldpp_dout(this, 0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "() r=" << op_ret << dendl;
+  if (op_ret < 0) {
+    ldpp_dout(this, 0) << __func__ << " failed to set lc entry for snap_id=" << snap_id << dendl;
+    return;
+  }
 }
 
 void RGWRemoveBucketSnapshot_ObjStore_S3::send_response()

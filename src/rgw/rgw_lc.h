@@ -641,7 +641,8 @@ public:
 			 time_t start_date, int worker_ix);
   int process(int index, int max_lock_secs, LCWorker* worker, bool once);
   int process_bucket(int index, int max_lock_secs, LCWorker* worker,
-		     const std::string& bucket_entry_marker, bool once);
+		     const std::string& bucket_entry_marker,
+                     bool once);
   bool expired_session(time_t started);
   time_t thread_stop_at();
   int list_lc_progress(std::string& marker, uint32_t max_entries,
