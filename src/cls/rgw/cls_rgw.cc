@@ -2117,7 +2117,7 @@ public:
 
   void set_unlink_conf(rgw_bucket_snap_id cur_snap_id,
                        rgw_cls_unlink_instance_op::UnlinkFlags flags) {
-    can_rm = (flags & rgw_cls_unlink_instance_op::UnlinkFlags::RemoveNoncurrentSnap) ||
+    can_rm = (flags & rgw_cls_unlink_instance_op::UnlinkFlags::SnapRemoval) ||
       (instance_entry.meta.snap_id >= cur_snap_id);
     instance_entry.set_snap_info().removed_at = cur_snap_id;
   }
@@ -2680,6 +2680,7 @@ static int rgw_bucket_unlink_instance(cls_method_context_t hctx, bufferlist *in,
     obj.set_epoch(1);
   }
 
+CLS_LOG(0, "%s:%d:%s XXX flags=%d", __FILE__, __LINE__, __func__, (int)op.flags);
   obj.set_unlink_conf(op.snap_id, op.flags);
 
   if (!olh.start_modify(op.olh_epoch)) {

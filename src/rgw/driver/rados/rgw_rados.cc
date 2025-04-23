@@ -6169,7 +6169,8 @@ int RGWRados::Object::Delete::delete_obj(optional_yield y, const DoutPrefixProvi
 
       result.delete_marker = dirent.is_delete_marker();
       r = store->unlink_obj_instance(dpp, target->get_ctx(), bucket_info, obj, params.olh_epoch,
-                                     y, params.bilog_flags, params.null_verid, params.zones_trace, add_log);
+                                     y, params.bilog_flags, params.null_verid, params.snap_rm,
+                                     params.zones_trace, add_log);
       if (r < 0) {
         return r;
       }
@@ -8490,6 +8491,7 @@ int RGWRados::bucket_index_unlink_instance(const DoutPrefixProvider *dpp,
                                            const string& op_tag, const string& olh_tag,
                                            uint64_t olh_epoch, optional_yield y,
                                            uint16_t bilog_flags,
+                                           bool snap_rm,
                                            rgw_zone_set *_zones_trace, bool log_op)
 {
   rgw_rados_ref ref;
@@ -8512,13 +8514,15 @@ int RGWRados::bucket_index_unlink_instance(const DoutPrefixProvider *dpp,
 		    [&](BucketShard *bs) -> int {
 		      auto& ref = bs->bucket_obj;
                       auto& snap_mgr = bucket_info.local.snap_mgr;
+                      auto rm_flags = (snap_rm ? rgw_cls_unlink_instance_op::UnlinkFlags::SnapRemoval :
+                                       rgw_cls_unlink_instance_op::UnlinkFlags::None);
 		      librados::ObjectWriteOperation op;
 		      op.assert_exists(); // bucket index shard must exist
 		      cls_rgw_guard_bucket_resharding(op, -ERR_BUSY_RESHARDING);
 		      cls_rgw_bucket_unlink_instance(op, key, op_tag,
 						     olh_tag, olh_epoch, log_op, bilog_flags, zones_trace,
                                                      snap_mgr.get_cur_snap_id(),
-                                                     rgw_cls_unlink_instance_op::UnlinkFlags::None);
+                                                     rm_flags);
                       return rgw_rados_operate(dpp, ref.ioctx, ref.obj.oid, std::move(op), y);
                     }, y);
   if (r < 0) {
@@ -9105,7 +9109,9 @@ int RGWRados::set_olh(const DoutPrefixProvider *dpp, RGWObjectCtx& obj_ctx,
 }
 
 int RGWRados::unlink_obj_instance(const DoutPrefixProvider *dpp, RGWObjectCtx& obj_ctx, RGWBucketInfo& bucket_info, const rgw_obj& target_obj,
-                                  uint64_t olh_epoch, optional_yield y, uint16_t bilog_flags, bool null_verid, rgw_zone_set *zones_trace, bool log_op)
+                                  uint64_t olh_epoch, optional_yield y, uint16_t bilog_flags, bool null_verid, bool snap_rm,
+                                  rgw_zone_set *zones_trace,
+                                  bool log_op)
 {
   string op_tag;
 
@@ -9151,7 +9157,7 @@ int RGWRados::unlink_obj_instance(const DoutPrefixProvider *dpp, RGWObjectCtx& o
       bilog_flags = bilog_flags | RGW_BILOG_FLAG_VERSIONED_OP;
     }
 
-    ret = bucket_index_unlink_instance(dpp, bucket_info, target_obj, op_tag, olh_tag, olh_epoch, y, bilog_flags, zones_trace, log_op);
+    ret = bucket_index_unlink_instance(dpp, bucket_info, target_obj, op_tag, olh_tag, olh_epoch, y, bilog_flags, snap_rm, zones_trace, log_op);
     if (ret < 0) {
       olh_cancel_modification(dpp, bucket_info, *state, olh_obj, op_tag, y);
       ldpp_dout(dpp, 20) << "bucket_index_unlink_instance() target_obj=" << target_obj << " returned " << ret << dendl;

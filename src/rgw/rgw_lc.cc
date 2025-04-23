@@ -604,6 +604,7 @@ static bool zonegroup_lc_check(const DoutPrefixProvider *dpp, rgw::sal::Zone* zo
 static int remove_expired_obj(const DoutPrefixProvider* dpp,
                               lc_op_ctx& oc,
                               bool remove_indeed,
+                              bool override_snap,
                               const rgw::notify::EventTypeList& event_types) {
   int ret{0};
   auto& driver = oc.driver;
@@ -654,6 +655,10 @@ static int remove_expired_obj(const DoutPrefixProvider* dpp,
 
   uint32_t flags = (!remove_indeed || !zonegroup_lc_check(dpp, oc.driver->get_zone()))
                    ? rgw::sal::FLAG_LOG_OP : 0;
+  if (override_snap) {
+    flags |= rgw::sal::FLAG_SNAP_OBJ_REMOVE;
+  }
+
   ret =  del_op->delete_obj(dpp, null_yield, flags);
   if (ret < 0) {
     ldpp_dout(dpp, 1) <<
@@ -1278,7 +1283,7 @@ public:
     int r;
     if (o.is_delete_marker()) {
       r = remove_expired_obj(
-          oc.dpp, oc, true,
+          oc.dpp, oc, true, false,
           {rgw::notify::ObjectExpirationDeleteMarker,
            rgw::notify::LifecycleExpirationDeleteMarkerCreated});
       if (r < 0) {
@@ -1294,6 +1299,7 @@ public:
     } else {
       /* ! o.is_delete_marker() */
       r = remove_expired_obj(oc.dpp, oc, !oc.bucket->versioning_enabled(),
+                             false,
                              {rgw::notify::ObjectExpirationCurrent,
                               rgw::notify::LifecycleExpirationDelete});
       if (r < 0) {
@@ -1348,7 +1354,7 @@ public:
 
   int process(lc_op_ctx& oc) override {
     auto& o = oc.o;
-    int r = remove_expired_obj(oc.dpp, oc, true,
+    int r = remove_expired_obj(oc.dpp, oc, true, false,
                                {rgw::notify::LifecycleExpirationDelete,
 				rgw::notify::ObjectExpirationNoncurrent});
     if (r < 0) {
@@ -1394,7 +1400,7 @@ public:
 
   int process(lc_op_ctx& oc) override {
     auto& o = oc.o;
-    int r = remove_expired_obj(oc.dpp, oc, true,
+    int r = remove_expired_obj(oc.dpp, oc, true, false,
         {rgw::notify::ObjectExpirationDeleteMarker,
          rgw::notify::LifecycleExpirationDeleteMarkerCreated});
     if (r < 0) {
@@ -1478,19 +1484,19 @@ public:
      */
     if (! oc.bucket->versioning_enabled()) {
       ret =
-	remove_expired_obj(oc.dpp, oc, true, {/* no delete notify expected */});
+	remove_expired_obj(oc.dpp, oc, true, false, {/* no delete notify expected */});
       ldpp_dout(oc.dpp, 20) << "delete_tier_obj Object(key:" << oc.o.key
                             << ") not versioned flags: " << oc.o.flags << dendl;
     } else {
       /* versioned */
       if (oc.o.is_current() && !oc.o.is_delete_marker()) {
-        ret = remove_expired_obj(oc.dpp, oc, false, {/* no delete notify expected */});
+        ret = remove_expired_obj(oc.dpp, oc, false, false, {/* no delete notify expected */});
         ldpp_dout(oc.dpp, 20) << "delete_tier_obj Object(key:" << oc.o.key
                               << ") current & not delete_marker"
                               << " versioned_epoch:  " << oc.o.versioned_epoch
                               << "flags: " << oc.o.flags << dendl;
       } else {
-        ret = remove_expired_obj(oc.dpp, oc, true,
+        ret = remove_expired_obj(oc.dpp, oc, true, false,
 				 {/* no delete notify expected */});
         ldpp_dout(oc.dpp, 20)
             << "delete_tier_obj Object(key:" << oc.o.key << ") not current "
@@ -1644,6 +1650,7 @@ public:
 
       uint32_t flags = !zonegroup_lc_check(oc.dpp, oc.driver->get_zone())
                        ? rgw::sal::FLAG_LOG_OP : 0;
+
       int r = oc.obj->transition(oc.bucket, target_placement, o.meta.mtime,
                                  o.versioned_epoch, oc.dpp, null_yield, flags);
       if (r < 0) {
@@ -1735,14 +1742,16 @@ public:
     ldpp_dout(dpp, 20) << __func__ << "(): key=" << oc.o.key
       << " snap_id=" << oc.o.meta.snap_id 
       << " need_removal=" << need_removal << dendl;
-    return false;
+    if (need_removal) {
+      *exp_time = real_clock::now();
+    }
+    return need_removal;
   }
 
   int process(lc_op_ctx& oc) override {
     auto& o = oc.o;
-    int r = remove_expired_obj(oc.dpp, oc, true,
-                               {rgw::notify::LifecycleExpirationDelete,
-				rgw::notify::ObjectExpirationNoncurrent});
+    int r = remove_expired_obj(oc.dpp, oc, true, true,
+                               { /* no event notification */ });
     if (r < 0) {
       ldpp_dout(oc.dpp, 0) << "ERROR: remove_expired_obj (non-current expiration) " 
 			   << oc.bucket << ":" << o.key
@@ -1811,16 +1820,21 @@ int LCOpRule::process(rgw_bucket_dir_entry& o,
   for (auto& a : actions) {
     real_time action_exp;
 
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << dendl;
     if (a->check(ctx, &action_exp, dpp)) {
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << " action_exp=" << action_exp << " exp=" << exp << dendl;
       if (action_exp > exp) {
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << dendl;
         exp = action_exp;
         selected = &a;
       }
     }
   }
 
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << dendl;
   if (selected &&
       (*selected)->should_process()) {
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << dendl;
 
     /*
      * Calling filter checks after action checks because
@@ -1831,9 +1845,10 @@ int LCOpRule::process(rgw_bucket_dir_entry& o,
      * having filters check later in the process.
      */
 
-    bool cont = false;
+    bool cont = filters.empty();
     for (auto& f : filters) {
       if (f->check(dpp, ctx)) {
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << dendl;
         cont = true;
         break;
       }
@@ -1846,7 +1861,9 @@ int LCOpRule::process(rgw_bucket_dir_entry& o,
       return 0;
     }
 
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << dendl;
     int r = (*selected)->process(ctx);
+ldpp_dout(dpp, 0) << __FILE__ << ":" << __LINE__ << dendl;
     if (r < 0) {
       ldpp_dout(dpp, 0) << "ERROR: remove_expired_obj " 
 			<< env.bucket << ":" << o.key
@@ -2069,9 +2086,6 @@ int RGWLC::bucket_lc_process_snap(string& bucket_tenant,
                        << " orig_marker=" << bucket_marker << dendl;
     return -ENOENT;
   }
-
-  /* fetch information for zone checks */
-  rgw::sal::Zone* zone = driver->get_zone();
 
   auto pf = [&bucket_name](RGWLC::LCWorker* wk, WorkQ* wq, WorkItem& wi) {
     auto wt =

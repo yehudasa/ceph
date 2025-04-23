@@ -155,6 +155,7 @@ enum AttrsMod {
 
 static constexpr uint32_t FLAG_LOG_OP = 0x0001;
 static constexpr uint32_t FLAG_PREVENT_VERSIONING = 0x0002;
+static constexpr uint32_t FLAG_SNAP_OBJ_REMOVE = 0x0004;
 
 enum RGWRestoreStatus : uint8_t {
   None  = 0,

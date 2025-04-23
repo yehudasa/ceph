@@ -3456,6 +3456,9 @@ int RadosObject::RadosDeleteOp::delete_obj(const DoutPrefixProvider* dpp, option
   if (params.objv_tracker) {
       parent_op.params.check_objv = params.objv_tracker->version_for_check();
   }
+  if (flags & FLAG_SNAP_OBJ_REMOVE) {
+    parent_op.params.snap_rm = true;
+  }
 
   int ret = parent_op.delete_obj(y, dpp, flags & FLAG_LOG_OP);
   if (ret < 0)

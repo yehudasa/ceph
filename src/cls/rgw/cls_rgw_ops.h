@@ -245,9 +245,9 @@ struct rgw_cls_unlink_instance_op {
 
   enum UnlinkFlags {
     None = 0,
-    RemoveNoncurrentSnap = 0x1, /* Remove objects in non-current snapshots.
-                                   if not set then a removal op will mark them as removed_at current
-                                   snapshot and keep them around */
+    SnapRemoval = 0x1, /* Snapshotted object removal.
+                          if not set then a removal op will mark them as removed_at current
+                          snapshot and keep them around */
   };
 
   UnlinkFlags flags = UnlinkFlags::None;
