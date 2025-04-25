@@ -7856,8 +7856,13 @@ int main(int argc, const char **argv)
 
     auto& bucket_info = bucket->get_info();
     const auto& snaps = bucket_info.local.snap_mgr.get_snaps();
+    const auto& rm_snaps = bucket_info.local.snap_mgr.get_removed_snaps();
 
-    encode_json("snaps", snaps, formatter.get());
+    {
+      Formatter::ObjectSection os(*formatter, "result");
+      encode_json("snaps", snaps, formatter.get());
+      encode_json("rm_snaps", rm_snaps, formatter.get());
+    }
     formatter->flush(cout);
   }
 
@@ -9324,6 +9329,9 @@ next:
       for (const auto& entry : bucket_lc_map) {
         formatter->open_object_section("bucket_lc_info");
         formatter->dump_string("bucket", entry.bucket);
+        if (entry.snap_id.is_set()) {
+          encode_json("snap_id", entry.snap_id.to_string(), formatter.get());
+        }
 	char exp_buf[100];
         time_t t = entry.start_time;
 	if (std::strftime(
@@ -9384,7 +9392,7 @@ next:
     }
 
     int ret =
-      static_cast<rgw::sal::RadosStore*>(driver)->getRados()->process_lc(bucket);
+      static_cast<rgw::sal::RadosStore*>(driver)->getRados()->process_lc(bucket, opt_snap_id);
     if (ret < 0) {
       cerr << "ERROR: lc processing returned error: " << cpp_strerror(-ret) << std::endl;
       return 1;
