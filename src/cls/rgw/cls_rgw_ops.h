@@ -243,9 +243,9 @@ struct rgw_cls_unlink_instance_op {
 
   enum UnlinkFlags {
     None = 0,
-    RemoveNoncurrentSnap = 0x1, /* Remove objects in non-current snapshots.
-                                   if not set then a removal op will mark them as removed_at current
-                                   snapshot and keep them around */
+    SnapRemoval = 0x1, /* Snapshotted object removal.
+                          if not set then a removal op will mark them as removed_at current
+                          snapshot and keep them around */
   };
 
   UnlinkFlags flags = UnlinkFlags::None;
@@ -1279,7 +1279,7 @@ struct cls_rgw_lc_get_next_entry_ret {
     if (struct_v < 2) {
       std::pair<std::string, int> oe;
       decode(oe, bl);
-      entry = {oe.first, 0 /* start */, uint32_t(oe.second)};
+      entry = {oe.first, rgw_bucket_snap_id(), 0 /* start */, uint32_t(oe.second)};
     } else {
       decode(entry, bl);
     }
@@ -1362,7 +1362,7 @@ struct cls_rgw_lc_rm_entry_op {
     if (struct_v < 2) {
       std::pair<std::string, int> oe;
       decode(oe, bl);
-      entry = {oe.first, 0 /* start */, uint32_t(oe.second)};
+      entry = {oe.first, rgw_bucket_snap_id(), 0 /* start */, uint32_t(oe.second)};
     } else {
       decode(entry, bl);
     }
@@ -1386,7 +1386,7 @@ struct cls_rgw_lc_set_entry_op {
     if (struct_v < 2) {
       std::pair<std::string, int> oe;
       decode(oe, bl);
-      entry = {oe.first, 0 /* start */, uint32_t(oe.second)};
+      entry = {oe.first, rgw_bucket_snap_id(), 0 /* start */, uint32_t(oe.second)};
     } else {
       decode(entry, bl);
     }
@@ -1506,7 +1506,7 @@ cls_rgw_lc_list_entries_ret(uint8_t compat_v = 3)
       decode(oes, bl);
       std::for_each(oes.begin(), oes.end(),
 		    [this](const std::pair<std::string, int>& oe)
-		      {entries.push_back({oe.first, 0 /* start */,
+		      {entries.push_back({oe.first, rgw_bucket_snap_id(), 0 /* start */,
 					  uint32_t(oe.second)});});
     } else {
       decode(entries, bl);
