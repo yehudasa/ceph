@@ -145,6 +145,8 @@ public:
 
   int read_stats(const DoutPrefixProvider *dpp,
                  const RGWBucketInfo& bucket_info,
+                 rgw_bucket_snap_id snap_id,
+                 bool snap_aggregate,
                  RGWBucketEnt *stats,
                  optional_yield y) override;
 

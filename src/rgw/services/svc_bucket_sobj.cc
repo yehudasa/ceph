@@ -530,6 +530,8 @@ int RGWSI_Bucket_SObj::remove_bucket_instance_info(const string& key,
 }
 
 int RGWSI_Bucket_SObj::read_bucket_stats(const RGWBucketInfo& bucket_info,
+                                         rgw_bucket_snap_id snap_id,
+                                         bool snap_aggregate,
                                          RGWBucketEnt *ent,
                                          optional_yield y,
                                          const DoutPrefixProvider *dpp)
@@ -538,15 +540,37 @@ int RGWSI_Bucket_SObj::read_bucket_stats(const RGWBucketInfo& bucket_info,
   ent->size = 0;
   ent->size_rounded = 0;
 
-  vector<rgw_bucket_dir_header> headers;
-
-  int r = svc.bi->read_stats(dpp, bucket_info, ent, y);
+  int r = svc.bi->read_stats(dpp, bucket_info, snap_id, snap_aggregate, ent, y);
   if (r < 0) {
     ldpp_dout(dpp, 0) << "ERROR: " << __func__ << "(): read_stats returned r=" << r << dendl;
     return r;
   }
 
   return 0;
+}
+
+int RGWSI_Bucket_SObj::read_bucket_stats(const RGWBucketInfo& bucket_info,
+                                         RGWBucketEnt *ent,
+                                         optional_yield y,
+                                         const DoutPrefixProvider *dpp)
+{
+  return read_bucket_stats(bucket_info, rgw_bucket_snap_id(), false, ent, y, dpp);
+}
+
+int RGWSI_Bucket_SObj::read_bucket_stats(const rgw_bucket& bucket,
+                                         rgw_bucket_snap_id snap_id,
+                                         bool snap_aggregate,
+                                         RGWBucketEnt *ent,
+                                         optional_yield y,
+                                         const DoutPrefixProvider *dpp)
+{
+  RGWBucketInfo bucket_info;
+  int ret = read_bucket_info(bucket, &bucket_info, &ent->modification_time, nullptr, boost::none, y, dpp);
+  if (ret < 0) {
+    return ret;
+  }
+
+  return read_bucket_stats(bucket_info, snap_id, snap_aggregate, ent, y, dpp);
 }
 
 int RGWSI_Bucket_SObj::read_bucket_stats(const rgw_bucket& bucket,
@@ -560,7 +584,7 @@ int RGWSI_Bucket_SObj::read_bucket_stats(const rgw_bucket& bucket,
     return ret;
   }
 
-  return read_bucket_stats(bucket_info, ent, y, dpp);
+  return read_bucket_stats(bucket_info, rgw_bucket_snap_id(), false, ent, y, dpp);
 }
 
 int RGWSI_Bucket_SObj::read_buckets_stats(std::vector<RGWBucketEnt>& buckets,

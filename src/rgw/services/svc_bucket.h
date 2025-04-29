@@ -96,6 +96,13 @@ public:
                                   const DoutPrefixProvider *dpp) = 0;
 
   virtual int read_bucket_stats(const rgw_bucket& bucket,
+                                rgw_bucket_snap_id snap_id,
+                                bool snap_aggregate,
+                                RGWBucketEnt *ent,
+                                optional_yield y,
+                                const DoutPrefixProvider *dpp) = 0;
+
+  virtual int read_bucket_stats(const rgw_bucket& bucket,
                         RGWBucketEnt *ent,
                         optional_yield y,
                         const DoutPrefixProvider *dpp) = 0;

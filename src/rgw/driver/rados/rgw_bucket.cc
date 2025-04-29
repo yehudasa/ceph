@@ -3606,7 +3606,7 @@ int RGWBucketCtl::sync_owner_stats(const DoutPrefixProvider *dpp,
   if (!pent) {
     pent = &ent;
   }
-  int r = svc.bi->read_stats(dpp, bucket_info, pent, y);
+  int r = svc.bi->read_stats(dpp, bucket_info, rgw_bucket_snap_id(), false, pent, y);
   if (r < 0) {
     ldpp_dout(dpp, 20) << __func__ << "(): failed to read bucket stats (r=" << r << ")" << dendl;
     return r;

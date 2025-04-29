@@ -642,13 +642,17 @@ int RGWSI_BucketIndex_RADOS::clean_index(const DoutPrefixProvider *dpp,
 
 int RGWSI_BucketIndex_RADOS::read_stats(const DoutPrefixProvider *dpp,
                                         const RGWBucketInfo& bucket_info,
+                                        rgw_bucket_snap_id snap_id,
+                                        bool snap_aggregate,
                                         RGWBucketEnt *result,
                                         optional_yield y)
 {
-  vector<rgw_bucket_dir_header> headers;
+  vector<rgw_cls_get_bucket_stats_ret> stats;
 
   result->bucket = bucket_info.bucket;
-  int r = cls_bucket_head(dpp, bucket_info, bucket_info.layout.current_index, RGW_NO_SHARD, &headers, nullptr, y);
+  int r = cls_bucket_get_stats(dpp, bucket_info, bucket_info.layout.current_index, RGW_NO_SHARD,
+                               snap_id, snap_aggregate,
+                               &stats, nullptr, y);
   if (r < 0) {
     return r;
   }
@@ -657,15 +661,15 @@ int RGWSI_BucketIndex_RADOS::read_stats(const DoutPrefixProvider *dpp,
   result->size = 0; 
   result->size_rounded = 0; 
 
-  auto hiter = headers.begin();
-  for (; hiter != headers.end(); ++hiter) {
+  auto hiter = stats.begin();
+  for (; hiter != stats.end(); ++hiter) {
     RGWObjCategory category = RGWObjCategory::Main;
-    auto iter = (hiter->stats).find(category);
+    auto iter = hiter->stats.find(category);
     if (iter != hiter->stats.end()) {
-      struct rgw_bucket_category_stats& stats = iter->second;
-      result->count += stats.num_entries;
-      result->size += stats.total_size;
-      result->size_rounded += stats.total_size_rounded;
+      struct rgw_bucket_category_stats& s = iter->second;
+      result->count += s.num_entries;
+      result->size += s.total_size;
+      result->size_rounded += s.total_size_rounded;
     }
   }
 

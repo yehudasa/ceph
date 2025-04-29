@@ -56,6 +56,13 @@ class RGWSI_Bucket_SObj : public RGWSI_Bucket
                                    const DoutPrefixProvider *dpp);
 
   int read_bucket_stats(const RGWBucketInfo& bucket_info,
+                        rgw_bucket_snap_id snap_id,
+                        bool snap_aggregate,
+                        RGWBucketEnt *ent,
+                        optional_yield y,
+                        const DoutPrefixProvider *dpp);
+
+  int read_bucket_stats(const RGWBucketInfo& bucket_info,
                         RGWBucketEnt *ent,
                         optional_yield y,
                         const DoutPrefixProvider *dpp);
@@ -147,6 +154,13 @@ public:
                                   RGWObjVersionTracker *objv_tracker,
                                   optional_yield y,
                                   const DoutPrefixProvider *dpp) override;
+
+  int read_bucket_stats(const rgw_bucket& bucket,
+                        rgw_bucket_snap_id snap_id,
+                        bool snap_aggregate,
+                        RGWBucketEnt *ent,
+                        optional_yield y,
+                        const DoutPrefixProvider *dpp) override;
 
   int read_bucket_stats(const rgw_bucket& bucket,
                         RGWBucketEnt *ent,
