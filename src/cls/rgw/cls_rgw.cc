@@ -1364,7 +1364,7 @@ static std::string modify_op_str(uint8_t op) {
 
 static int write_header_while_logrecord(ClsOmapAccess *omap,
                                         rgw_bucket_dir_header& header,
-                                        bool write_anyway) {
+                                        bool write_anyway = false) {
   if (header.resharding_in_logrecord() || write_anyway)
     return write_bucket_header(omap, &header);
   return 0;
@@ -2103,6 +2103,10 @@ public:
     return 0;
   }
 
+  const cls_rgw_obj_key& get_key() const {
+    return key;
+  }
+
   rgw_bucket_dir_entry& get_dir_entry() {
     return instance_entry;
   }
@@ -2247,6 +2251,15 @@ public:
       return ret;
     }
     instance_entry.set_snap_info().removed_at = snap_id;
+    return _write_entries(0, 0, header);
+  }
+
+  int set_prev_null(rgw_bucket_snap_id snap_id, rgw_bucket_dir_header& header) {
+    int ret = _validate_init();
+    if (ret < 0) {
+      return ret;
+    }
+    instance_entry.set_snap_info().prev_null_snap = snap_id;
     return _write_entries(0, 0, header);
   }
 
@@ -2575,6 +2588,161 @@ static int convert_plain_entry_to_versioned(ClsOmapAccess *omap,
   return 0;
 }
 
+
+/*
+ * find the objects that are snap-adjacent to obj. Start with olh.get_null_ver_snap_id() and
+ * scan backwards until we're past obj.
+ */
+static int adjacent_null_instances(ClsOmapAccess *omap,
+                                   rgw_bucket_dir_header& header,
+                                   BIOLHEntry& olh,
+                                   BIVerObjEntry& obj,
+                                   std::map<cls_rgw_obj_key, std::shared_ptr<BIVerObjEntry> > *adjacent_objs)
+{
+  auto key = obj.get_key();
+  auto& dirent = obj.get_dir_entry();
+  auto max = olh.get_null_ver_snap_id();
+
+  auto iter_key = key;
+  iter_key.snap_id = max;
+
+  rgw_bucket_snap_id iter_id;
+
+  do {
+    std::shared_ptr<BIVerObjEntry> iter_obj = std::make_shared<BIVerObjEntry>(omap, iter_key);
+    iter_obj->init();
+
+    (*adjacent_objs)[iter_key] = iter_obj;
+
+    auto& iter_dirent = iter_obj->get_dir_entry();
+
+    auto prev_null_snap = iter_dirent.prev_null_snap();
+    if (!prev_null_snap.is_set()) {
+      break;
+    }
+
+    iter_id = iter_key.snap_id;
+    iter_key.snap_id = prev_null_snap;
+  } while (iter_id > key.snap_id);
+
+  return 0;
+}
+
+/*
+ * handle the case where a null object instance would have overwritten
+ * a previous null instance but since they're in different snapshots
+ * they both still exist. We need to account the case where objects
+ * might be written in different order (newer one written first),
+ * which can happen in certain scenarios.
+ *
+ * In the general case:
+ *
+ *         s0   s1   s2   s3   s4   s5
+ *  snap: --|----|----|----|----|----|--
+ *  obj:  prev       cur            next
+ *
+ * Object cur (snapshot s2) is being written, object already exists
+ * in snapshots s5 and s0. The stats totals previously accounted as
+ * if object prev existed in snapshots s0..s4. We now need to modify
+ * snaps totals for snapshots s2..s4: unaccount for prev and account
+ * for cur.
+ *
+ */
+static int handle_null_ver_snap_overwrite(ClsOmapAccess *omap,
+                                          rgw_bucket_dir_header& header,
+                                          BIOLHEntry& olh,
+                                          BIVerObjEntry& obj,
+                                          bool *header_modified)
+{
+  *header_modified = false;
+  auto key = obj.get_key();
+
+  if (!key.instance.empty()) {
+    return 0;
+  }
+
+  if (!olh.get_null_ver_snap_id().is_set()) {
+    return 0;
+  }
+
+  if (key.snap_id == olh.get_null_ver_snap_id()) {
+    return 0; /* regular overwrite */
+  }
+
+  std::map<cls_rgw_obj_key, std::shared_ptr<BIVerObjEntry> > adjacent_objs;
+
+  int r = adjacent_null_instances(omap, header, olh, obj, &adjacent_objs);
+  if (r < 0) {
+    CLS_LOG(0, "ERROR: %s: adjacent_null_instances returned r=%d", __func__, r);
+    return r;
+  }
+
+  for (auto& e : adjacent_objs) {
+    const auto& akey = e.first;
+    auto aobj = e.second;
+    auto& adirent = aobj->get_dir_entry();
+
+    if (akey.snap_id < key.snap_id) {
+      /*
+       * prev: might have been removed already, prior to cur
+       */
+      if (!adirent.exists_at(key.snap_id)) {
+        continue;
+      }
+
+      /* prev obj 'overwritten' by the new obj, we need it to set its removed_at to reflect it */
+      int ret = aobj->set_removed_at(key.snap_id, header);
+      if (ret < 0) {
+        CLS_LOG(0, "ERROR: could not set obj as removed at snap: key=%s ret=%d", escape_str(akey.to_string()).c_str(), ret);
+        return ret;
+      }
+      obj.set_prev_null(akey.snap_id, header);
+
+      /* now we need to unaccount the prev obj from all snaps total starting with the new obj's
+       * snaps id
+       */
+    } else if (akey.snap_id > key.snap_id) {
+      /* obj in a later snapshot, we were removed by it */
+
+      obj.set_removed_at(akey.snap_id, header);
+
+      /* now we need to account current obj on all snaps totals in the range until
+       * the next obj
+       */
+
+      /* once we're past we're done */
+      break;
+    } else {
+      /* overwrite of existing object */
+    }
+  }
+
+#if 0
+  if (key.snap_id > olh.get_null_ver_snap_id()) { /* the easy case */
+    auto prev_null_key = key;
+    prev_null_key.snap_id = olh.get_null_ver_snap_id();
+
+    CLS_LOG(20, "%s: marking obj (snap_id=%lld) as removed at snap: key=%s", __func__, (long long)prev_null_key.snap_id,
+            escape_str(prev_null_key.to_string()).c_str());
+    BIVerObjEntry prev_null_obj(omap, prev_null_key);
+    int ret = prev_null_obj.set_removed_at(key.snap_id, header);
+    if (ret < 0) {
+      CLS_LOG(0, "ERROR: could not set obj as removed at snap: key=%s ret=%d", escape_str(prev_null_key.to_string()).c_str(), ret);
+      return ret;
+    }
+
+    /*
+     * this would have been an object overwrite if snapshots weren't involved
+     * so we need to treat it as such
+     */
+    unaccount_entry(omap, header, prev_null_obj.get_dir_entry(), true /* only unaccount current stats not the snap stats */);
+    *header_modified = true;
+    return 0;
+  }
+#endif
+  return 0;
+}
+
 /*
  * Link an object version to an olh, update the relevant index
  * entries. It will also handle the deletion marker case. We have a
@@ -2706,6 +2874,7 @@ static int _rgw_bucket_link_olh(ClsOmapAccess *omap, bufferlist *in, bufferlist 
   const uint64_t prev_epoch = olh.get_epoch();
 
   if (!olh.start_modify(op.olh_epoch)) {
+    /* this operation shouldn't modify the olh as it forces an older olh_epoch */
     ret = obj.write(op.olh_epoch, op.meta.snap_id, false, header);
     if (ret < 0) {
       return ret;
@@ -2776,6 +2945,15 @@ static int _rgw_bucket_link_olh(ClsOmapAccess *omap, bufferlist *in, bufferlist 
    * so that we can know at what snap_id it shouldn't exist anymore and we can
    * remove it later when the snapshots are deleted
    */
+  if (op.key.instance.empty()) {
+    bool header_modified;
+    ret = handle_null_ver_snap_overwrite(omap, header, olh,
+                                         obj, &header_modified);
+    if (ret < 0) {
+      return ret;
+    }
+  }
+#if 0
   if (op.key.instance.empty() &&
       op.key.snap_id > olh.get_null_ver_snap_id()) {
     if (olh.get_null_ver_snap_id().is_set()) {
@@ -2799,6 +2977,7 @@ static int _rgw_bucket_link_olh(ClsOmapAccess *omap, bufferlist *in, bufferlist 
       need_flush_header = true;
     }
   }
+#endif
 
   /* update the olh log */
   olh.update_log(CLS_RGW_OLH_OP_LINK_OLH, op.op_tag, op.key, op.meta.snap_id, op.delete_marker);

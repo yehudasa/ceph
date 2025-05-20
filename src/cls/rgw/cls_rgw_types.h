@@ -397,7 +397,9 @@ WRITE_CLASS_ENCODER(rgw_bucket_snap_skip_entry)
 
 struct rgw_bucket_dirent_snap_info {
   rgw_bucket_snap_skip_entry skip;
-  rgw_bucket_snap_id removed_at;
+  rgw_bucket_snap_id removed_at; /* at what snap id this instance was removed */
+  rgw_bucket_snap_id prev_null_snap; /* if it's a null instance, what is the previous
+                                        snap id for the previous null instance */
   std::map<rgw_bucket_snap_id, bool> current_flag_map;
 
   void dump(ceph::Formatter *f) const;
@@ -407,6 +409,7 @@ struct rgw_bucket_dirent_snap_info {
     ENCODE_START(2, 1, bl);
     encode(skip, bl);
     encode(removed_at, bl);
+    encode(prev_null_snap, bl);
     encode(current_flag_map, bl);
     ENCODE_FINISH(bl);
   }
@@ -416,6 +419,7 @@ struct rgw_bucket_dirent_snap_info {
     if (struct_v >= 2) {
       decode(skip, bl);
       decode(removed_at, bl);
+      decode(prev_null_snap, bl);
       decode(current_flag_map, bl);
     }
     DECODE_FINISH(bl);
@@ -435,6 +439,7 @@ struct rgw_bucket_dirent_snap_info {
   }
 };
 WRITE_CLASS_ENCODER(rgw_bucket_dirent_snap_info)
+
 
 struct rgw_bucket_dir_entry {
   /* a versioned object instance */
@@ -557,6 +562,12 @@ struct rgw_bucket_dir_entry {
       return rgw_bucket_snap_id();
     }
     return snap_info->removed_at;
+  }
+  rgw_bucket_snap_id prev_null_snap() const {
+    if (!snap_info) {
+      return rgw_bucket_snap_id();
+    }
+    return snap_info->prev_null_snap;
   }
   bool exists_at_snap(rgw_bucket_snap_id check_snap_id) const {
     if (!check_snap_id.is_set()) {
