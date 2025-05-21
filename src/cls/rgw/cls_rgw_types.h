@@ -1061,7 +1061,6 @@ struct rgw_bucket_dir_header {
 WRITE_CLASS_ENCODER(rgw_bucket_dir_header)
 
 struct rgw_bucket_dir_snap_stats {
-  rgw_bucket_snap_id snap_id;
   rgw_bucket_dir_stats total_stats;  /* the aggregated total storage when the snapshot was taken */
   rgw_bucket_dir_stats snap_stats;   /* total storage used by the specific snapshot */
 
@@ -1069,14 +1068,12 @@ struct rgw_bucket_dir_snap_stats {
 
   void encode(ceph::buffer::list &bl) const {
     ENCODE_START(1, 1, bl);
-    encode(snap_id, bl);
     encode(total_stats, bl);
     encode(snap_stats, bl);
     ENCODE_FINISH(bl);
   }
   void decode(ceph::buffer::list::const_iterator &bl) {
     DECODE_START(1, bl);
-    decode(snap_id, bl);
     decode(total_stats, bl);
     decode(snap_stats, bl);
     DECODE_FINISH(bl);
@@ -1087,6 +1084,7 @@ struct rgw_bucket_dir_snap_stats {
 WRITE_CLASS_ENCODER(rgw_bucket_dir_snap_stats)
 
 struct rgw_bucket_dir_snap_header {
+  rgw_bucket_snap_id snap_id;
   uint64_t ver{0};
   rgw_bucket_dir_snap_stats stats;  /* the aggregated total storage when the snapshot was taken */
 
@@ -1094,12 +1092,14 @@ struct rgw_bucket_dir_snap_header {
 
   void encode(ceph::buffer::list &bl) const {
     ENCODE_START(1, 1, bl);
+    encode(snap_id, bl);
     encode(ver, bl);
     encode(stats, bl);
     ENCODE_FINISH(bl);
   }
   void decode(ceph::buffer::list::const_iterator &bl) {
     DECODE_START(1, bl);
+    decode(snap_id, bl);
     decode(ver, bl);
     decode(stats, bl);
     DECODE_FINISH(bl);

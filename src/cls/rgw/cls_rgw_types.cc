@@ -766,7 +766,6 @@ void rgw_bucket_dir_snap_stats::generate_test_instances(list<rgw_bucket_dir_snap
 
 void rgw_bucket_dir_snap_stats::dump(Formatter *f) const
 {
-  encode_json("snap_id", snap_id, f);
   encode_json("total_stats", total_stats, f);
   encode_json("snap_stats", snap_stats, f);
 }
@@ -778,6 +777,7 @@ void rgw_bucket_dir_snap_header::generate_test_instances(list<rgw_bucket_dir_sna
 
 void rgw_bucket_dir_snap_header::dump(Formatter *f) const
 {
+  encode_json("snap_id", snap_id, f);
   encode_json("ver", ver, f);
   encode_json("stats", stats, f);
 }

@@ -618,7 +618,7 @@ static void encode_snap_header_index_key(rgw_bucket_snap_id snap_id, string *ind
   *index_key = BI_PREFIX_CHAR;
   index_key->append(bucket_index_prefixes[BI_BUCKET_SNAP_HEADER_INDEX]);
   char buf[32];
-  snprintf(buf, sizeof(buf), "%lld", (long long)snap_id.snap_id);
+  snprintf(buf, sizeof(buf), PRIx64, snap_id.snap_id);
   index_key->append(buf);
 }
 
@@ -821,7 +821,6 @@ static int read_snap_stats(ClsOmapAccess *omap,
 {
   if (header.max_snap_id.get_or(rgw_bucket_snap_id::SNAP_MIN) == snap_id) {
     CLS_LOG(20, "%s(): header.max_snap_id=%d", __func__, (int)header.max_snap_id.snap_id);
-    snap_stats->snap_id = snap_id;
     CLS_LOG(20, "%s(): snap_id=%d", __func__, (int)snap_id.snap_id);
     snap_stats->total_stats = header.stats;
     if (!header.max_snap_stats) {
@@ -1526,7 +1525,7 @@ static int _xaccount_snap_entry(ClsOmapAccess *omap,
     CLS_LOG(20, "%s(): meta.snap_id > header.max_snap_id", __func__);
     /* a new snap, let's flush current stats to their snap stats index */
     rgw_bucket_dir_snap_header snap_header;
-    snap_header.stats.snap_id = header.max_snap_id;
+    snap_header.snap_id = header.max_snap_id;
     snap_header.stats.total_stats = header.stats;
     snap_header.stats.snap_stats = *header.max_snap_stats;
 
