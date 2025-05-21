@@ -1503,6 +1503,89 @@ static void _unaccount_entry(rgw_bucket_category_stats& stats,
   stats.actual_size -= meta.size;
 }
 
+static int _xaccount_snap_entry(ClsOmapAccess *omap,
+                                rgw_bucket_dir_header& header,
+                                const rgw_bucket_dir_entry& entry,
+                                rgw_bucket_snap_id snap_id,
+                                void (*account_func)(rgw_bucket_category_stats&, const rgw_bucket_dir_entry_meta&))
+{
+  auto& meta = entry.meta;
+  rgw_bucket_category_stats& stats = header.stats[meta.category];
+  CLS_LOG(20, "%s(): header.max_snap_id=%d meta.snap_id=%d", __func__, (int)header.max_snap_id.snap_id, (int)meta.snap_id.snap_id);
+
+  if (!header.max_snap_id.is_set()) {
+    CLS_LOG(20, "%s(): first time new snapshot", __func__);
+    header.max_snap_id = rgw_bucket_snap_id::SNAP_MIN;
+    header.max_snap_stats = header.stats;
+  }
+  CLS_LOG(20, "%s(): (after) header.max_snap_id=%d", __func__, (int)header.max_snap_id.snap_id);
+
+  /* now header.max_snap_id is set */
+
+  if (snap_id > header.max_snap_id) {
+    CLS_LOG(20, "%s(): meta.snap_id > header.max_snap_id", __func__);
+    /* a new snap, let's flush current stats to their snap stats index */
+    rgw_bucket_dir_snap_header snap_header;
+    snap_header.stats.snap_id = header.max_snap_id;
+    snap_header.stats.total_stats = header.stats;
+    snap_header.stats.snap_stats = *header.max_snap_stats;
+
+    string index_key;
+    encode_snap_header_index_key(header.max_snap_id, &index_key);
+    int r = write_bucket_snap_header(omap, index_key, &snap_header);
+    if (r < 0) {
+      CLS_LOG(0, "%s(): ERROR: write_bucket_snap_header for index_key=%s returned %d", __func__, escape_str(index_key).c_str(), r);
+      return r;
+    }
+
+    /* now update the header to point at new snap */
+    header.max_snap_id = snap_id;
+    header.max_snap_stats = rgw_bucket_dir_stats();
+  }
+
+  if (snap_id < header.max_snap_id) {
+    CLS_LOG(20, "%s(): snap_id < header.max_snap_id", __func__);
+    /* out of order, a write to an old snap, let's fetch its stats and write them
+     * but not keep it
+     */
+    string index_key;
+    rgw_bucket_dir_snap_header snap_header;
+    int r = read_bucket_snap_header(omap, snap_id, &index_key, &snap_header);
+    if (r < 0) {
+      CLS_LOG(0, "%s(): ERROR: read_bucket_snap_header for index_key=%s returned %d", __func__, escape_str(index_key).c_str(), r);
+      return r;
+    }
+
+    auto& total_stats = snap_header.stats.total_stats[meta.category];
+    account_func(total_stats, meta);
+    if (snap_id == meta.snap_id) {
+      auto& snap_stats = snap_header.stats.snap_stats[meta.category];
+      account_func(snap_stats, meta);
+    }
+
+    r = write_bucket_snap_header(omap, index_key, &snap_header);
+    if (r < 0) {
+      CLS_LOG(0, "%s(): ERROR: write_bucket_snap_header for index_key=%s returned %d", __func__, escape_str(index_key).c_str(), r);
+      return r;
+    }
+
+    /* if this object is makred with removed_at at a specific snapshot, it was already
+     * unaccounted from the main stats, don't unaccount again */
+    if (!entry.removed_at_snap().is_set()) {
+      account_func(stats, meta);
+    }
+
+    return 0;
+  }
+
+  /* meta.snap_id == header.max_snap_id */
+
+  auto& snap_stats = (*header.max_snap_stats)[meta.category];
+  account_func(snap_stats, meta);
+
+  return 0;
+}
+
 static int _xaccount_entry(ClsOmapAccess *omap,
                            rgw_bucket_dir_header& header,
                            const rgw_bucket_dir_entry& entry,
@@ -1522,75 +1605,14 @@ static int _xaccount_entry(ClsOmapAccess *omap,
     return 0;
   }
 
-  if (!header.max_snap_id.is_set()) {
-    CLS_LOG(20, "%s(): first time new snapshot", __func__);
-    header.max_snap_id = rgw_bucket_snap_id::SNAP_MIN;
-    header.max_snap_stats = header.stats;
-  }
-  CLS_LOG(20, "%s(): (after) header.max_snap_id=%d", __func__, (int)header.max_snap_id.snap_id);
-
-  /* now header.max_snap_id is set */
-
-  if (meta.snap_id > header.max_snap_id) {
-    CLS_LOG(20, "%s(): meta.snap_id > header.max_snap_id", __func__);
-    /* a new snap, let's flush current stats to their snap stats index */
-    rgw_bucket_dir_snap_header snap_header;
-    snap_header.stats.snap_id = header.max_snap_id;
-    snap_header.stats.total_stats = header.stats;
-    snap_header.stats.snap_stats = *header.max_snap_stats;
-
-    string index_key;
-    encode_snap_header_index_key(header.max_snap_id, &index_key);
-    int r = write_bucket_snap_header(omap, index_key, &snap_header);
+  if (meta.snap_id.is_set()) {
+    int r = _xaccount_snap_entry(omap, header, entry, meta.snap_id, account_func);
     if (r < 0) {
-      CLS_LOG(0, "%s(): ERROR: write_bucket_snap_header for index_key=%s returned %d", __func__, escape_str(index_key).c_str(), r);
       return r;
     }
-
-    /* now update the header to point at new snap */
-    header.max_snap_id = meta.snap_id;
-    header.max_snap_stats = rgw_bucket_dir_stats();
-  }
-
-  if (meta.snap_id < header.max_snap_id) {
-    CLS_LOG(20, "%s(): meta.snap_id < header.max_snap_id", __func__);
-    /* out of order, a write to an old snap, let's fetch its stats and write them
-     * but not keep it
-     */
-    string index_key;
-    rgw_bucket_dir_snap_header snap_header;
-    int r = read_bucket_snap_header(omap, meta.snap_id, &index_key, &snap_header);
-    if (r < 0) {
-      CLS_LOG(0, "%s(): ERROR: read_bucket_snap_header for index_key=%s returned %d", __func__, escape_str(index_key).c_str(), r);
-      return r;
-    }
-
-    auto& total_stats = snap_header.stats.total_stats[meta.category];
-    account_func(total_stats, meta);
-    auto& snap_stats = snap_header.stats.snap_stats[meta.category];
-    account_func(snap_stats, meta);
-
-    r = write_bucket_snap_header(omap, index_key, &snap_header);
-    if (r < 0) {
-      CLS_LOG(0, "%s(): ERROR: write_bucket_snap_header for index_key=%s returned %d", __func__, escape_str(index_key).c_str(), r);
-      return r;
-    }
-
-    /* if this object is makred with removed_at at a specific snapshot, it was already
-     * unaccounted from the main stats, don't unaccount again */
-    if (!entry.removed_at_snap().is_set()) {
-      account_func(stats, meta);
-    }
-
-    return 0;
   }
 
   account_func(stats, meta);
-
-  /* meta.snap_id == header.max_snap_id */
-
-  auto& snap_stats = (*header.max_snap_stats)[meta.category];
-  account_func(snap_stats, meta);
 
   /* not flushing it now, caller will flush the header.
    * max_snap_id stats will be written to their own index once
@@ -2656,6 +2678,8 @@ static int handle_null_ver_snap_overwrite(ClsOmapAccess *omap,
 {
   *header_modified = false;
   auto key = obj.get_key();
+  auto& dirent = obj.get_dir_entry();
+  auto cur_snap_id = dirent.meta.snap_id;
 
   if (!key.instance.empty()) {
     return 0;
@@ -2665,7 +2689,7 @@ static int handle_null_ver_snap_overwrite(ClsOmapAccess *omap,
     return 0;
   }
 
-  if (key.snap_id == olh.get_null_ver_snap_id()) {
+  if (cur_snap_id == olh.get_null_ver_snap_id()) {
     return 0; /* regular overwrite */
   }
 
@@ -2682,24 +2706,29 @@ static int handle_null_ver_snap_overwrite(ClsOmapAccess *omap,
     auto aobj = e.second;
     auto& adirent = aobj->get_dir_entry();
 
-    if (akey.snap_id < key.snap_id) {
+    if (akey.snap_id < cur_snap_id) {
       /*
        * prev: might have been removed already, prior to cur
        */
-      if (!adirent.exists_at(key.snap_id)) {
+      if (!adirent.exists_at_snap(cur_snap_id)) {
         continue;
       }
 
+      auto prev_removed_at = adirent.removed_at_snap();
+      if (!prev_removed_at.is_set()) {
+        prev_removed_at = olh.get_null_ver_snap_id();
+      }
+
       /* prev obj 'overwritten' by the new obj, we need it to set its removed_at to reflect it */
-      int ret = aobj->set_removed_at(key.snap_id, header);
+      int ret = aobj->set_removed_at(cur_snap_id, header);
       if (ret < 0) {
         CLS_LOG(0, "ERROR: could not set obj as removed at snap: key=%s ret=%d", escape_str(akey.to_string()).c_str(), ret);
         return ret;
       }
       obj.set_prev_null(akey.snap_id, header);
 
-      /* now we need to unaccount the prev obj from all snaps total starting with the new obj's
-       * snaps id
+      /* now we need to unaccount the prev obj from all snaps
+       * from cur_snap_id to prev_removed_at
        */
     } else if (akey.snap_id > key.snap_id) {
       /* obj in a later snapshot, we were removed by it */
