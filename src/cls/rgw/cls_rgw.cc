@@ -613,12 +613,17 @@ static void encode_olh_data_key(const cls_rgw_obj_key& key, string *index_key)
   index_key->append(key.name);
 }
 
+static void get_snap_header_key_prefix(string& key)
+{
+  key = BI_PREFIX_CHAR;
+  key.append(bucket_index_prefixes[BI_BUCKET_SNAP_HEADER_INDEX]);
+}
+
 static void encode_snap_header_index_key(rgw_bucket_snap_id snap_id, string *index_key)
 {
-  *index_key = BI_PREFIX_CHAR;
-  index_key->append(bucket_index_prefixes[BI_BUCKET_SNAP_HEADER_INDEX]);
+  get_snap_header_key_prefix(*index_key);
   char buf[32];
-  snprintf(buf, sizeof(buf), PRIx64, snap_id.snap_id);
+  snprintf(buf, sizeof(buf), "%" PRIx64, snap_id.snap_id);
   index_key->append(buf);
 }
 
@@ -854,6 +859,70 @@ static int read_snap_stats(ClsOmapAccess *omap,
 
   CLS_LOG(20, "%s(): snap_header.stats: snap_stats=%s", __func__, to_json("snap_stats", *snap_stats).c_str());
 
+  return 0;
+}
+
+static int get_snap_headers(cls_method_context_t hctx,
+                            rgw_bucket_dir_header& header,
+                            rgw_bucket_snap_id start,
+                            rgw_bucket_snap_id end,
+                            std::map<rgw_bucket_snap_id, rgw_bucket_dir_snap_header> *snaps)
+{
+  string index_key;
+  rgw_bucket_snap_id actual_start;
+  if (start.is_set()) {
+    actual_start = start - 1;
+  }
+  encode_snap_header_index_key(actual_start, &index_key);
+
+  string filter;
+  get_snap_header_key_prefix(filter);
+#define MAX_SNAPS_GET_OP 10
+  int max_count = MAX_SNAPS_GET_OP;
+  bool more;
+
+  do {
+    map<string, bufferlist> vals;
+    int r = cls_cxx_map_get_vals(hctx, index_key, filter,
+                                 max_count, &vals, &more);
+CLS_LOG(0, "%s:%d index_key=%s filter=%s vals.size=%d", __func__, __LINE__, escape_str(index_key).c_str(), escape_str(filter).c_str(), (int)vals.size());
+    if (r < 0) {
+      CLS_LOG(0, "ERROR: %s cls_cxx_map_get_vals() index_key=%s max_count=%d r=%d", __func__, escape_str(index_key).c_str(), max_count, r);
+      return r;
+    }
+
+    for (auto& e : vals) {
+
+CLS_LOG(0, "%s cls_cxx_map_get_vals() key=%s", __func__, escape_str(index_key).c_str());
+      auto iter = e.second.cbegin();
+      if (more) {
+        index_key = e.first;
+      }
+
+      rgw_bucket_dir_snap_header snap_header;
+      try {
+        decode(snap_header, iter);
+      } catch (buffer::error& err) {
+        CLS_LOG(0, "ERROR: %s: failed to decode snapshot header at omap key %s, skipping", __func__, escape_str(e.first).c_str());
+        continue;
+      }
+      if (snap_header.snap_id > end) {
+        break;
+      }
+
+CLS_LOG(0, "%s XXXX key=%s snap_id=%d", __func__, escape_str(index_key).c_str(), (int)snap_header.snap_id.snap_id);
+      (*snaps)[snap_header.snap_id] = snap_header;
+    }
+  } while (more);
+
+CLS_LOG(0, "%s:%d start=%d end=%d header.max=%d", __func__, __LINE__, (int)start, (int)end, (int)header.max_snap_id);
+  if (header.max_snap_id >= start &&
+      header.max_snap_id <= end) {
+    rgw_bucket_dir_snap_header& snap_header = (*snaps)[header.max_snap_id];
+    snap_header.snap_id = header.max_snap_id;
+    snap_header.stats.total_stats = header.stats;
+    snap_header.stats.snap_stats = *header.max_snap_stats;
+  }
   return 0;
 }
 
@@ -2675,48 +2744,62 @@ static int handle_null_ver_snap_overwrite(ClsOmapAccess *omap,
                                           BIVerObjEntry& obj,
                                           bool *header_modified)
 {
+CLS_LOG(0, "%s:%d", __func__, __LINE__);
   *header_modified = false;
   auto key = obj.get_key();
   auto& dirent = obj.get_dir_entry();
   auto cur_snap_id = dirent.meta.snap_id;
 
   if (!key.instance.empty()) {
+CLS_LOG(0, "%s:%d", __func__, __LINE__);
     return 0;
   }
 
   if (!olh.get_null_ver_snap_id().is_set()) {
+CLS_LOG(0, "%s:%d", __func__, __LINE__);
     return 0;
   }
 
   if (cur_snap_id == olh.get_null_ver_snap_id()) {
+CLS_LOG(0, "%s:%d", __func__, __LINE__);
     return 0; /* regular overwrite */
   }
 
   std::map<cls_rgw_obj_key, std::shared_ptr<BIVerObjEntry> > adjacent_objs;
 
+CLS_LOG(0, "%s:%d", __func__, __LINE__);
   int r = adjacent_null_instances(omap, header, olh, obj, &adjacent_objs);
   if (r < 0) {
     CLS_LOG(0, "ERROR: %s: adjacent_null_instances returned r=%d", __func__, r);
     return r;
   }
 
+  rgw_bucket_snap_id unaccount_max;
+  std::shared_ptr<BIVerObjEntry> unaccount_obj;
+
+  rgw_bucket_snap_id account_max = cur_snap_id;
+
   for (auto& e : adjacent_objs) {
     const auto& akey = e.first;
     auto aobj = e.second;
     auto& adirent = aobj->get_dir_entry();
 
+CLS_LOG(0, "%s:%d akey.snap_id=%d cur_snap_id=%d", __func__, __LINE__, (int)akey.snap_id, (int)cur_snap_id);
     if (akey.snap_id < cur_snap_id) {
       /*
        * prev: might have been removed already, prior to cur
        */
+CLS_LOG(0, "%s:%d exists_at_snap=%d", __func__, __LINE__, (int)adirent.exists_at_snap(cur_snap_id));
       if (!adirent.exists_at_snap(cur_snap_id)) {
         continue;
       }
 
       auto prev_removed_at = adirent.removed_at_snap();
+CLS_LOG(0, "%s:%d prev_removed_at (before)=%d", __func__, __LINE__, (int)prev_removed_at);
       if (!prev_removed_at.is_set()) {
-        prev_removed_at = olh.get_null_ver_snap_id();
+        prev_removed_at = cur_snap_id;
       }
+CLS_LOG(0, "%s:%d prev_removed_at (after)=%d", __func__, __LINE__, (int)prev_removed_at);
 
       /* prev obj 'overwritten' by the new obj, we need it to set its removed_at to reflect it */
       int ret = aobj->set_removed_at(cur_snap_id, header);
@@ -2726,10 +2809,11 @@ static int handle_null_ver_snap_overwrite(ClsOmapAccess *omap,
       }
       obj.set_prev_null(akey.snap_id, header);
 
-      /* now we need to unaccount the prev obj from all snaps
-       * from cur_snap_id to prev_removed_at
-       */
-    } else if (akey.snap_id > key.snap_id) {
+      unaccount_max = prev_removed_at;
+      unaccount_obj = aobj;
+#if 0
+#endif
+    } else if (akey.snap_id > cur_snap_id) {
       /* obj in a later snapshot, we were removed by it */
 
       obj.set_removed_at(akey.snap_id, header);
@@ -2738,10 +2822,50 @@ static int handle_null_ver_snap_overwrite(ClsOmapAccess *omap,
        * the next obj
        */
 
+      account_max = akey.snap_id - 1;
+
       /* once we're past we're done */
       break;
     } else {
       /* overwrite of existing object */
+    }
+  }
+
+CLS_LOG(0, "%s:%d", __func__, __LINE__);
+  rgw_bucket_snap_id read_snap_max = unaccount_max;
+  if (!read_snap_max.is_set() || account_max > unaccount_max) {
+    read_snap_max = account_max;
+  }
+
+  std::map<rgw_bucket_snap_id, rgw_bucket_dir_snap_header> snaps;
+  /* now we need to unaccount the prev obj from all snaps
+   * from cur_snap_id to read_snap_max
+   */
+CLS_LOG(0, "%s:%d", __func__, __LINE__);
+  int ret = get_snap_headers(omap->get_hctx(), header,
+                             cur_snap_id, read_snap_max,
+                             &snaps);
+CLS_LOG(0, "%s:%d snaps.size=%d", __func__, __LINE__, (int)snaps.size());
+  if (ret < 0) {
+    CLS_LOG(0, "ERROR: %s: could not get snap headers in range: from=%d to=%d ret=%d", __func__, (int)cur_snap_id.snap_id, (int)read_snap_max.snap_id, ret);
+    return ret;
+  }
+
+  for (auto& e: snaps) {
+    auto snap_id = e.first;
+    auto& snap_header = e.second;
+
+    if (unaccount_obj &&
+        snap_id <= unaccount_max) {
+auto& adirent = unaccount_obj->get_dir_entry();
+CLS_LOG(0, "XXX %s(): unaccounting obj=%s[snap_id=%d] from snap=%d", __func__,  unaccount_obj->get_key().to_string().c_str(), (int)adirent.meta.snap_id, (int)snap_id);
+      /* unaccount snap for overwritten object */
+    }
+
+    if (snap_id >= cur_snap_id &&
+        snap_id <= account_max) {
+CLS_LOG(0, "XXX %s(): accounting obj=%s[snap_id=%d] in snap=%d", __func__,  key.to_string().c_str(), (int)dirent.meta.snap_id, (int)snap_id);
+      /* account snap for new object */
     }
   }
 
@@ -2814,6 +2938,7 @@ static int _rgw_bucket_link_olh(ClsOmapAccess *omap, bufferlist *in, bufferlist 
 
   rc = guard_bucket_resharding(omap->get_hctx(), header);
   if (rc < 0) {
+CLS_LOG(0, "%s:%d", __func__, __LINE__);
     return rc;
   }
 
@@ -2835,6 +2960,7 @@ static int _rgw_bucket_link_olh(ClsOmapAccess *omap, bufferlist *in, bufferlist 
   if (ret == -ENOENT && op.delete_marker) {
     ret = 0;
   }
+CLS_LOG(0, "%s:%d", __func__, __LINE__);
   if (ret < 0) {
     return ret;
   }
@@ -2862,6 +2988,7 @@ static int _rgw_bucket_link_olh(ClsOmapAccess *omap, bufferlist *in, bufferlist 
    * its list entry.
    */
   if (op.key.instance.empty()) {
+CLS_LOG(0, "%s:%d", __func__, __LINE__);
     BIVerObjEntry other_obj(omap, op.key);
     ret = other_obj.init(!op.delete_marker); /* try reading the other
 					      * null versioned
@@ -2902,6 +3029,7 @@ static int _rgw_bucket_link_olh(ClsOmapAccess *omap, bufferlist *in, bufferlist 
   const uint64_t prev_epoch = olh.get_epoch();
 
   if (!olh.start_modify(op.olh_epoch)) {
+CLS_LOG(0, "%s:%d", __func__, __LINE__);
     /* this operation shouldn't modify the olh as it forces an older olh_epoch */
     ret = obj.write(op.olh_epoch, op.meta.snap_id, false, header);
     if (ret < 0) {
@@ -2919,7 +3047,9 @@ static int _rgw_bucket_link_olh(ClsOmapAccess *omap, bufferlist *in, bufferlist 
       (olh.get_epoch() == prev_epoch &&
        olh.get_entry().key.instance >= op.key.instance);
 
+CLS_LOG(0, "%s:%d", __func__, __LINE__);
   if (olh_found) {
+CLS_LOG(0, "%s:%d", __func__, __LINE__);
     const string& olh_tag = olh.get_tag();
     if (op.olh_tag != olh_tag) {
       if (!olh.pending_removal()) {
@@ -2949,6 +3079,7 @@ static int _rgw_bucket_link_olh(ClsOmapAccess *omap, bufferlist *in, bufferlist 
     }
     olh.set_pending_removal(false);
   } else {
+CLS_LOG(0, "%s:%d", __func__, __LINE__);
     bool instance_only = (op.key.instance.empty() && op.delete_marker);
     cls_rgw_obj_key key(op.key.name);
     bool existed;
@@ -2973,7 +3104,9 @@ static int _rgw_bucket_link_olh(ClsOmapAccess *omap, bufferlist *in, bufferlist 
    * so that we can know at what snap_id it shouldn't exist anymore and we can
    * remove it later when the snapshots are deleted
    */
+CLS_LOG(0, "%s:%d", __func__, __LINE__);
   if (op.key.instance.empty()) {
+CLS_LOG(0, "%s:%d", __func__, __LINE__);
     bool header_modified;
     ret = handle_null_ver_snap_overwrite(omap, header, olh,
                                          obj, &header_modified);
