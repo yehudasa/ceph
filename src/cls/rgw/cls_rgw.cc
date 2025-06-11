@@ -282,8 +282,8 @@ int ClsOmapCache::flush(int ret)
     if (r < 0) {
       CLS_LOG(0, "ERROR: %s(): failed cls_cxx_map_write_header() failed. len=%d r=%d",
               __func__, header.bl.length(), r);
+      return r;
     }
-    return r;
   }
 
   for (auto& i : entries) {
